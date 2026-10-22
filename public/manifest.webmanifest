@@ -1,6 +1,6 @@
 {
-  "name": "WerkDoc Lager",
-  "short_name": "Lager",
+  "name": "SpareSync",
+  "short_name": "SpareSync",
   "description": "Werkstatt-Lagerverwaltung für Ersatzteile, Kleinteile und Werkzeuge",
   "lang": "de",
   "start_url": "./#/fav",
