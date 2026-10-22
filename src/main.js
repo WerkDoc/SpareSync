@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------
-//  WerkDoc Lager – App (Router + Ansichten)
+//  SpareSync – App (Router + Ansichten)
 // ---------------------------------------------------------------------
 import './styles.css';
 import * as db from './db.js';
@@ -1128,7 +1128,7 @@ async function viewSettings() {
         ${db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
       </div>
       ${db.isDemo ? `<p class="hint">Im Demo-Modus liegen alle Daten nur in diesem Browser. Für Cloud-Speicher & mehrere Geräte Supabase-Zugangsdaten in der <code>.env</code> eintragen (siehe README).</p>` : ''}
-      <p class="muted small center pad">WerkDoc Lager · v1.0</p>`,
+      <p class="muted small center pad">SpareSync · v1.1</p>`,
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
@@ -1158,7 +1158,7 @@ function viewLogin() {
     body: `
       <div class="login">
         <div class="login-logo">${icon('box', 44, 1.8)}</div>
-        <h1>WerkDoc Lager</h1>
+        <h1>SpareSync</h1>
         <p class="muted">Ersatzteile. Bestände. Im Griff.</p>
         <form id="lf" class="login-form">
           <input type="email" name="email" placeholder="E-Mail" autocomplete="username" required>
