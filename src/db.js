@@ -127,7 +127,9 @@ export async function signIn(email, password) {
   const { error } = await sb.auth.signInWithPassword({ email, password }); fail(error);
 }
 export async function signUp(email, password) {
-  const { data, error } = await sb.auth.signUp({ email, password }); fail(error);
+  // Bestätigungslink führt zurück zur Lager-App (nicht zur Site URL von WerkDoc)
+  const emailRedirectTo = location.origin + location.pathname;
+  const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo } }); fail(error);
   return !!data.session;
 }
 export async function signOut() { if (!isDemo) await sb.auth.signOut(); }
