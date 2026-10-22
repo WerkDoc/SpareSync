@@ -1,0 +1,19 @@
+{
+  "name": "werkdoc-lager",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.11.6"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
