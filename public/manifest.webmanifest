@@ -1,0 +1,22 @@
+{
+  "name": "WerkDoc Lager",
+  "short_name": "Lager",
+  "description": "Werkstatt-Lagerverwaltung für Ersatzteile, Kleinteile und Werkzeuge",
+  "lang": "de",
+  "start_url": "./#/fav",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2d6aa3",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Material entnehmen", "url": "./#/pick?mode=out&scan=1" },
+    { "name": "Material dazu buchen", "url": "./#/pick?mode=in&scan=1" },
+    { "name": "Ersatzteil anlegen", "url": "./#/new?kind=part" }
+  ]
+}
