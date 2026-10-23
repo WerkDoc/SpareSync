@@ -1451,6 +1451,8 @@ function viewLogin(_m, _id, startPanel = 'login') {
 }
 
 // ============================== Start ================================
+// iOS: ohne touchstart-Listener zeigt Safari den :active-Zustand (Hineindrücken) nicht an
+document.addEventListener('touchstart', () => {}, { passive: true });
 if (!db.isDemo) db.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' || ev === 'SIGNED_IN') { invalidate(); } });
 
 // Splashscreen-Video (steht in index.html): blendet aus, sobald das Video zu Ende ist UND die App geladen hat

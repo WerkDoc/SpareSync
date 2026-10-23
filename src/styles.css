@@ -15,7 +15,10 @@
   --teal: #0e8794;   --teal-soft: #ddf2f4;
   --orange: #d9770b; --orange-soft: #fcefdc;
   --gray: #6c6c72;   --gray-soft: #ededf1;
-  --card-shadow: 0 1px 2px rgba(17, 24, 39, .04), 0 6px 18px -8px rgba(17, 24, 39, .12);
+  /* Schwebende Karten: ein feiner Kontaktschatten + ein sehr weiter, diffuser Schatten */
+  --card-shadow: 0 1px 2px rgba(16, 24, 40, .035), 0 8px 30px rgba(16, 24, 40, .065);
+  --card-shadow-press: 0 1px 1px rgba(16, 24, 40, .05), 0 2px 8px rgba(16, 24, 40, .05);
+  --press-ease: cubic-bezier(.2, .8, .2, 1);
   --r: 16px;
   --danger-text: #d92d20;
   --fill: #eeeeef;
@@ -44,7 +47,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --brand-navy: #f2f2f7; --brand-blue: #3fa9f5; --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: none; --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
+    --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --brand-navy: #f2f2f7; --brand-blue: #3fa9f5; --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: 0 0 0 .5px rgba(255, 255, 255, .06), 0 10px 30px rgba(0, 0, 0, .55); --card-shadow-press: 0 0 0 .5px rgba(255, 255, 255, .05), 0 2px 8px rgba(0, 0, 0, .5); --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
     --sep: #38383a; --sep-strong: #636366; --text: #f2f2f7; --text-2: #a1a1a6; --text-3: #6c6c70;
     --blue: #4a91ff; --tile: #2a5f93; --gold: #a87d14; --red: #ff5257; --red-soft: #3a1c1f; --red-line: #6b2a30;
     --green: #35c060; --green-soft: #17301f; --green-line: #285c39; --blue-soft: #16253c; --blue-line: #284a7a;
@@ -52,7 +55,7 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --brand-navy: #f2f2f7; --brand-blue: #3fa9f5; --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: none; --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
+  --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --brand-navy: #f2f2f7; --brand-blue: #3fa9f5; --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: 0 0 0 .5px rgba(255, 255, 255, .06), 0 10px 30px rgba(0, 0, 0, .55); --card-shadow-press: 0 0 0 .5px rgba(255, 255, 255, .05), 0 2px 8px rgba(0, 0, 0, .5); --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
   --sep: #38383a; --sep-strong: #636366; --text: #f2f2f7; --text-2: #a1a1a6; --text-3: #6c6c70;
   --blue: #4a91ff; --tile: #2a5f93; --gold: #a87d14; --red: #ff5257; --red-soft: #3a1c1f; --red-line: #6b2a30;
   --green: #35c060; --green-soft: #17301f; --green-line: #285c39; --blue-soft: #16253c; --blue-line: #284a7a;
@@ -596,4 +599,40 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   body * { visibility: hidden !important; }
   .print-area, .print-area * { visibility: visible !important; }
   .print-area { position: fixed; left: 0; top: 0; border: 0; width: 62mm; padding: 2mm; }
+}
+
+/* =====================================================================
+   Schwebende Karten mit „Hineindrücken“-Effekt
+   Grundzustand: weicher, weit auslaufender Schatten (Token --card-shadow)
+   Antippen: minimal kleiner + flacherer Schatten, weich animiert (200 ms)
+   ===================================================================== */
+.widget, .quick, .card-btn, .book-card, .scan-hero, .demo-banner, .btn-outline, .outline-btn, .glass-btn,
+.ios-list, .set-group, .plain-list, .group-card, .dlist, .form-card, .mov-list, .tasks,
+.list-screen .mlist, .content > .mlist {
+  transition: transform .2s var(--press-ease), box-shadow .2s var(--press-ease), background-color .2s var(--press-ease);
+}
+/* Einzelne Kacheln & Knöpfe: ganze Karte wird hineingedrückt */
+.widget:active, .quick:active, .card-btn:active, .book-card:active, .scan-hero:active,
+.demo-banner:active, .btn-outline:active, .outline-btn:active {
+  transform: scale(.98); box-shadow: var(--card-shadow-press);
+}
+.widget.is-alert:active { box-shadow: var(--card-shadow-press), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 35%, transparent); }
+.glass-btn:active { transform: scale(.94); box-shadow: var(--card-shadow-press); }
+/* Listen-Gruppen (Menü, Verwalten, Lagerorte …): die Zeile wird gedrückt, die Gruppe senkt sich leicht */
+.ios-row, .set-row, .plain-row, .mrow, .loc-row, .drow, .file-row, .crow-link {
+  transition: transform .2s var(--press-ease), background-color .15s var(--press-ease);
+}
+.ios-row:active, .set-row:not(.static):active, .plain-row:active, .mrow:active,
+.loc-row:active, .drow:not(:disabled):active, .file-row:active {
+  transform: scale(.98); background: var(--fill); opacity: 1; border-radius: 12px;
+}
+.ios-list:has(.ios-row:active), .set-group:has(.set-row:not(.static):active), .plain-list:has(.plain-row:active),
+.list-screen .mlist:has(.mrow:active), .content > .mlist:has(.mrow:active),
+.group-card:has(.loc-row:active), .dlist:has(.drow:not(:disabled):active, .file-row:active) {
+  box-shadow: var(--card-shadow-press);
+}
+@media (prefers-reduced-motion: reduce) {
+  .widget:active, .quick:active, .card-btn:active, .book-card:active, .scan-hero:active, .demo-banner:active,
+  .btn-outline:active, .outline-btn:active, .glass-btn:active, .ios-row:active, .set-row:active, .plain-row:active,
+  .mrow:active, .loc-row:active, .drow:active, .file-row:active { transform: none; }
 }
