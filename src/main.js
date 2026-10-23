@@ -11,7 +11,10 @@ import {
 import { exportCSV, importCSV } from './csv.js';
 
 const app = document.getElementById('app');
-const LOGO = `${import.meta.env.BASE_URL}logo.png`;
+const BRAND_S = `${import.meta.env.BASE_URL}brand-s.png`;     // farbiges „S“ (transparent)
+const APP_ICON = `${import.meta.env.BASE_URL}app-icon.png`;   // App-Icon (abgerundetes Quadrat)
+const wordmark = (cls = '') => `<span class="wordmark ${cls}"><span class="wm-spare">spare</span><span class="wm-sync">Sync</span></span>`;
+const brandLogo = (cls = '') => `<span class="brand ${cls}" role="img" aria-label="spareSync"><img class="brand-s" src="${BRAND_S}" alt="" width="28" height="28">${wordmark()}</span>`;
 
 // ============================== Cache ================================
 const cache = { materials: null, groups: null, locations: null, cart: null };
@@ -189,7 +192,7 @@ async function viewFav() {
 
   const root = screen({
     header: `<header class="dash-nav">
-        <span class="brand"><img class="brand-icon" src="${LOGO}" alt="" width="34" height="34"><span class="brand-name">SpareSync</span></span>
+        ${brandLogo()}
         <span class="dash-nav-right">
           <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel">${icon(isDark() ? 'sun' : 'moon', 21)}</button>
           <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
@@ -1188,7 +1191,7 @@ async function viewSettings() {
         ${db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
       </div>
       ${db.isDemo ? `<p class="hint">Im Demo-Modus liegen alle Daten nur in diesem Browser. Für Cloud-Speicher & mehrere Geräte Supabase-Zugangsdaten in der <code>.env</code> eintragen (siehe README).</p>` : ''}
-      <p class="muted small center pad">SpareSync · v1.1</p>`,
+      <div class="menu-footer">${brandLogo('sm')}<span>Version 1.2</span></div>`,
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
@@ -1217,12 +1220,12 @@ function viewLogin(_m, _id, startPanel = 'login') {
     header: '',
     cls: 'auth-screen',
     body: `
-      <div class="auth-logo"><img src="${LOGO}" alt="SpareSync" width="96" height="96"></div>
+      <img class="auth-logo" src="${APP_ICON}" alt="spareSync" width="80" height="80">
       <div class="auth-stage" data-panel="${startPanel}">
 
         <!-- Anmelden -->
         <section class="auth-panel" data-p="login" aria-labelledby="auth-login-title">
-          <h1 id="auth-login-title" class="auth-brand">SpareSync</h1>
+          <h1 id="auth-login-title" class="auth-brand">${wordmark()}</h1>
           <p class="auth-tagline">Ersatzteile. Bestände. Im Griff.</p>
           <form id="lf" class="auth-card" novalidate>
             <label class="auth-field"><span>E-Mail</span>
@@ -1238,7 +1241,7 @@ function viewLogin(_m, _id, startPanel = 'login') {
         <section class="auth-panel" data-p="register" aria-labelledby="auth-reg-title">
           <form id="rf" class="auth-card" novalidate>
             <h2 id="auth-reg-title" class="auth-card-title">Neues Lager registrieren</h2>
-            <p class="auth-card-text">Lege deinen SpareSync-Zugang an.<br>Danach bekommst du eine E-Mail zur Bestätigung.</p>
+            <p class="auth-card-text">Lege deinen spareSync-Zugang an.<br>Danach bekommst du eine E-Mail zur Bestätigung.</p>
             <label class="auth-field"><span>Lager-Name</span>
               <input id="reg-lager" name="lager" placeholder="z. B. Hauptlager" autocomplete="organization" required></label>
             <label class="auth-field"><span>Vor- und Nachname</span>
@@ -1337,7 +1340,7 @@ function viewLogin(_m, _id, startPanel = 'login') {
       if (loggedIn) {
         invalidate();
         if (await db.ensureStarterLocation()) invalidate('locations');
-        toast('Willkommen bei SpareSync');
+        toast('Willkommen bei spareSync');
         go('/fav', true);
         return;
       }

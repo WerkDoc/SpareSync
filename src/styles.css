@@ -7,6 +7,8 @@
   --bar: rgba(242, 242, 247, 0.78);
   --card: #f7f7f7;
   --surface: #ffffff;
+  --brand-navy: #0b1735;        /* „spare“ */
+  --brand-blue: #1586dc;        /* „Sync“  */
   --primary: #1d4e89;           /* WerkDoc-Dunkelblau: primäre Aktionen */
   --primary-soft: #e4ecf7;
   --indigo: #5551c9; --indigo-soft: #ecebfa;
@@ -42,7 +44,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: none; --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
+    --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --brand-navy: #f2f2f7; --brand-blue: #3fa9f5; --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: none; --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
     --sep: #38383a; --sep-strong: #636366; --text: #f2f2f7; --text-2: #a1a1a6; --text-3: #6c6c70;
     --blue: #4a91ff; --tile: #2a5f93; --gold: #a87d14; --red: #ff5257; --red-soft: #3a1c1f; --red-line: #6b2a30;
     --green: #35c060; --green-soft: #17301f; --green-line: #285c39; --blue-soft: #16253c; --blue-line: #284a7a;
@@ -50,7 +52,7 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: none; --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
+  --bg: #000; --bg-grouped: #000; --bar: rgba(10, 10, 12, .72); --brand-navy: #f2f2f7; --brand-blue: #3fa9f5; --primary: #4f86d6; --primary-soft: #1b2a40; --indigo: #8e8bf2; --indigo-soft: #24233f; --teal: #47c3cf; --teal-soft: #13302f; --orange: #f2a14a; --orange-soft: #36260f; --gray: #a1a1a6; --gray-soft: #2c2c2e; --card-shadow: none; --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
   --sep: #38383a; --sep-strong: #636366; --text: #f2f2f7; --text-2: #a1a1a6; --text-3: #6c6c70;
   --blue: #4a91ff; --tile: #2a5f93; --gold: #a87d14; --red: #ff5257; --red-soft: #3a1c1f; --red-line: #6b2a30;
   --green: #35c060; --green-soft: #17301f; --green-line: #285c39; --blue-soft: #16253c; --blue-line: #284a7a;
@@ -132,10 +134,15 @@ code { font-size: 13px; background: var(--fill); padding: 1px 5px; border-radius
   padding: calc(8px + var(--safe-t)) 14px 8px; background: var(--bar);
   backdrop-filter: saturate(180%) blur(22px); -webkit-backdrop-filter: saturate(180%) blur(22px);
 }
-.brand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
-.brand-icon { width: 34px; height: 34px; border-radius: 9px; background: #fff; object-fit: contain; flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(17, 24, 39, .08), 0 0 0 .5px rgba(17, 24, 39, .08); }
-.brand-name { font-size: 18px; font-weight: 700; letter-spacing: -.01em; color: var(--primary); white-space: nowrap; }
+.brand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.brand-s { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; display: block; }
+.wordmark { font-weight: 800; font-size: 21px; line-height: 1; letter-spacing: -.035em; white-space: nowrap; }
+.wm-spare { color: var(--brand-navy); }
+.wm-sync { color: var(--brand-blue); }
+.brand.sm { flex: none; gap: 6px; }
+.brand.sm .brand-s { width: 20px; height: 20px; }
+.brand.sm .wordmark { font-size: 15px; }
+.menu-footer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 24px; color: var(--text-2); font-size: 12px; }
 .dash-nav-right { display: flex; gap: 8px; }
 .glass-btn {
   width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--primary);
@@ -440,9 +447,8 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 /* ---------- Login & Registrierung ---------- */
 .auth-screen { background: var(--bg-grouped); }
 .auth-screen .content { display: flex; flex-direction: column; align-items: center; padding-top: calc(36px + var(--safe-t)); padding-bottom: calc(40px + var(--safe-b)); }
-.auth-logo { width: 104px; height: 104px; border-radius: 26px; background: #fff; display: grid; place-items: center; overflow: hidden; flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(17, 24, 39, .06), 0 14px 30px -14px rgba(17, 24, 39, .28), 0 0 0 .5px rgba(17, 24, 39, .06); }
-.auth-logo img { width: 100%; height: 100%; object-fit: contain; }
+.auth-logo { width: 80px; height: 80px; border-radius: 20px; display: block; flex-shrink: 0;
+  box-shadow: 0 4px 6px -1px rgba(13, 30, 70, .10), 0 2px 4px -2px rgba(13, 30, 70, .10), 0 14px 28px -14px rgba(13, 30, 70, .35); }
 .auth-stage { position: relative; width: 100%; max-width: 420px; margin-top: 22px; }
 .auth-panel {
   position: absolute; inset: 0 0 auto 0; display: flex; flex-direction: column; align-items: stretch;
@@ -460,7 +466,8 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 @media (prefers-reduced-motion: reduce) {
   .auth-panel, .auth-stage .auth-panel { transform: none !important; transition: opacity .2s ease, visibility 0s linear .2s !important; }
 }
-.auth-brand { margin: 0; text-align: center; font-size: 30px; letter-spacing: -.01em; }
+.auth-brand { margin: 0; text-align: center; }
+.auth-brand .wordmark { font-size: 34px; }
 .auth-tagline { margin: 4px 0 20px; text-align: center; color: var(--text-2); }
 .auth-card { display: flex; flex-direction: column; gap: 14px; background: var(--surface); border-radius: 22px; padding: 24px 20px 22px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 12px 32px -14px rgba(0,0,0,.18); }
 .auth-card-title { margin: 0; text-align: center; font-size: 23px; line-height: 1.2; text-wrap: balance; }
