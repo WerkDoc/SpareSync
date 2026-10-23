@@ -110,8 +110,8 @@ const backBtn = (style = 'chev') => `<button class="icon-btn" data-act="back" ar
 function tabbar(active) {
   return `
   <nav class="tabbar">
-    <a href="#/list" class="tab ${active === 'list' ? 'on' : ''}">${icon('list', 30)}<span>Listen</span></a>
-    <a href="#/fav" class="tab fav ${active === 'fav' ? 'on' : ''}">${icon('heart', 30)}<span>Favoriten</span></a>
+    <a href="#/fav" class="tab ${active === 'fav' ? 'on' : ''}">${icon('home', 26)}<span>Übersicht</span></a>
+    <a href="#/list" class="tab ${active === 'list' ? 'on' : ''}">${icon('list', 26)}<span>Teile</span></a>
   </nav>`;
 }
 function screen({ header, body, tab = null, cls = '', footer = '' }) {
@@ -159,53 +159,106 @@ function filterMats(mats, { q = '', group = '', low = false, loc = '' } = {}) {
 // =====================================================================
 //  FAVORITEN (Startseite)
 // =====================================================================
-const TILES = [
-  { id: 'in', label: 'Material<br>Dazu buchen', icon: 'bookIn', href: '/pick?mode=in&scan=1', scan: true },
-  { id: 'new', label: 'Material<br>Erstellen', icon: 'plus', href: '/new?kind=part' },
-  { id: 'out', label: 'Material<br>Entnehmen', icon: 'bookOut', href: '/pick?mode=out&scan=1', scan: true },
-  { id: 'inv', label: 'Material<br>Inventur', icon: 'tally', href: '/inventory' },
-  { id: 'tool', label: 'Werkzeug<br>Hinzufügen', icon: 'plus', href: '/new?kind=tool', gold: true },
-  { id: 'loc', label: 'Ersatzteil Lager&shy;orte', icon: 'shelf', href: '/locations' },
-  { id: 'grp', label: 'Material<br>Gruppen', icon: 'boxes', href: '/groups' },
-  { id: 'info', label: 'Material<br>Details anzeigen', icon: 'info', href: '/pick?mode=info&scan=1', scan: true },
-  { id: 'low', label: 'Unter<br>Meldebestand', icon: 'alert', href: '/list?tab=part&low=1' },
-  { id: 'cart', label: 'Waren&shy;korb', icon: 'cart', href: '/list?tab=cart' },
+// Schnellaktionen (2-Spalten, Control-Center-Stil) und Verwaltung (iOS-Liste)
+const QUICK = [
+  { id: 'in', label: 'Dazu buchen', sub: 'Wareneingang per Scan', icon: 'bookIn', tone: 'primary', href: '/pick?mode=in&scan=1' },
+  { id: 'out', label: 'Entnehmen', sub: 'Teil für Reparatur', icon: 'bookOut', tone: 'red', href: '/pick?mode=out&scan=1' },
+  { id: 'new', label: 'Teil anlegen', sub: 'Neues Ersatzteil', icon: 'plus', tone: 'primary', href: '/new?kind=part' },
+  { id: 'inv', label: 'Inventur', sub: 'Bestand zählen', icon: 'tally', tone: 'primary', href: '/inventory' },
 ];
-let favEdit = false;
+const MANAGE = [
+  { label: 'Teil per Scan finden', icon: 'scan', tone: 'blue', href: '/pick?mode=info&scan=1' },
+  { label: 'Werkzeug hinzufügen', icon: 'wrench', tone: 'indigo', href: '/new?kind=tool' },
+  { label: 'Lagerorte', icon: 'shelf', tone: 'teal', href: '/locations', count: 'locs' },
+  { label: 'Material-Gruppen', icon: 'boxes', tone: 'orange', href: '/groups', count: 'groups' },
+];
+const isDark = () => document.documentElement.dataset.theme === 'dark'
+  || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+
 async function viewFav() {
-  const hidden = new Set(JSON.parse(localStorage.getItem('wl-hidden-tiles') || '[]'));
-  let lowCount = 0; let cartCount = 0;
-  try { lowCount = (await getMats()).filter(isLow).length; cartCount = (await getCart()).filter((c) => c.list === 'cart').length; } catch {}
-  const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-  const tiles = TILES.filter((t) => favEdit || !hidden.has(t.id)).map((t) => {
-    const badge = t.id === 'low' ? lowCount : t.id === 'cart' ? cartCount : 0;
-    return `<a class="tile ${t.gold ? 'gold' : ''} ${hidden.has(t.id) ? 'off' : ''}" href="#${t.href}" data-tile="${t.id}">
-        ${icon(t.icon, 46, 2)}
-        <span>${t.label}</span>
-        ${t.scan ? `<i class="tile-bc">${icon('barcode', 22, 1.5)}</i>` : ''}
-        ${badge && !favEdit ? `<em class="badge">${badge}</em>` : ''}
-        ${favEdit ? `<em class="tile-eye">${icon(hidden.has(t.id) ? 'eyeOff' : 'eye', 18)}</em>` : ''}
-      </a>`;
-  }).join('');
+  let mats = []; let cart = []; let locs = []; let groups = [];
+  try { [mats, cart, locs, groups] = await Promise.all([getMats(), getCart(), getLocs(), getGroups()]); } catch (e) { errToast(e); }
+  const parts = mats.filter((m) => m.kind === 'part');
+  const units = parts.reduce((a, m) => a + (m.total > 0 ? m.total : 0), 0);
+  const low = parts.filter(isLow);
+  const cartN = cart.filter((c) => c.list === 'cart').length;
+  const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 3);
+  const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const counts = { locs: locs.length, groups: groups.length };
+
   const root = screen({
-    header: navbar({
-      left: btn('menu', 'menu', 'Menü') + btn(dark ? 'sun' : 'moon', 'theme', 'Hell/Dunkel'),
-      title: 'Favoriten',
-      right: favEdit ? `<button class="text-btn strong" data-act="edit">Fertig</button>` : btn('edit', 'edit', 'Kacheln bearbeiten'),
-    }),
-    body: `${db.isDemo ? `<div class="demo-banner">${icon('database', 16)} Demo-Modus – Daten nur auf diesem Gerät. <a href="#/settings">Mehr</a></div>` : ''}
-      ${favEdit ? '<p class="hint">Tippe auf eine Kachel, um sie ein- oder auszublenden.</p>' : ''}
-      <div class="tile-grid">${tiles}</div>`,
+    header: `<header class="dash-nav">
+        <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
+        <span class="dash-nav-title">SpareSync</span>
+        <span class="dash-nav-right">
+          <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel">${icon(isDark() ? 'sun' : 'moon', 21)}</button>
+          <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
+        </span>
+      </header>`,
+    cls: 'dash-screen',
+    body: `
+      <div class="dash-head">
+        <p class="dash-date">${esc(today)}</p>
+        <h1 class="dash-title">Übersicht</h1>
+      </div>
+      ${db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
+
+      <section class="widgets" aria-label="Status">
+        <a class="widget" href="#/list?tab=part">
+          <span class="w-ic tone-primary">${icon('box', 18, 2.2)}</span>
+          <span class="w-val">${fmtQty(parts.length)}</span>
+          <span class="w-label">Teile im Lager</span>
+          <span class="w-sub">${fmtQty(units)} Stück</span>
+        </a>
+        <a class="widget ${low.length ? 'is-alert' : ''}" href="#/list?tab=part&low=1">
+          <span class="w-ic tone-red">${icon('alert', 18, 2.2)}</span>
+          <span class="w-val">${fmtQty(low.length)}</span>
+          <span class="w-label">Unter Meldebestand</span>
+          <span class="w-sub">${low.length ? 'nachbestellen' : 'alles im grünen Bereich'}</span>
+        </a>
+        <a class="widget" href="#/list?tab=cart">
+          <span class="w-ic tone-green">${icon('cart', 18, 2.2)}</span>
+          <span class="w-val">${fmtQty(cartN)}</span>
+          <span class="w-label">Im Warenkorb</span>
+          <span class="w-sub">zum Bestellen</span>
+        </a>
+      </section>
+
+      <h2 class="dash-sec">Schnellaktionen</h2>
+      <section class="quick-grid">
+        ${QUICK.map((q) => `<a class="quick" href="#${q.href}">
+            <span class="q-ic tone-${q.tone}">${icon(q.icon, 22, 2.2)}</span>
+            <span class="q-text"><b>${q.label}</b><small>${q.sub}</small></span>
+          </a>`).join('')}
+      </section>
+
+      <h2 class="dash-sec">Verwalten</h2>
+      <section class="ios-list">
+        ${MANAGE.map((m) => `<a class="ios-row" href="#${m.href}">
+            <span class="r-ic tone-${m.tone}">${icon(m.icon, 18, 2.1)}</span>
+            <span class="r-label">${m.label}</span>
+            ${m.count ? `<span class="r-meta">${counts[m.count]}</span>` : ''}${icon('chevR', 18)}
+          </a>`).join('')}
+      </section>
+
+      ${recent.length ? `<h2 class="dash-sec">Zuletzt bewegt</h2>
+      <section class="ios-list">
+        ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}">
+            ${thumb(m, 'sm')}
+            <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
+            <span class="r-qty ${isLow(m) ? 'red' : ''}">${fmtQty(m.total)}</span>
+          </a>`).join('')}
+      </section>` : ''}`,
     tab: 'fav',
   });
   on(root, 'menu', () => go('/settings'));
   on(root, 'theme', toggleTheme);
-  on(root, 'edit', () => { favEdit = !favEdit; viewFav(); });
-  if (favEdit) root.querySelectorAll('[data-tile]').forEach((a) => (a.onclick = (e) => {
-    e.preventDefault();
-    const idt = a.dataset.tile; hidden.has(idt) ? hidden.delete(idt) : hidden.add(idt);
-    localStorage.setItem('wl-hidden-tiles', JSON.stringify([...hidden])); viewFav();
-  }));
+  on(root, 'scan', async () => {
+    const code = await scan(); if (!code) return;
+    const m = await db.findByCode(code);
+    if (m) go(`/m/${m.id}`);
+    else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
+  });
 }
 
 // =====================================================================
@@ -715,11 +768,13 @@ async function infosTab(m) {
   return `
     ${gallery(m)}
     <div class="sec-title"><span>LAGERORTE</span><button class="icon-btn" data-act="add-loc" aria-label="Lagerort hinzufügen">${icon('plus', 26)}</button></div>
+    <div class="group-card">
     <div class="loc-list">
       ${m.locations.map((l) => `<button class="loc-row" data-loc="${l.location_id}"><b>${esc(l.name)}${l.location_id === m.default_location_id ? ' <small class="muted">· Standard</small>' : ''}</b><span class="${low || l.qty === 0 ? 'red' : ''}">${fmtQty(l.qty)}</span></button>`).join('')
         || '<p class="muted small">Noch kein Lagerort – oben auf + tippen.</p>'}
     </div>
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}">${fmtQty(m.total)}</span></div>
+    </div>
     ${+m.min_stock || m.max_stock ? `<p class="muted small">Meldebestand ${fmtQty(m.min_stock)}${m.max_stock ? ` · Maximalbestand ${fmtQty(m.max_stock)}` : ''}${low ? ' · <b class="red">nachbestellen!</b>' : ''}</p>` : ''}
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
@@ -1100,13 +1155,14 @@ async function viewInventory(q) {
 async function viewSettings() {
   const user = await db.getUser();
   const theme = localStorage.getItem('wl-theme') || '';
-  const item = (ic, label, act, extra = '', cls = '') => `<button class="set-row ${cls}" data-act="${act}"><i>${icon(ic, 20)}</i><span>${label}</span>${extra || icon('chevR', 18)}</button>`;
+  const TONE = { list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
+  const item = (ic, label, act, extra = '', cls = '') => `<button class="set-row ${cls}" data-act="${act}"><i class="tone-${TONE[ic] || 'primary'}">${icon(ic, 19)}</i><span>${label}</span>${extra || icon('chevR', 18)}</button>`;
   const root = screen({
     header: navbar({ left: backBtn(), title: 'Menü' }),
     cls: 'settings-screen',
     body: `
       <div class="set-group">
-        <div class="set-row static"><i class="${db.isDemo ? 'orange' : 'green'}">${icon('database', 20)}</i><span>${db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
+        <div class="set-row static"><i class="tone-${db.isDemo ? 'orange' : 'green'}">${icon('database', 19)}</i><span>${db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
       </div>
       <div class="set-group">
         ${item('list', 'Alle Ersatzteile', 'go:/list?tab=part')}
@@ -1124,7 +1180,7 @@ async function viewSettings() {
         ${item('upload', 'Materialien aus CSV importieren', 'import')}
       </div>
       <div class="set-group">
-        <label class="set-row"><i>${icon('moon', 20)}</i><span>Erscheinungsbild</span>
+        <label class="set-row"><i class="tone-indigo">${icon('moon', 19)}</i><span>Erscheinungsbild</span>
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
       </div>
       <div class="set-group">

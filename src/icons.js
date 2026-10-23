@@ -1,5 +1,6 @@
 // Schlanke Linien-Icons (SVG) – stroke = currentColor
 const P = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   filter: '<path d="M3 5h12l-4.5 6v6l-3 2v-8z"/><path d="M15 12h6M15 16h6M17 8h4"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
