@@ -43,10 +43,18 @@ applyTheme();
 // ============================== Router ===============================
 // Eigener Verlauf: "Zurück" bleibt immer innerhalb der App
 const navStack = [];
-const go = (path, replace = false) => {
+// Seitenübergang für den nächsten Routenwechsel: 'push' | 'pop' | 'fade' | 'none'
+let nextTransition = null;
+let pendingTransition = null;
+const scrollMemo = {};        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
+let currentHash = null;
+let pendingScroll = 0;
+const go = (path, replace = false, transition) => {
+  if ('#' + path !== location.hash) nextTransition = transition || (replace ? 'fade' : 'push');
   if (replace) { navStack.pop(); location.replace('#' + path); } else location.hash = path;
 };
 const back = (fallback = '/fav') => {
+  nextTransition = 'pop';
   if (navStack.length > 1) { navStack.pop(); location.replace(navStack[navStack.length - 1]); }
   else { navStack.length = 0; location.replace('#' + fallback); }
 };
@@ -64,9 +72,18 @@ let renderId = 0;
 async function route() {
   const id = ++renderId;
   const h = location.hash || '#/fav';
+  // Richtung bestimmen: explizit (go/back/Tab) oder aus dem Verlauf abgeleitet
+  let kind = nextTransition;
   if (navStack[navStack.length - 1] !== h) {
-    if (navStack[navStack.length - 2] === h) navStack.pop(); else navStack.push(h);
+    if (navStack[navStack.length - 2] === h) { navStack.pop(); kind = kind || 'pop'; }
+    else { navStack.push(h); kind = kind || 'push'; }
   }
+  nextTransition = null;
+  pendingTransition = kind || 'none';
+  if (currentHash && currentHash !== h) scrollMemo[currentHash] = window.scrollY;
+  pendingScroll = kind === 'pop' ? (scrollMemo[h] || 0) : 0;
+  if (kind === 'push') delete scrollMemo[h];
+  currentHash = h;
   const { path, q } = parseHash();
   if (!db.isDemo && path !== '/login' && path !== '/register') {
     const user = await db.getUser();
@@ -93,7 +110,7 @@ async function route() {
     const m = path.match(re);
     if (m) {
       try { await fn(m, id); } catch (e) { errToast(e); }
-      window.scrollTo(0, 0);
+      pendingTransition = null;
       return;
     }
   }
@@ -114,13 +131,83 @@ const backBtn = (style = 'chev') => `<button class="icon-btn" data-act="back" ar
 function tabbar(active) {
   return `
   <nav class="tabbar">
-    <a href="#/fav" class="tab ${active === 'fav' ? 'on' : ''}">${icon('home', 26)}<span>Übersicht</span></a>
-    <a href="#/list" class="tab ${active === 'list' ? 'on' : ''}">${icon('list', 26)}<span>Teile</span></a>
+    <a href="#/fav" data-tablink class="tab ${active === 'fav' ? 'on' : ''}">${icon('home', 26)}<span>Übersicht</span></a>
+    <a href="#/list" data-tablink class="tab ${active === 'list' ? 'on' : ''}">${icon('list', 26)}<span>Teile</span></a>
   </nav>`;
 }
+// ======================= iOS-Seitenübergänge ========================
+// push: neue Seite gleitet von rechts herein, alte weicht leicht nach links (Parallaxe)
+// pop:  aktuelle Seite gleitet nach rechts hinaus, vorherige kommt von links zurück
+// fade: schnelles Überblenden (Tab-Leiste, Anmeldung)
+const IOS_EASE = 'cubic-bezier(.32, .72, 0, 1)';   // iOS-typisches, weiches ease-out
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let finishRunning = null;
+
+function freeze(el, scrollY, z) {
+  el.classList.add('screen-anim');
+  el.style.zIndex = z;
+  el.style.setProperty('--fy', scrollY + 'px');   // Scroll-Position beibehalten (Inhalt verschoben, Kopf/Leisten bleiben fest)
+}
+function unfreeze(el) {
+  el.classList.remove('screen-anim');
+  el.style.zIndex = ''; el.style.transform = ''; el.style.opacity = ''; el.style.removeProperty('--fy');
+}
+function swapScreen(next, kind) {
+  finishRunning?.();                       // laufende Animation sofort abschließen
+  const prev = app.querySelector('.screen');
+  const animate = prev && kind && kind !== 'none' && !reduceMotion.matches && next.animate;
+  const target = kind ? pendingScroll : null; pendingScroll = 0;
+  if (!animate) {
+    app.replaceChildren(next);
+    if (kind) requestAnimationFrame(() => window.scrollTo(0, target || 0));
+    return;
+  }
+  const y = window.scrollY;
+  if (kind === 'pop') app.insertBefore(next, prev); else app.appendChild(next);
+  freeze(prev, y, kind === 'pop' ? 2 : 1);
+  freeze(next, target || 0, kind === 'pop' ? 1 : 2);
+  window.scrollTo(0, 0);
+
+  const dur = kind === 'fade' ? 200 : 360;
+  const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : IOS_EASE, fill: 'both' };
+  let anims;
+  if (kind === 'push') {
+    next.classList.add('screen-edge');
+    anims = [
+      next.animate([{ transform: 'translate3d(100%,0,0)' }, { transform: 'translate3d(0,0,0)' }], opts),
+      prev.animate([{ transform: 'translate3d(0,0,0)', opacity: 1 }, { transform: 'translate3d(-28%,0,0)', opacity: 0.72 }], opts),
+    ];
+  } else if (kind === 'pop') {
+    prev.classList.add('screen-edge');
+    anims = [
+      prev.animate([{ transform: 'translate3d(0,0,0)' }, { transform: 'translate3d(100%,0,0)' }], opts),
+      next.animate([{ transform: 'translate3d(-28%,0,0)', opacity: 0.72 }, { transform: 'translate3d(0,0,0)', opacity: 1 }], opts),
+    ];
+  } else {
+    anims = [
+      next.animate([{ opacity: 0 }, { opacity: 1 }], opts),
+      prev.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, duration: dur * 0.8 }),
+    ];
+  }
+  let done = false;
+  finishRunning = () => {
+    if (done) return; done = true; finishRunning = null;
+    anims.forEach((a) => { try { a.cancel(); } catch {} });
+    prev.remove();
+    next.classList.remove('screen-edge');
+    unfreeze(next);
+    if (target) window.scrollTo(0, target);
+  };
+  Promise.all(anims.map((a) => a.finished)).then(() => finishRunning?.()).catch(() => {});
+}
+
 function screen({ header, body, tab = null, cls = '', footer = '' }) {
-  app.innerHTML = `<div class="screen ${cls} ${tab ? 'has-tabbar' : ''} ${footer ? 'has-footer' : ''}">${header}<main class="content">${body}</main>${footer}${tab ? tabbar(tab) : ''}</div>`;
-  const root = app.firstElementChild;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = `<div class="screen ${cls} ${tab ? 'has-tabbar' : ''} ${footer ? 'has-footer' : ''}">${header}<main class="content">${body}</main>${footer}${tab ? tabbar(tab) : ''}</div>`;
+  const root = tmp.firstElementChild;
+  const kind = pendingTransition; pendingTransition = null;   // nur bei echtem Seitenwechsel gesetzt
+  swapScreen(root, kind);
+  root.querySelectorAll('[data-tablink]').forEach((a) => a.addEventListener('click', () => { if (a.getAttribute('href') !== location.hash) nextTransition = 'fade'; }));
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
   return root;
 }

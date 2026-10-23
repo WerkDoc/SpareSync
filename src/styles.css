@@ -90,6 +90,15 @@ code { font-size: 13px; background: var(--fill); padding: 1px 5px; border-radius
 
 /* ---------- Grundgerüst ---------- */
 #app { min-height: 100dvh; }
+/* Während eines Seitenübergangs liegen alte und neue Seite übereinander im Vollbild */
+.screen-anim {
+  position: fixed !important; inset: 0; height: 100%; overflow: hidden; background: var(--bg-grouped);
+  will-change: transform, opacity; backface-visibility: hidden; contain: paint;
+}
+.screen-anim.form-screen, .screen-anim.large-title-screen { background: var(--surface); }
+.screen-anim.auth-screen, .screen-anim.settings-screen { background: var(--bg-grouped); }
+.screen-anim > .content { transform: translate3d(0, calc(var(--fy, 0px) * -1), 0); }
+.screen-edge { box-shadow: -10px 0 30px rgba(15, 23, 42, .12); }
 .screen { min-height: 100dvh; display: flex; flex-direction: column; max-width: 760px; margin: 0 auto; }
 .content { flex: 1; padding: 14px 16px 24px; }
 .has-tabbar .content { padding-bottom: calc(96px + var(--safe-b)); }
