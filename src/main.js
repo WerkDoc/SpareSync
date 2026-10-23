@@ -13,8 +13,8 @@ import { exportCSV, importCSV } from './csv.js';
 const app = document.getElementById('app');
 const BRAND_S = `${import.meta.env.BASE_URL}brand-s.png`;     // farbiges „S“ (transparent)
 const APP_ICON = `${import.meta.env.BASE_URL}app-icon.png`;   // App-Icon (abgerundetes Quadrat)
-const wordmark = (cls = '') => `<span class="wordmark ${cls}"><span class="wm-spare">spare</span><span class="wm-sync">Sync</span></span>`;
-const brandLogo = (cls = '') => `<span class="brand ${cls}" role="img" aria-label="spareSync"><img class="brand-s" src="${BRAND_S}" alt="" width="28" height="28">${wordmark()}</span>`;
+// Logo: das farbige „S“-Icon IST der erste Buchstabe, danach direkt „pare“ (Navy) + „Sync“ (Blau)
+const brandLogo = (cls = '') => `<span class="brand ${cls}" role="img" aria-label="SpareSync"><img class="brand-s" src="${BRAND_S}" alt="" width="27" height="30"><span class="wordmark" aria-hidden="true"><span class="wm-spare">pare</span><span class="wm-sync">Sync</span></span></span>`;
 
 // ============================== Cache ================================
 const cache = { materials: null, groups: null, locations: null, cart: null };
@@ -1220,12 +1220,12 @@ function viewLogin(_m, _id, startPanel = 'login') {
     header: '',
     cls: 'auth-screen',
     body: `
-      <img class="auth-logo" src="${APP_ICON}" alt="spareSync" width="80" height="80">
+      <img class="auth-logo" src="${APP_ICON}" alt="SpareSync" width="80" height="80">
       <div class="auth-stage" data-panel="${startPanel}">
 
         <!-- Anmelden -->
         <section class="auth-panel" data-p="login" aria-labelledby="auth-login-title">
-          <h1 id="auth-login-title" class="auth-brand">${wordmark()}</h1>
+          <h1 id="auth-login-title" class="auth-brand">${brandLogo('lg')}</h1>
           <p class="auth-tagline">Ersatzteile. Bestände. Im Griff.</p>
           <form id="lf" class="auth-card" novalidate>
             <label class="auth-field"><span>E-Mail</span>
@@ -1241,7 +1241,7 @@ function viewLogin(_m, _id, startPanel = 'login') {
         <section class="auth-panel" data-p="register" aria-labelledby="auth-reg-title">
           <form id="rf" class="auth-card" novalidate>
             <h2 id="auth-reg-title" class="auth-card-title">Neues Lager registrieren</h2>
-            <p class="auth-card-text">Lege deinen spareSync-Zugang an.<br>Danach bekommst du eine E-Mail zur Bestätigung.</p>
+            <p class="auth-card-text">Lege deinen SpareSync-Zugang an.<br>Danach bekommst du eine E-Mail zur Bestätigung.</p>
             <label class="auth-field"><span>Lager-Name</span>
               <input id="reg-lager" name="lager" placeholder="z. B. Hauptlager" autocomplete="organization" required></label>
             <label class="auth-field"><span>Vor- und Nachname</span>
@@ -1340,7 +1340,7 @@ function viewLogin(_m, _id, startPanel = 'login') {
       if (loggedIn) {
         invalidate();
         if (await db.ensureStarterLocation()) invalidate('locations');
-        toast('Willkommen bei spareSync');
+        toast('Willkommen bei SpareSync');
         go('/fav', true);
         return;
       }

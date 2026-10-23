@@ -134,14 +134,14 @@ code { font-size: 13px; background: var(--fill); padding: 1px 5px; border-radius
   padding: calc(8px + var(--safe-t)) 14px 8px; background: var(--bar);
   backdrop-filter: saturate(180%) blur(22px); -webkit-backdrop-filter: saturate(180%) blur(22px);
 }
-.brand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
-.brand-s { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; display: block; }
-.wordmark { font-weight: 800; font-size: 21px; line-height: 1; letter-spacing: -.035em; white-space: nowrap; }
+.brand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0; --wm: 21px; }
+.brand-s { height: calc(var(--wm) * 1.42); width: auto; object-fit: contain; flex-shrink: 0; display: block;
+  margin-right: calc(var(--wm) * 0.02); transform: translateY(calc(var(--wm) * 0.06)); }
+.wordmark { font-weight: 800; font-size: var(--wm); line-height: 1; letter-spacing: -.035em; white-space: nowrap; }
 .wm-spare { color: var(--brand-navy); }
 .wm-sync { color: var(--brand-blue); }
-.brand.sm { flex: none; gap: 6px; }
-.brand.sm .brand-s { width: 20px; height: 20px; }
-.brand.sm .wordmark { font-size: 15px; }
+.brand.sm { flex: none; --wm: 15px; }
+.brand.lg { flex: none; justify-content: center; --wm: 32px; }
 .menu-footer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 24px; color: var(--text-2); font-size: 12px; }
 .dash-nav-right { display: flex; gap: 8px; }
 .glass-btn {
@@ -466,8 +466,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 @media (prefers-reduced-motion: reduce) {
   .auth-panel, .auth-stage .auth-panel { transform: none !important; transition: opacity .2s ease, visibility 0s linear .2s !important; }
 }
-.auth-brand { margin: 0; text-align: center; }
-.auth-brand .wordmark { font-size: 34px; }
+.auth-brand { margin: 0; display: flex; justify-content: center; }
 .auth-tagline { margin: 4px 0 20px; text-align: center; color: var(--text-2); }
 .auth-card { display: flex; flex-direction: column; gap: 14px; background: var(--surface); border-radius: 22px; padding: 24px 20px 22px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 12px 32px -14px rgba(0,0,0,.18); }
 .auth-card-title { margin: 0; text-align: center; font-size: 23px; line-height: 1.2; text-wrap: balance; }
