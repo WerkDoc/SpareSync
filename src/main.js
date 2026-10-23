@@ -168,7 +168,7 @@ function swapScreen(next, kind) {
   freeze(next, target || 0, kind === 'pop' ? 1 : 2);
   window.scrollTo(0, 0);
 
-  const dur = kind === 'fade' ? 360 : 360;
+  const dur = kind === 'fade' ? 200 : 480;
   const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : IOS_EASE, fill: 'both' };
   let anims;
   if (kind === 'push') {
