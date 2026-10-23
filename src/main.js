@@ -1361,7 +1361,20 @@ function viewLogin(_m, _id, startPanel = 'login') {
 
 // ============================== Start ================================
 if (!db.isDemo) db.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' || ev === 'SIGNED_IN') { invalidate(); } });
-route();
+
+// Splashscreen (steht in index.html): bleibt mindestens 2,5 s, blendet dann weich aus und wird entfernt
+const SPLASH_MIN = matchMedia('(prefers-reduced-motion: reduce)').matches ? 600 : 2500;
+window.hideSplash = () => {
+  const sp = document.getElementById('splash');
+  if (!sp || sp.classList.contains('out')) return;
+  sp.classList.add('out');
+  sp.addEventListener('transitionend', () => sp.remove(), { once: true });
+  setTimeout(() => sp.remove(), 800);
+};
+route().finally(() => {
+  const waited = Date.now() - (window.__splashStart || Date.now());
+  setTimeout(window.hideSplash, Math.max(0, SPLASH_MIN - waited));
+});
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {}));
