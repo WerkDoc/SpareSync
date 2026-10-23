@@ -31,7 +31,7 @@ function applyTheme() {
   const t = localStorage.getItem('wl-theme') || '';
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   const dark = t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#000000' : '#f6f6f6');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#000000' : '#f2f2f7');
 }
 function toggleTheme() {
   const dark = document.documentElement.dataset.theme === 'dark'
@@ -168,7 +168,7 @@ function swapScreen(next, kind) {
   freeze(next, target || 0, kind === 'pop' ? 1 : 2);
   window.scrollTo(0, 0);
 
-  const dur = kind === 'fade' ? 350 : 480;
+  const dur = kind === 'fade' ? 200 : 360;
   const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : IOS_EASE, fill: 'both' };
   let anims;
   if (kind === 'push') {
@@ -971,6 +971,7 @@ async function viewForm(id, q) {
     cls: 'form-screen',
     body: `
     <form id="mf" autocomplete="off">
+      <div class="form-card">
       <label class="field"><small>Name</small><input name="name" placeholder="Name" value="${v('name', q.name || '')}" required></label>
       <div class="field with-btns"><label><small>Barcode</small><input name="barcode" placeholder="Barcode" value="${v('barcode', q.barcode || '')}"></label>
         <button type="button" class="dark-btn" data-act="scan-bc" aria-label="Barcode scannen">${icon('scan', 30, 1.8)}</button></div>
@@ -981,8 +982,10 @@ async function viewForm(id, q) {
       <label class="field no-line"><small>Meldebestand</small><input name="min_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Meldebestand" value="${m && +m.min_stock ? v('min_stock') : ''}"></label>
       <label class="field"><small>Maximalbestand</small><input name="max_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Maximalbestand" value="${v('max_stock')}"></label>
       <label class="field switch-field"><span>Alle Felder anzeigen</span><input type="checkbox" class="switch" data-f="all" ${showAll ? 'checked' : ''}></label>
+      </div>
 
       <div class="more-fields ${showAll ? '' : 'hidden'}">
+        <div class="form-card">
         <label class="field"><small>Artikelnummer</small><input name="number" type="number" inputmode="numeric" placeholder="automatisch" value="${v('number')}"></label>
         <div class="field with-btns"><label><small>${kind === 'tool' ? 'Gruppe' : 'Ersatzteil Gruppe'}</small><input readonly data-f="grp" placeholder="Keine Gruppe" value="${esc(groups.find((g) => g.id === st.group_id)?.name || '')}"></label>
           <button type="button" class="dark-btn sm" data-act="pick-grp" aria-label="Gruppe wählen">${icon('list', 26)}</button></div>
@@ -992,8 +995,9 @@ async function viewForm(id, q) {
         <label class="field"><small>Einkaufspreis (€)</small><input name="purchase_price" type="number" inputmode="decimal" step="0.01" placeholder="0,00" value="${v('purchase_price')}"></label>
         <label class="field"><small>Lieferant</small><input name="supplier" placeholder="z.B. Partsdepot" value="${v('supplier')}"></label>
         <label class="field"><small>Notizen</small><textarea name="notes" rows="2" placeholder="Notizen">${v('notes')}</textarea></label>
+        </div>
         <div class="sec-title gray"><span>EIGENE FELDER</span><button type="button" class="icon-btn" data-act="cf-add">${icon('plus', 24)}</button></div>
-        <div id="cf"></div>
+        <div id="cf" class="form-card"></div>
       </div>
 
       <div class="pad-x">
