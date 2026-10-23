@@ -636,3 +636,15 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
   .btn-outline:active, .outline-btn:active, .glass-btn:active, .ios-row:active, .set-row:active, .plain-row:active,
   .mrow:active, .loc-row:active, .drow:active, .file-row:active { transform: none; }
 }
+
+/* ---------- Eigene Felder ---------- */
+.large-title-screen .hint { margin: -6px 6px 16px; }
+.field-row { gap: 12px; }
+.fr-main { flex: 1; min-width: 0; display: flex !important; flex-direction: column; align-items: flex-start !important; gap: 2px !important; }
+.fr-main b { font-weight: 500; font-size: 17px; }
+.fr-main small { color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block !important; }
+.chip-s { flex-shrink: 0; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
+.fd-label { margin: 18px 4px 8px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.fd-scope button { font-size: 15px; height: 38px; }
+.setup-note { display: flex; gap: 10px; align-items: flex-start; padding: 14px; border-radius: var(--r); background: var(--orange-soft); color: var(--text); font-size: 14px; line-height: 1.45; }
+.setup-note .ic { color: var(--orange); margin-top: 1px; }

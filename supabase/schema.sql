@@ -245,3 +245,22 @@ create policy "lager update own" on storage.objects for update to authenticated
   using (bucket_id = 'lager-files' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "lager delete own" on storage.objects for delete to authenticated
   using (bucket_id = 'lager-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- =====================================================================
+--  Eigene Felder (Vorlagen): erscheinen beim Anlegen von Material/Werkzeug
+-- =====================================================================
+create table if not exists public.lager_field_defs (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null default auth.uid() references auth.users on delete cascade,
+  name        text not null,
+  type        text not null default 'text' check (type in ('text','number','select','bool','date')),
+  options     text[] not null default '{}',
+  applies_to  text not null default 'both' check (applies_to in ('part','tool','both')),
+  position    integer not null default 0,
+  created_at  timestamptz not null default now(),
+  unique (owner_id, name)
+);
+alter table public.lager_field_defs enable row level security;
+drop policy if exists "own rows" on public.lager_field_defs;
+create policy "own rows" on public.lager_field_defs for all to authenticated
+  using (owner_id = auth.uid()) with check (owner_id = auth.uid());

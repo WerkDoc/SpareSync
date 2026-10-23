@@ -15,7 +15,7 @@ export const isDemo = !sb;
 const BUCKET = 'lager-files';
 const T = {
   loc: 'lager_locations', grp: 'lager_groups', mat: 'lager_materials', stock: 'lager_stock',
-  mov: 'lager_movements', task: 'lager_tasks', file: 'lager_files', cart: 'lager_cart',
+  mov: 'lager_movements', task: 'lager_tasks', file: 'lager_files', cart: 'lager_cart', fdef: 'lager_field_defs',
 };
 
 const fail = (error) => { if (error) throw new Error(error.message || String(error)); };
@@ -39,7 +39,7 @@ function seed() {
     'Apple Watch Wärme Aufkleber', 'Werkzeug'];
   const groups = groupNames.map((name) => ({ id: uid(), name, created_at: now() }));
   const g = (n) => groups.find((x) => x.name === n).id;
-  const s = { locations: locs, groups, materials: [], stock: [], movements: [], tasks: [], files: [], cart: [] };
+  const s = { locations: locs, groups, materials: [], stock: [], movements: [], tasks: [], files: [], cart: [], fieldDefs: seedFieldDefs() };
   const add = (number, name, group, qty, min = 0, extra = {}) => {
     const id = uid();
     s.materials.push({
@@ -68,10 +68,14 @@ function seed() {
   tool(501, 'Heißluftstation'); tool(502, 'Lötstation'); tool(503, 'Stereo-Mikroskop'); tool(504, 'Pinzetten-Set ESD');
   return s;
 }
+function seedFieldDefs() {
+  return [{ id: uid(), name: 'Chargennummer Platz', type: 'text', options: [], applies_to: 'both', position: 0, created_at: now() }];
+}
 function load() {
   if (!store) {
     try { store = JSON.parse(localStorage.getItem(LS) || 'null'); } catch { store = null; }
     if (!store) { store = seed(); save(); }
+    if (!store.fieldDefs) { store.fieldDefs = seedFieldDefs(); save(); }   // ältere Demo-Daten nachrüsten
   }
   return store;
 }
@@ -450,4 +454,72 @@ export async function updateCart(id, qty) {
 export async function deleteCart(id) {
   if (isDemo) { const s = load(); s.cart = s.cart.filter((c) => c.id !== id); save(); return; }
   const { error } = await sb.from(T.cart).delete().eq('id', id); fail(error);
+}
+
+// =====================================================================
+//  EIGENE FELDER (Vorlagen für Ersatzteile / Werkzeuge)
+//  type: 'text' | 'number' | 'select' | 'bool' | 'date'
+//  applies_to: 'part' | 'tool' | 'both'
+// =====================================================================
+export const FIELD_TYPES = { text: 'Text', number: 'Zahl', select: 'Auswahl', bool: 'Ja / Nein', date: 'Datum' };
+export const FIELD_SCOPES = { both: 'Material & Werkzeug', part: 'Material', tool: 'Werkzeug' };
+const cleanDef = (d) => ({
+  name: String(d.name || '').trim(),
+  type: FIELD_TYPES[d.type] ? d.type : 'text',
+  options: d.type === 'select' ? (d.options || []).map((o) => String(o).trim()).filter(Boolean) : [],
+  applies_to: FIELD_SCOPES[d.applies_to] ? d.applies_to : 'both',
+});
+const byPos = (a, b) => (a.position ?? 0) - (b.position ?? 0) || (a.created_at || '').localeCompare(b.created_at || '');
+
+export async function listFieldDefs() {
+  if (isDemo) return [...load().fieldDefs].sort(byPos);
+  const { data, error } = await sb.from(T.fdef).select('*').order('position').order('created_at');
+  if (error && /lager_field_defs/.test(error.message)) {
+    throw new Error('Eigene Felder sind in Supabase noch nicht eingerichtet – bitte supabase/migration-eigene-felder.sql im SQL Editor ausführen.');
+  }
+  fail(error); return data;
+}
+export async function saveFieldDef(id, data) {
+  const d = cleanDef(data);
+  if (!d.name) throw new Error('Bitte einen Feldnamen eingeben');
+  if (d.type === 'select' && !d.options.length) throw new Error('Bitte mindestens eine Auswahl-Option angeben');
+  const all = await listFieldDefs();
+  if (all.some((f) => f.id !== id && f.name.toLowerCase() === d.name.toLowerCase())) throw new Error(`Ein Feld „${d.name}“ gibt es schon`);
+  const oldName = id ? all.find((f) => f.id === id)?.name : null;   // vor dem Speichern merken
+  if (isDemo) {
+    const s = load();
+    if (id) Object.assign(s.fieldDefs.find((f) => f.id === id), d);
+    else s.fieldDefs.push({ id: uid(), ...d, position: all.length, created_at: now() });
+    save();
+  } else if (id) {
+    const { error } = await sb.from(T.fdef).update(d).eq('id', id); fail(error);
+  } else {
+    const { error } = await sb.from(T.fdef).insert({ ...d, position: all.length }); fail(error);
+  }
+  // Umbenannt? Vorhandene Werte in allen Materialien mitnehmen
+  if (oldName && oldName !== d.name) await renameCustomKey(oldName, d.name);
+}
+export async function deleteFieldDef(id) {
+  if (isDemo) { const s = load(); s.fieldDefs = s.fieldDefs.filter((f) => f.id !== id); save(); return; }
+  const { error } = await sb.from(T.fdef).delete().eq('id', id); fail(error);
+}
+export async function moveFieldDef(id, dir) {
+  const all = await listFieldDefs();
+  const i = all.findIndex((f) => f.id === id); const j = i + dir;
+  if (i < 0 || j < 0 || j >= all.length) return;
+  [all[i], all[j]] = [all[j], all[i]];
+  if (isDemo) { const s = load(); all.forEach((f, k) => { s.fieldDefs.find((x) => x.id === f.id).position = k; }); save(); return; }
+  for (let k = 0; k < all.length; k++) {
+    const { error } = await sb.from(T.fdef).update({ position: k }).eq('id', all[k].id); fail(error);
+  }
+}
+async function renameCustomKey(oldKey, newKey) {
+  const mats = await listMaterials();
+  for (const m of mats) {
+    const cf = m.custom_fields || {};
+    if (!(oldKey in cf)) continue;
+    const next = {};
+    Object.entries(cf).forEach(([k, v]) => { next[k === oldKey ? newKey : k] = v; });
+    await saveMaterial(m.id, { custom_fields: next });
+  }
 }

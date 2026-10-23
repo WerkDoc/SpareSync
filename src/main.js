@@ -17,11 +17,27 @@ const APP_ICON = `${import.meta.env.BASE_URL}app-icon.png`;   // App-Icon (abger
 const brandLogo = (cls = '') => `<span class="brand ${cls}" role="img" aria-label="SpareSync"><img class="brand-s" src="${BRAND_S}" alt="" width="27" height="30"><span class="wordmark" aria-hidden="true"><span class="wm-spare">pare</span><span class="wm-sync">Sync</span></span></span>`;
 
 // ============================== Cache ================================
-const cache = { materials: null, groups: null, locations: null, cart: null };
+const cache = { materials: null, groups: null, locations: null, cart: null, fields: null };
 const getMats = async () => (cache.materials ??= await db.listMaterials());
 const getGroups = async () => (cache.groups ??= await db.listGroups());
 const getLocs = async () => (cache.locations ??= await db.listLocations());
 const getCart = async () => (cache.cart ??= await db.listCart());
+let fieldWarned = false;
+/** Eigene-Felder-Vorlagen; fehlt die Tabelle in Supabase noch, läuft die App ohne sie weiter */
+const getFields = async () => {
+  if (cache.fields) return cache.fields;
+  try { cache.fields = await db.listFieldDefs(); } catch (e) { if (!fieldWarned) { fieldWarned = true; errToast(e); } return []; }
+  return cache.fields;
+};
+const fieldsFor = (defs, kind) => defs.filter((f) => f.applies_to === 'both' || f.applies_to === kind);
+/** Anzeige eines Feldwerts je nach Typ */
+function fieldDisplay(def, v) {
+  if (def?.type === 'bool') return v === true || v === 'true' || v === 'Ja' ? 'Ja' : 'Nein';
+  if (v === undefined || v === null || v === '') return '—';
+  if (def?.type === 'date') { const d = new Date(v); return Number.isNaN(+d) ? String(v) : d.toLocaleDateString('de-DE'); }
+  if (def?.type === 'number') return fmtQty(v);
+  return String(v);
+}
 const invalidate = (...keys) => (keys.length ? keys : Object.keys(cache)).forEach((k) => (cache[k] = null));
 
 const isLow = (m) => m.kind === 'part' && +m.min_stock > 0 && m.total <= +m.min_stock;
@@ -103,6 +119,7 @@ async function route() {
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
+    [/^\/fields$/, () => viewFields()],
     [/^\/login$/, () => viewLogin()],
     [/^\/register$/, () => viewLogin(null, null, 'register')],
   ];
@@ -679,7 +696,8 @@ async function viewMaterial(id, q) {
   let body = '';
   if (tab === 'infos') body = await infosTab(m);
   if (tab === 'buchung') body = await bookingTab(m);
-  if (tab === 'details') body = detailsTab(m);
+  const defs = tab === 'details' ? fieldsFor(await getFields(), m.kind) : [];
+  if (tab === 'details') body = detailsTab(m, defs);
 
   const root = screen({
     header: navbar({ left: backBtn('arrow'), title: `<div class="two-line">${m.number}: ${esc(m.name)}</div>`, cls: 'detail-nav' }),
@@ -793,8 +811,24 @@ async function viewMaterial(id, q) {
         }
         if (k.startsWith('cf:')) {
           const key = k.slice(3);
-          const v = await prompt({ title: key, value: m.custom_fields?.[key] ?? '' });
-          if (v !== null) { await db.saveMaterial(id, { custom_fields: { ...m.custom_fields, [key]: v } }); reload(); }
+          const def = defs.find((d) => d.name === key);
+          const cur = m.custom_fields?.[key];
+          const put = async (val) => {
+            const next = { ...m.custom_fields };
+            if (val === '' || val === null || val === false) delete next[key]; else next[key] = val;
+            await db.saveMaterial(id, { custom_fields: next }); reload();
+          };
+          if (def?.type === 'bool') return put(!(cur === true || cur === 'true' || cur === 'Ja'));
+          if (def?.type === 'select') {
+            const v = await actionSheet(key, [...def.options.map((o) => ({ label: o, value: o, icon: o === cur ? 'check' : undefined })), { label: 'Leeren', value: '__clear', danger: true }]);
+            if (v) await put(v === '__clear' ? '' : v);
+            return;
+          }
+          const type = def?.type === 'number' ? 'number' : def?.type === 'date' ? 'date' : 'text';
+          let v = await prompt({ title: key, value: cur ?? '', type });
+          if (v === null) return;
+          if (type === 'number' && v !== '') v = v.replace(',', '.');
+          await put(v);
           return;
         }
         const labels = { unit: 'Einheit', sale_price: 'Verkaufspreis (€)', purchase_price: 'Einkaufspreis (€)', min_stock: 'Meldebestand', max_stock: 'Maximalbestand', supplier: 'Lieferant', notes: 'Notizen' };
@@ -905,7 +939,7 @@ async function bookingTab(m) {
     ${mov.length ? `<div class="mov-list">${mov.map(movementRow).join('')}</div>` : ''}`;
 }
 
-function detailsTab(m) {
+function detailsTab(m, defs = []) {
   const row = (label, value, quick, extra = '') => `
     <button class="drow" ${quick ? `data-quick="${quick}"` : 'disabled'}>
       <div><small>${label}</small><div>${value}</div></div>${extra}${quick ? icon('chevR', 22) : ''}
@@ -934,7 +968,15 @@ function detailsTab(m) {
     </div>
     <div class="sec-title gray"><span>EIGENE FELDER</span><button class="icon-btn" data-act="cf-add" aria-label="Feld hinzufügen">${icon('plus', 24)}</button></div>
     <div class="dlist">
-      ${Object.entries(m.custom_fields || {}).map(([k, v]) => row(esc(k), esc(v || '—'), `cf:${esc(k)}`)).join('') || '<p class="muted small pad-s">Keine eigenen Felder</p>'}
+      ${(() => {
+        const cf = m.custom_fields || {};
+        const names = new Set(defs.map((d) => d.name));
+        const rows = [
+          ...defs.map((d) => row(esc(d.name), esc(fieldDisplay(d, cf[d.name])), `cf:${esc(d.name)}`)),
+          ...Object.entries(cf).filter(([k]) => !names.has(k)).map(([k, v]) => row(esc(k), esc(v === '' || v == null ? '—' : String(v)), `cf:${esc(k)}`)),
+        ];
+        return rows.join('') || '<p class="muted small pad-s">Keine eigenen Felder – unter Menü → Eigene Felder anlegen</p>';
+      })()}
     </div>
     <button class="btn-outline full mt" data-act="edit">Material bearbeiten</button>
     <button class="btn-plain danger-text full" data-act="delete">${icon('trash', 18)} Material löschen</button>`;
@@ -955,14 +997,23 @@ async function viewHistory(id) {
 async function viewForm(id, q) {
   const m = id ? await db.getMaterial(id) : null;
   const kind = m?.kind || q.kind || 'part';
-  const [locs, groups] = await Promise.all([getLocs(), getGroups()]);
+  const [locs, groups, allDefs] = await Promise.all([getLocs(), getGroups(), getFields()]);
   const showAll = localStorage.getItem('wl-form-all') === '1';
   const st = {
     location_id: m ? m.default_location_id : (localStorage.getItem('wl-last-loc') || locs[0]?.id || null),
     group_id: m ? m.group_id : (q.group || (kind === 'tool' ? groups.find((g) => g.name === 'Werkzeug')?.id : null) || null),
-    images: [], custom: Object.entries(m?.custom_fields || (kind === 'part' ? { 'Chargennummer Platz': '' } : {})),
+    images: [],
+    defs: fieldsFor(allDefs, kind),
+    defVals: {},
+    custom: [],
   };
   if (st.location_id && !locs.some((l) => l.id === st.location_id)) st.location_id = null;
+  {
+    const cf = m?.custom_fields || {};
+    const names = new Set(st.defs.map((d) => d.name));
+    st.defs.forEach((d) => { st.defVals[d.name] = d.type === 'bool' ? (cf[d.name] === true || cf[d.name] === 'true' || cf[d.name] === 'Ja') : (cf[d.name] ?? ''); });
+    st.custom = Object.entries(cf).filter(([k]) => !names.has(k)).map(([k, v]) => [k, v == null ? '' : String(v)]);
+  }
   const title = id ? (kind === 'tool' ? 'Werkzeug bearbeiten' : 'Ersatzteil bearbeiten') : (kind === 'tool' ? 'Werkzeug anlegen' : 'Ersatzteil anlegen');
   const v = (k, d = '') => esc(m?.[k] ?? d);
 
@@ -981,6 +1032,7 @@ async function viewForm(id, q) {
       ${id ? '' : `<label class="field"><small>Aktueller Bestand</small><input name="qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Aktueller Bestand"></label>`}
       <label class="field no-line"><small>Meldebestand</small><input name="min_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Meldebestand" value="${m && +m.min_stock ? v('min_stock') : ''}"></label>
       <label class="field"><small>Maximalbestand</small><input name="max_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Maximalbestand" value="${v('max_stock')}"></label>
+      <div id="deff"></div>
       <label class="field switch-field"><span>Alle Felder anzeigen</span><input type="checkbox" class="switch" data-f="all" ${showAll ? 'checked' : ''}></label>
       </div>
 
@@ -996,7 +1048,7 @@ async function viewForm(id, q) {
         <label class="field"><small>Lieferant</small><input name="supplier" placeholder="z.B. Partsdepot" value="${v('supplier')}"></label>
         <label class="field"><small>Notizen</small><textarea name="notes" rows="2" placeholder="Notizen">${v('notes')}</textarea></label>
         </div>
-        <div class="sec-title gray"><span>EIGENE FELDER</span><button type="button" class="icon-btn" data-act="cf-add">${icon('plus', 24)}</button></div>
+        <div class="sec-title gray"><span>WEITERE FELDER</span><button type="button" class="icon-btn" data-act="cf-add" aria-label="Feld nur für diesen Artikel">${icon('plus', 24)}</button></div>
         <div id="cf" class="form-card"></div>
       </div>
 
@@ -1010,6 +1062,25 @@ async function viewForm(id, q) {
   });
 
   const form = root.querySelector('#mf');
+  // Felder aus Menü → Eigene Felder, passend zum Typ
+  const renderDefs = () => {
+    root.querySelector('#deff').innerHTML = st.defs.map((d, i) => {
+      const v = st.defVals[d.name];
+      if (d.type === 'bool') return `<label class="field switch-field"><span>${esc(d.name)}</span><input type="checkbox" class="switch" data-def="${i}" ${v ? 'checked' : ''}></label>`;
+      let inp;
+      if (d.type === 'select') inp = `<select data-def="${i}"><option value="">Bitte wählen</option>${d.options.map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+      else if (d.type === 'number') inp = `<input data-def="${i}" type="number" inputmode="decimal" step="any" placeholder="${esc(d.name)}" value="${esc(v)}">`;
+      else if (d.type === 'date') inp = `<input data-def="${i}" type="date" value="${esc(v)}">`;
+      else inp = `<input data-def="${i}" placeholder="${esc(d.name)}" value="${esc(v)}">`;
+      return `<label class="field"><small>${esc(d.name)}</small>${inp}</label>`;
+    }).join('');
+    root.querySelectorAll('[data-def]').forEach((el) => {
+      const d = st.defs[+el.dataset.def];
+      const upd = () => { st.defVals[d.name] = d.type === 'bool' ? el.checked : el.value; };
+      el.oninput = upd; el.onchange = upd;
+    });
+  };
+  renderDefs();
   const renderCF = () => {
     root.querySelector('#cf').innerHTML = st.custom.map(([k, val], i) => `
       <div class="field cf-row"><label><small>${esc(k)}</small><input data-cf="${i}" value="${esc(val)}" placeholder="${esc(k)}"></label>
@@ -1076,7 +1147,18 @@ async function viewForm(id, q) {
       min_stock: num(fd.min_stock), max_stock: num(fd.max_stock),
       unit: fd.unit || 'Stück', booking_type: fd.booking_type || 'Einheit',
       sale_price: num(fd.sale_price), purchase_price: num(fd.purchase_price), supplier: fd.supplier ?? '', notes: fd.notes ?? '',
-      custom_fields: Object.fromEntries(st.custom.filter(([k]) => k.trim()).map(([k, val]) => [k.trim(), val])),
+      custom_fields: (() => {
+        const out = {};
+        st.defs.forEach((d) => {
+          let v = st.defVals[d.name];
+          if (d.type === 'bool') { if (v) out[d.name] = true; return; }
+          v = (v ?? '').toString().trim();
+          if (d.type === 'number') v = v.replace(',', '.');
+          if (v !== '') out[d.name] = v;
+        });
+        st.custom.filter(([k]) => k.trim()).forEach(([k, val]) => { out[k.trim()] = val; });
+        return out;
+      })(),
     };
     if (fd.number) data.number = fd.number;
     saving = true; root.querySelectorAll('[data-act=save], [type=submit]').forEach((b) => (b.disabled = true));
@@ -1095,6 +1177,86 @@ async function viewForm(id, q) {
 // =====================================================================
 //  MATERIAL GRUPPEN & LAGERORTE
 // =====================================================================
+async function viewFields() {
+  let defs = [];
+  let missing = null;
+  try { defs = await db.listFieldDefs(); cache.fields = defs; } catch (e) { missing = e.message; }
+  const scopeTone = { both: 'primary', part: 'blue', tool: 'indigo' };
+  const root = screen({
+    header: navbar({ left: backBtn() }),
+    cls: 'large-title-screen',
+    body: `<h1 class="large-title">Eigene Felder</h1>
+      <p class="hint">Diese Felder erscheinen automatisch beim Anlegen und in den Details deiner Ersatzteile und Werkzeuge.</p>
+      ${missing ? `<div class="setup-note">${icon('alert', 18)}<span>${esc(missing)}</span></div>` : `
+      <div class="plain-list">${defs.map((f) => `<button class="plain-row field-row" data-f="${f.id}">
+          <span class="fr-main"><b>${esc(f.name)}</b><small>${db.FIELD_TYPES[f.type]}${f.type === 'select' ? ` · ${esc(f.options.join(', '))}` : ''}</small></span>
+          <span class="chip-s tone-${scopeTone[f.applies_to]}">${db.FIELD_SCOPES[f.applies_to]}</span>
+        </button>`).join('')
+        || empty('tag', 'Noch keine eigenen Felder', '<button class="btn-tinted" data-act="add">' + icon('plus', 18) + ' Erstes Feld anlegen</button>')}</div>`}`,
+    footer: missing ? '' : `<footer class="bottom-bar"><button class="icon-btn blue" data-act="add" aria-label="Neues Feld">${icon('plusCircle', 34, 1.8)}</button></footer>`,
+  });
+  const reload = () => { invalidate('fields'); viewFields(); };
+  on(root, 'add', () => openFieldEditor(null, reload));
+  root.querySelectorAll('[data-f]').forEach((r) => (r.onclick = async () => {
+    const f = defs.find((x) => x.id === r.dataset.f);
+    const i = defs.indexOf(f);
+    const v = await actionSheet(f.name, [
+      { label: 'Bearbeiten', value: 'edit', icon: 'edit' },
+      ...(i > 0 ? [{ label: 'Nach oben', value: 'up', icon: 'chevU' }] : []),
+      ...(i < defs.length - 1 ? [{ label: 'Nach unten', value: 'down', icon: 'chevD' }] : []),
+      { label: 'Löschen', value: 'del', icon: 'trash', danger: true },
+    ]);
+    try {
+      if (v === 'edit') openFieldEditor(f, reload);
+      if (v === 'up' || v === 'down') { await db.moveFieldDef(f.id, v === 'up' ? -1 : 1); reload(); }
+      if (v === 'del' && await confirmBox({ title: `„${f.name}“ löschen?`, message: 'Das Feld erscheint nicht mehr beim Anlegen. Bereits eingetragene Werte bleiben bei den Artikeln erhalten.', okText: 'Löschen', danger: true })) {
+        await db.deleteFieldDef(f.id); toast('Feld gelöscht'); reload();
+      }
+    } catch (e) { errToast(e); }
+  }));
+}
+
+function openFieldEditor(def, onSaved) {
+  const d = def || { name: '', type: 'text', options: [], applies_to: 'both' };
+  sheet(`
+    <div class="form-group">
+      <label class="frow col"><span>Feldname</span><input id="fd-name" placeholder="z. B. Chargennummer Platz" value="${esc(d.name)}" autocomplete="off"></label>
+      <label class="frow"><span>Typ</span><select id="fd-type">${Object.entries(db.FIELD_TYPES).map(([k, l]) => `<option value="${k}" ${k === d.type ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="frow col" id="fd-opt-row" ${d.type === 'select' ? '' : 'hidden'}><span>Auswahl-Optionen (mit Komma trennen)</span>
+        <input id="fd-opts" placeholder="z. B. Neu, Gebraucht, Defekt" value="${esc(d.options.join(', '))}"></label>
+    </div>
+    <p class="fd-label">Gilt für</p>
+    <div class="segment fd-scope" role="radiogroup">
+      ${Object.entries(db.FIELD_SCOPES).map(([k, l]) => `<button type="button" role="radio" data-scope="${k}" class="${k === d.applies_to ? 'on' : ''}" aria-checked="${k === d.applies_to}">${k === 'both' ? 'Beide' : l}</button>`).join('')}
+    </div>
+    <button class="btn-filled full mt" data-a="save">${icon('save', 20)} ${def ? 'Speichern' : 'Feld anlegen'}</button>
+    ${def ? '<p class="muted small center mt">Beim Umbenennen werden vorhandene Werte automatisch übernommen.</p>' : ''}`,
+  {
+    title: def ? 'Feld bearbeiten' : 'Neues Feld',
+    onMount: (root, close) => {
+      let scope = d.applies_to;
+      const type = root.querySelector('#fd-type');
+      type.onchange = () => { root.querySelector('#fd-opt-row').hidden = type.value !== 'select'; };
+      root.querySelectorAll('[data-scope]').forEach((b) => (b.onclick = () => {
+        scope = b.dataset.scope;
+        root.querySelectorAll('[data-scope]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
+      }));
+      setTimeout(() => { if (!def) root.querySelector('#fd-name').focus(); }, 300);
+      root.querySelector('[data-a=save]').onclick = async (e) => {
+        const btn = e.currentTarget; btn.disabled = true;
+        try {
+          await db.saveFieldDef(def?.id || null, {
+            name: root.querySelector('#fd-name').value, type: type.value, applies_to: scope,
+            options: root.querySelector('#fd-opts').value.split(','),
+          });
+          invalidate('fields', 'materials');
+          close(); toast(def ? 'Feld gespeichert' : 'Feld angelegt'); onSaved?.();
+        } catch (er) { errToast(er); btn.disabled = false; }
+      };
+    },
+  });
+}
+
 async function viewGroups() {
   const groups = await getGroups();
   const root = screen({
@@ -1250,7 +1412,7 @@ async function viewInventory(q) {
 async function viewSettings() {
   const user = await db.getUser();
   const theme = localStorage.getItem('wl-theme') || '';
-  const TONE = { list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
+  const TONE = { list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tag: 'indigo', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
   const item = (ic, label, act, extra = '', cls = '') => `<button class="set-row ${cls}" data-act="${act}"><i class="tone-${TONE[ic] || 'primary'}">${icon(ic, 19)}</i><span>${label}</span>${extra || icon('chevR', 18)}</button>`;
   const root = screen({
     header: navbar({ left: backBtn(), title: 'Menü' }),
@@ -1268,6 +1430,7 @@ async function viewSettings() {
       <div class="set-group">
         ${item('shelf', 'Lagerorte', 'go:/locations')}
         ${item('boxes', 'Material Gruppen', 'go:/groups')}
+        ${item('tag', 'Eigene Felder', 'go:/fields')}
         ${item('tally', 'Inventur', 'go:/inventory')}
       </div>
       <div class="set-group">
