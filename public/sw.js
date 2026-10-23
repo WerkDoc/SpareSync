@@ -1,5 +1,5 @@
 // Service Worker: App offline startfähig. Supabase-Anfragen gehen immer ins Netz.
-const CACHE = 'sparesync-v4';
+const CACHE = 'sparesync-v5';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './manifest.webmanifest', './icon-192.png'])));
