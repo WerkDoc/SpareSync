@@ -64,9 +64,11 @@ async function route() {
     if (navStack[navStack.length - 2] === h) navStack.pop(); else navStack.push(h);
   }
   const { path, q } = parseHash();
-  if (!db.isDemo && path !== '/login') {
+  if (!db.isDemo && path !== '/login' && path !== '/register') {
     const user = await db.getUser();
     if (!user) return go('/login', true);
+    // nach Klick auf den Bestätigungslink: ersten Lagerort aus der Registrierung anlegen
+    if (await db.ensureStarterLocation()) invalidate('locations');
   }
   const routes = [
     [/^\/fav$/, () => viewFav()],
@@ -81,6 +83,7 @@ async function route() {
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
     [/^\/login$/, () => viewLogin()],
+    [/^\/register$/, () => viewLogin(null, null, 'register')],
   ];
   for (const [re, fn] of routes) {
     const m = path.match(re);
@@ -1150,36 +1153,150 @@ async function viewSettings() {
 // =====================================================================
 //  LOGIN (nur mit Supabase)
 // =====================================================================
-function viewLogin() {
+function viewLogin(_m, _id, startPanel = 'login') {
   if (db.isDemo) return go('/fav', true);
+  const eye = (id) => `<button type="button" class="auth-eye" data-eye="${id}" aria-controls="${id}" aria-pressed="false">Anzeigen</button>`;
   const root = screen({
     header: '',
-    cls: 'login-screen',
+    cls: 'auth-screen',
     body: `
-      <div class="login">
-        <div class="login-logo">${icon('box', 44, 1.8)}</div>
-        <h1>SpareSync</h1>
-        <p class="muted">Ersatzteile. Bestände. Im Griff.</p>
-        <form id="lf" class="login-form">
-          <input type="email" name="email" placeholder="E-Mail" autocomplete="username" required>
-          <input type="password" name="password" placeholder="Passwort" autocomplete="current-password" required minlength="6">
-          <button class="btn-filled full" type="submit">Anmelden</button>
-          <button class="btn-plain full" type="button" data-act="signup">Neues Konto erstellen</button>
-        </form>
+      <div class="auth-logo">${icon('box', 46, 1.8)}</div>
+      <div class="auth-stage" data-panel="${startPanel}">
+
+        <!-- Anmelden -->
+        <section class="auth-panel" data-p="login" aria-labelledby="auth-login-title">
+          <h1 id="auth-login-title" class="auth-brand">SpareSync</h1>
+          <p class="auth-tagline">Ersatzteile. Bestände. Im Griff.</p>
+          <form id="lf" class="auth-card" novalidate>
+            <label class="auth-field"><span>E-Mail</span>
+              <input id="login-email" type="email" name="email" placeholder="name@firma.de" autocomplete="username" inputmode="email" required></label>
+            <label class="auth-field"><span>Passwort</span>
+              <div class="auth-pw"><input id="login-pw" type="password" name="password" placeholder="Passwort" autocomplete="current-password" required>${eye('login-pw')}</div></label>
+            <button class="auth-submit" type="submit">Anmelden</button>
+          </form>
+          <button type="button" class="auth-switch" data-go="register">Neues Konto erstellen</button>
+        </section>
+
+        <!-- Registrieren -->
+        <section class="auth-panel" data-p="register" aria-labelledby="auth-reg-title">
+          <form id="rf" class="auth-card" novalidate>
+            <h2 id="auth-reg-title" class="auth-card-title">Neues Lager registrieren</h2>
+            <p class="auth-card-text">Lege deinen SpareSync-Zugang an.<br>Danach bekommst du eine E-Mail zur Bestätigung.</p>
+            <label class="auth-field"><span>Lager-Name</span>
+              <input id="reg-lager" name="lager" placeholder="z. B. Hauptlager" autocomplete="organization" required></label>
+            <label class="auth-field"><span>Vor- und Nachname</span>
+              <input id="reg-name" name="fullname" placeholder="Vor- und Nachname" autocomplete="name" required></label>
+            <label class="auth-field"><span>E-Mail</span>
+              <input id="reg-email" type="email" name="email" placeholder="name@firma.de" autocomplete="email" inputmode="email" required></label>
+            <label class="auth-field"><span>Passwort</span>
+              <div class="auth-pw"><input id="reg-pw" type="password" name="password" placeholder="mindestens 8 Zeichen" autocomplete="new-password" minlength="8" required>${eye('reg-pw')}</div></label>
+            <p class="auth-error" id="reg-error" role="alert" hidden></p>
+            <button class="auth-submit" type="submit">Registrierung absenden</button>
+          </form>
+          <button type="button" class="auth-switch" data-go="login">Ich habe schon einen Zugang – <b>anmelden</b></button>
+        </section>
+
+        <!-- Bestätigung -->
+        <section class="auth-panel" data-p="sent" aria-labelledby="auth-sent-title">
+          <div class="auth-card auth-sent">
+            <div class="auth-sent-ic">${icon('check', 34, 2.6)}</div>
+            <h2 id="auth-sent-title" class="auth-card-title">Fast geschafft</h2>
+            <p class="auth-card-text">Wir haben dir eine E-Mail an <b id="sent-mail"></b> geschickt. Öffne den Link darin, danach kannst du dich anmelden.</p>
+            <button type="button" class="auth-submit" data-go="login">Zur Anmeldung</button>
+          </div>
+        </section>
       </div>`,
   });
-  const f = root.querySelector('#lf');
-  f.onsubmit = async (e) => {
-    e.preventDefault();
-    try { await db.signIn(f.email.value.trim(), f.password.value); invalidate(); go('/fav', true); } catch (er) { errToast(new Error(er.message.includes('Invalid') ? 'E-Mail oder Passwort falsch' : er.message)); }
+
+  const stage = root.querySelector('.auth-stage');
+  const panels = ['login', 'register', 'sent'];
+  const show = (name) => {
+    const from = stage.dataset.panel;
+    if (from === name) return;
+    // Richtung: vorwärts (rein von rechts) oder zurück (rein von links)
+    stage.dataset.dir = panels.indexOf(name) > panels.indexOf(from) ? 'fwd' : 'back';
+    stage.dataset.panel = name;
+    root.querySelector('.content').scrollTo?.({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => {
+      const first = stage.querySelector(`[data-p="${name}"] input, [data-p="${name}"] .auth-submit`);
+      if (first && matchMedia('(hover: hover)').matches) first.focus({ preventScroll: true });
+    }, 380);
   };
-  on(root, 'signup', async () => {
-    if (!f.reportValidity()) return;
+  root.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => show(b.dataset.go)));
+
+  // Passwort anzeigen / verbergen
+  root.querySelectorAll('[data-eye]').forEach((b) => (b.onclick = () => {
+    const inp = root.querySelector('#' + b.dataset.eye);
+    const visible = inp.type === 'password';
+    inp.type = visible ? 'text' : 'password';
+    b.textContent = visible ? 'Verbergen' : 'Anzeigen';
+    b.setAttribute('aria-pressed', String(visible));
+  }));
+
+  const busy = (form, on, label) => {
+    const b = form.querySelector('.auth-submit');
+    b.disabled = on; b.classList.toggle('loading', on);
+    if (label) b.textContent = label;
+  };
+
+  // Anmelden
+  const lf = root.querySelector('#lf');
+  lf.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!lf.reportValidity()) return;
+    busy(lf, true, 'Anmelden …');
     try {
-      const loggedIn = await db.signUp(f.email.value.trim(), f.password.value);
-      if (loggedIn) go('/fav', true); else toast('Bestätigungs-Mail wurde gesendet – Link öffnen, dann anmelden.');
-    } catch (er) { errToast(er); }
-  });
+      await db.signIn(lf.email.value.trim(), lf.password.value);
+      invalidate();
+      if (await db.ensureStarterLocation()) invalidate('locations');
+      go('/fav', true);
+    } catch (er) {
+      const m = er.message || '';
+      errToast(new Error(/invalid/i.test(m) ? 'E-Mail oder Passwort falsch'
+        : /confirm/i.test(m) ? 'Bitte zuerst den Link in der Bestätigungs-Mail öffnen.' : m));
+      busy(lf, false, 'Anmelden');
+    }
+  };
+
+  // Registrieren
+  const rf = root.querySelector('#rf');
+  const errBox = root.querySelector('#reg-error');
+  const setErr = (msg) => { errBox.textContent = msg || ''; errBox.hidden = !msg; };
+  rf.oninput = () => setErr('');
+  rf.onsubmit = async (e) => {
+    e.preventDefault();
+    const v = {
+      lager: rf.lager.value.trim(), name: rf.fullname.value.trim(),
+      email: rf.email.value.trim(), pw: rf.password.value,
+    };
+    if (!v.lager) { setErr('Bitte einen Lager-Namen eingeben.'); rf.lager.focus(); return; }
+    if (!v.name) { setErr('Bitte Vor- und Nachnamen eingeben.'); rf.fullname.focus(); return; }
+    if (!rf.email.checkValidity() || !v.email) { setErr('Bitte eine gültige E-Mail-Adresse eingeben.'); rf.email.focus(); return; }
+    if (v.pw.length < 8) { setErr('Das Passwort braucht mindestens 8 Zeichen.'); rf.password.focus(); return; }
+    busy(rf, true, 'Wird gesendet …');
+    try {
+      const loggedIn = await db.signUp(v.email, v.pw, { lager_name: v.lager, full_name: v.name });
+      if (loggedIn) {
+        invalidate();
+        if (await db.ensureStarterLocation()) invalidate('locations');
+        toast('Willkommen bei SpareSync');
+        go('/fav', true);
+        return;
+      }
+      root.querySelector('#sent-mail').textContent = v.email;
+      lf.email.value = v.email;
+      rf.reset();
+      root.querySelectorAll('[data-eye]').forEach((b) => {
+        root.querySelector('#' + b.dataset.eye).type = 'password';
+        b.textContent = 'Anzeigen'; b.setAttribute('aria-pressed', 'false');
+      });
+      show('sent');
+    } catch (er) {
+      setErr(er.message || String(er));
+    }
+    busy(rf, false, 'Registrierung absenden');
+  };
 }
 
 // ============================== Start ================================

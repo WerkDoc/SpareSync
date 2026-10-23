@@ -1,11 +1,13 @@
 /* =====================================================================
-   WerkDoc Lager – iOS-angelehntes Design
+   SpareSync – iOS-angelehntes Design
    ===================================================================== */
 :root {
   --bg: #ffffff;
   --bg-grouped: #f2f2f7;
   --bar: rgba(246, 246, 246, 0.92);
   --card: #f7f7f7;
+  --surface: #ffffff;
+  --danger-text: #d92d20;
   --fill: #eeeeef;
   --sep: #d6d6d8;
   --sep-strong: #8e8e93;
@@ -33,7 +35,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #000; --bg-grouped: #000; --bar: rgba(22, 22, 24, .92); --card: #1c1c1e; --fill: #2c2c2e;
+    --bg: #000; --bg-grouped: #000; --bar: rgba(22, 22, 24, .92); --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
     --sep: #38383a; --sep-strong: #636366; --text: #f2f2f7; --text-2: #a1a1a6; --text-3: #6c6c70;
     --blue: #4a91ff; --tile: #2a5f93; --gold: #a87d14; --red: #ff5257; --red-soft: #3a1c1f; --red-line: #6b2a30;
     --green: #35c060; --green-soft: #17301f; --green-line: #285c39; --blue-soft: #16253c; --blue-line: #284a7a;
@@ -41,7 +43,7 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #000; --bg-grouped: #000; --bar: rgba(22, 22, 24, .92); --card: #1c1c1e; --fill: #2c2c2e;
+  --bg: #000; --bg-grouped: #000; --bar: rgba(22, 22, 24, .92); --card: #1c1c1e; --surface: #1c1c1e; --danger-text: #ff6961; --fill: #2c2c2e;
   --sep: #38383a; --sep-strong: #636366; --text: #f2f2f7; --text-2: #a1a1a6; --text-3: #6c6c70;
   --blue: #4a91ff; --tile: #2a5f93; --gold: #a87d14; --red: #ff5257; --red-soft: #3a1c1f; --red-line: #6b2a30;
   --green: #35c060; --green-soft: #17301f; --green-line: #285c39; --blue-soft: #16253c; --blue-line: #284a7a;
@@ -367,13 +369,51 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .set-row select { border: 0; background: transparent; color: var(--text-2); font-size: 16px; }
 .set-row:not(.static):active { background: var(--fill); }
 
-/* ---------- Login ---------- */
-.login-screen .content { display: grid; place-items: center; }
-.login { width: 100%; max-width: 380px; text-align: center; padding: 30px 6px; }
-.login-logo { width: 88px; height: 88px; border-radius: 24px; background: var(--tile); color: #fff; display: grid; place-items: center; margin: 0 auto 18px; }
-.login h1 { margin: 0; font-size: 30px; }
-.login-form { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; }
-.login-form input { height: 54px; border-radius: 14px; border: 1px solid var(--sep); background: var(--card); padding: 0 16px; font-size: 17px; }
+/* ---------- Login & Registrierung ---------- */
+.auth-screen { background: var(--bg-grouped); }
+.auth-screen .content { display: flex; flex-direction: column; align-items: center; padding-top: calc(36px + var(--safe-t)); padding-bottom: calc(40px + var(--safe-b)); }
+.auth-logo { width: 84px; height: 84px; border-radius: 24px; background: var(--tile); color: #fff; display: grid; place-items: center; box-shadow: 0 10px 24px -10px rgba(45, 106, 163, .7); flex-shrink: 0; }
+.auth-stage { position: relative; width: 100%; max-width: 420px; margin-top: 22px; }
+.auth-panel {
+  position: absolute; inset: 0 0 auto 0; display: flex; flex-direction: column; align-items: stretch;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform: translateX(28px) scale(.985);
+  transition: opacity .34s ease, transform .42s cubic-bezier(.22, .9, .28, 1), visibility 0s linear .42s;
+}
+.auth-stage[data-dir="back"] .auth-panel { transform: translateX(-28px) scale(.985); }
+.auth-stage[data-panel="login"] [data-p="login"],
+.auth-stage[data-panel="register"] [data-p="register"],
+.auth-stage[data-panel="sent"] [data-p="sent"] {
+  position: relative; opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+  transition: opacity .38s ease .06s, transform .46s cubic-bezier(.22, .9, .28, 1) .04s, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-panel, .auth-stage .auth-panel { transform: none !important; transition: opacity .2s ease, visibility 0s linear .2s !important; }
+}
+.auth-brand { margin: 0; text-align: center; font-size: 30px; letter-spacing: -.01em; }
+.auth-tagline { margin: 4px 0 20px; text-align: center; color: var(--text-2); }
+.auth-card { display: flex; flex-direction: column; gap: 14px; background: var(--surface); border-radius: 22px; padding: 24px 20px 22px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 12px 32px -14px rgba(0,0,0,.18); }
+.auth-card-title { margin: 0; text-align: center; font-size: 23px; line-height: 1.2; text-wrap: balance; }
+.auth-card-text { margin: -4px 0 6px; text-align: center; color: var(--text-2); font-size: 15px; line-height: 1.45; }
+.auth-field { display: flex; flex-direction: column; gap: 6px; }
+.auth-field > span { font-size: 13px; font-weight: 600; color: var(--text-2); padding-left: 4px; }
+.auth-field input { width: 100%; height: 52px; border-radius: 14px; border: 1.5px solid transparent; background: var(--fill); padding: 0 16px; font-size: 17px; color: var(--text); transition: border-color .15s, background .15s; }
+.auth-field input::placeholder { color: var(--text-3); }
+.auth-field input:focus { border-color: var(--blue); background: var(--surface); }
+.auth-pw { position: relative; }
+.auth-pw input { padding-right: 104px; }
+.auth-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); height: 40px; padding: 0 12px; border-radius: 10px; color: var(--danger-text); font-size: 15px; font-weight: 600; }
+.auth-eye:active { background: var(--fill); }
+.auth-eye:focus-visible, .auth-switch:focus-visible, .auth-submit:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.auth-error { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--red-soft); color: var(--danger-text); font-size: 14px; }
+.auth-submit { height: 56px; margin-top: 6px; border-radius: 16px; background: var(--tile); color: #fff; font-size: 17px; font-weight: 600; transition: filter .15s, transform .1s; }
+.auth-submit:active { transform: scale(.99); filter: brightness(1.1); }
+.auth-submit.loading { opacity: .7; }
+.auth-switch { align-self: center; margin-top: 18px; padding: 10px 12px; color: var(--blue); font-size: 16px; text-align: center; }
+.auth-switch b { font-weight: 600; }
+.auth-sent { align-items: center; text-align: center; }
+.auth-sent-ic { width: 64px; height: 64px; border-radius: 50%; background: var(--green-soft); color: var(--green); display: grid; place-items: center; }
+.auth-sent .auth-submit { align-self: stretch; }
 
 /* =====================================================================
    Overlays: Alert, Action-Sheet, Bottom-Sheet, Scanner, Toast

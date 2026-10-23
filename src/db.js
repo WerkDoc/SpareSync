@@ -126,13 +126,40 @@ export async function getUser() {
 export async function signIn(email, password) {
   const { error } = await sb.auth.signInWithPassword({ email, password }); fail(error);
 }
-export async function signUp(email, password) {
-  // Bestätigungslink führt zurück zur Lager-App (nicht zur Site URL von WerkDoc)
+export async function signUp(email, password, meta = {}) {
+  // Bestätigungslink führt zurück zur Lager-App (nicht zur Site URL)
   const emailRedirectTo = location.origin + location.pathname;
-  const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo } }); fail(error);
+  const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo, data: meta } });
+  if (error) {
+    const m = error.message || '';
+    if (/registered|exists/i.test(m)) throw new Error('Für diese E-Mail gibt es schon einen Zugang – bitte anmelden.');
+    if (/password/i.test(m)) throw new Error('Passwort zu schwach – bitte mindestens 8 Zeichen verwenden.');
+    if (/rate|too many/i.test(m)) throw new Error('Zu viele Versuche – bitte in ein paar Minuten erneut probieren.');
+    fail(error);
+  }
+  // Supabase meldet eine schon registrierte E-Mail ohne Fehler, aber ohne Identitäten
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    throw new Error('Für diese E-Mail gibt es schon einen Zugang – bitte anmelden.');
+  }
   return !!data.session;
 }
-export async function signOut() { if (!isDemo) await sb.auth.signOut(); }
+
+/** Legt beim ersten Login den bei der Registrierung angegebenen Lager-Namen als ersten Lagerort an */
+let starterChecked = false;
+export async function ensureStarterLocation() {
+  if (isDemo || starterChecked) return false;
+  starterChecked = true;
+  try {
+    const { data } = await sb.auth.getUser();
+    const name = data.user?.user_metadata?.lager_name?.trim();
+    if (!name) return false;
+    const { count } = await sb.from(T.loc).select('id', { count: 'exact', head: true });
+    if (count) return false;
+    await createLocation(name);
+    return true;
+  } catch { return false; }
+}
+export async function signOut() { starterChecked = false; if (!isDemo) await sb.auth.signOut(); }
 
 // =====================================================================
 //  GRUPPEN
