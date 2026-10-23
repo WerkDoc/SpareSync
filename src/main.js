@@ -11,6 +11,7 @@ import {
 import { exportCSV, importCSV } from './csv.js';
 
 const app = document.getElementById('app');
+const LOGO = `${import.meta.env.BASE_URL}logo.png`;
 
 // ============================== Cache ================================
 const cache = { materials: null, groups: null, locations: null, cart: null };
@@ -188,11 +189,11 @@ async function viewFav() {
 
   const root = screen({
     header: `<header class="dash-nav">
-        <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
-        <span class="dash-nav-title">SpareSync</span>
+        <span class="brand"><img class="brand-icon" src="${LOGO}" alt="" width="34" height="34"><span class="brand-name">SpareSync</span></span>
         <span class="dash-nav-right">
           <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel">${icon(isDark() ? 'sun' : 'moon', 21)}</button>
           <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
+          <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
         </span>
       </header>`,
     cls: 'dash-screen',
@@ -1216,7 +1217,7 @@ function viewLogin(_m, _id, startPanel = 'login') {
     header: '',
     cls: 'auth-screen',
     body: `
-      <div class="auth-logo">${icon('box', 46, 1.8)}</div>
+      <div class="auth-logo"><img src="${LOGO}" alt="SpareSync" width="96" height="96"></div>
       <div class="auth-stage" data-panel="${startPanel}">
 
         <!-- Anmelden -->
