@@ -1362,18 +1362,10 @@ function viewLogin(_m, _id, startPanel = 'login') {
 // ============================== Start ================================
 if (!db.isDemo) db.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' || ev === 'SIGNED_IN') { invalidate(); } });
 
-// Splashscreen (steht in index.html): bleibt mindestens 2,5 s, blendet dann weich aus und wird entfernt
-const SPLASH_MIN = matchMedia('(prefers-reduced-motion: reduce)').matches ? 600 : 2500;
-window.hideSplash = () => {
-  const sp = document.getElementById('splash');
-  if (!sp || sp.classList.contains('out')) return;
-  sp.classList.add('out');
-  sp.addEventListener('transitionend', () => sp.remove(), { once: true });
-  setTimeout(() => sp.remove(), 800);
-};
+// Splashscreen-Video (steht in index.html): blendet aus, sobald das Video zu Ende ist UND die App geladen hat
 route().finally(() => {
-  const waited = Date.now() - (window.__splashStart || Date.now());
-  setTimeout(window.hideSplash, Math.max(0, SPLASH_MIN - waited));
+  window.__appReady = true;
+  if (window.__splashVideoDone) window.hideSplash?.();
 });
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
