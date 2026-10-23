@@ -66,6 +66,18 @@ body {
   -webkit-font-smoothing: antialiased; overscroll-behavior-y: none;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Natives App-Gefühl: kein Markieren, kein „Kopieren / Nachschlagen“ beim langen Drücken ---------- */
+html, body {
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;          /* iOS-Kontextmenü (auch „Bild sichern“) unterbinden */
+}
+img, svg, a { -webkit-user-drag: none; user-drag: none; }
+/* Ausnahme: Eingabefelder bleiben voll bedienbar (markieren, einfügen, Cursor setzen) */
+input, textarea, [contenteditable], [contenteditable] *, .selectable {
+  -webkit-user-select: text; user-select: text;
+  -webkit-touch-callout: default;
+}
 button { background: none; border: 0; padding: 0; cursor: pointer; }
 button:disabled { opacity: .45; cursor: default; }
 a { color: inherit; text-decoration: none; }
