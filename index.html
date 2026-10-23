@@ -25,6 +25,13 @@
         transition: opacity .5s cubic-bezier(.4, 0, .2, 1);
       }
       #splash.out { opacity: 0; pointer-events: none; }
+      #splash { cursor: pointer; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+      #splash .sp-skip {
+        position: absolute; left: 0; right: 0; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); text-align: center;
+        font: 500 13px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; letter-spacing: .01em;
+        color: #8e8e93; opacity: 0; animation: spSkip .6s ease 1s forwards; pointer-events: none;
+      }
+      @keyframes spSkip { to { opacity: 1; } }
       #splash video {
         width: 100%; height: 100%; object-fit: contain; display: block; background: #ffffff;
         pointer-events: none; /* kein Antippen, keine iOS-Steuerelemente */
@@ -38,6 +45,7 @@
     <div id="splash" aria-hidden="true">
       <video id="splash-video" src="./splash.mp4" autoplay muted playsinline webkit-playsinline preload="auto"
              disablepictureinpicture disableremoteplayback></video>
+      <div class="sp-skip">Tippen zum Überspringen</div>
     </div>
     <script>
       // Splash: Video bis zum Ende abspielen, dann weich ausblenden und entfernen.
@@ -48,6 +56,13 @@
         if (!sp || !v) return;
         document.documentElement.classList.add('splash-on');
         var videoDone = false;
+        var SPEED = 1.5; // Wiedergabe-Tempo: 1 = normal, 1.5 = 50 % schneller
+
+        // Video schneller abspielen
+        var setSpeed = function () { try { v.defaultPlaybackRate = SPEED; v.playbackRate = SPEED; } catch (e) {} };
+        setSpeed();
+        v.addEventListener('loadedmetadata', setSpeed);
+        v.addEventListener('play', setSpeed);
 
         window.hideSplash = function () {
           if (!sp || sp.classList.contains('out')) return;
@@ -60,6 +75,19 @@
           videoDone = true; window.__splashVideoDone = true;
           if (window.__appReady) window.hideSplash();
         };
+
+        // Antippen = überspringen. Bewusst erst beim „click“ (nach dem Loslassen),
+        // damit der Finger nicht versehentlich einen Knopf im Dashboard darunter auslöst.
+        var skip = function (e) {
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          try { v.pause(); } catch (err) {}
+          window.__splashVideoDone = true; videoDone = true;
+          window.hideSplash(); // sofort ausblenden, die App lädt im Hintergrund fertig
+        };
+        sp.addEventListener('click', skip);
+        document.addEventListener('keydown', function onKey(e) {
+          if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') { document.removeEventListener('keydown', onKey); if (document.getElementById('splash')) skip(e); }
+        });
 
         // onEnded: Video ist durch
         v.addEventListener('ended', window.__splashFinish);
@@ -74,9 +102,9 @@
         if (p && p.catch) p.catch(function () { window.__splashFinish(); });
         setTimeout(function () { if (!videoDone && v.currentTime === 0) window.__splashFinish(); }, 2500);
 
-        // Sicherheitsnetz: spätestens nach Videolänge + 1,5 s (max. 12 s) weiter
+        // Sicherheitsnetz: spätestens nach (beschleunigter) Videolänge + 1,5 s (max. 12 s) weiter
         v.addEventListener('loadedmetadata', function () {
-          var ms = isFinite(v.duration) ? Math.min(v.duration * 1000 + 1500, 12000) : 8000;
+          var ms = isFinite(v.duration) ? Math.min(v.duration * 1000 / SPEED + 1500, 12000) : 8000;
           setTimeout(window.__splashFinish, ms);
         });
         setTimeout(window.__splashFinish, 12000);
