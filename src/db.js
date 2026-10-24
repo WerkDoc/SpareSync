@@ -543,3 +543,133 @@ async function renameCustomKey(oldKey, newKey) {
     await saveMaterial(m.id, { custom_fields: next });
   }
 }
+
+// =====================================================================
+//  DATENSICHERUNG (Backup & Wiederherstellen)
+//  Eine JSON-Datei mit allen Tabellen des eigenen Lagers.
+//  Optional inkl. Bilder/Dateien (als eingebettete Daten).
+// =====================================================================
+const BACKUP_TABLES = [            // Reihenfolge = Wiederherstellungs-Reihenfolge (Abhängigkeiten)
+  ['locations', T.loc, 'id'],
+  ['groups', T.grp, 'id'],
+  ['field_defs', T.fdef, 'id'],
+  ['materials', T.mat, 'id'],
+  ['stock', T.stock, 'material_id,location_id'],
+  ['movements', T.mov, 'id'],
+  ['tasks', T.task, 'id'],
+  ['files', T.file, 'id'],
+  ['cart', T.cart, 'id'],
+];
+const DEMO_KEYS = { locations: 'locations', groups: 'groups', field_defs: 'fieldDefs', materials: 'materials', stock: 'stock', movements: 'movements', tasks: 'tasks', files: 'files', cart: 'cart' };
+
+async function fetchAllRows(table) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from(table).select('*').range(from, from + 999);
+    if (error) {
+      if (table === T.fdef && /lager_field_defs/.test(error.message)) return out;   // Tabelle noch nicht angelegt
+      fail(error);
+    }
+    out.push(...data);
+    if (data.length < 1000) return out;
+  }
+}
+const blobToDataURL = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
+const dataURLToBlob = async (u) => (await fetch(u)).blob();
+
+/** Erstellt das Backup-Objekt. onProgress(text) */
+export async function createBackup({ withFiles = false, onProgress } = {}) {
+  const backup = { app: 'SpareSync', format: 1, created_at: now(), with_files: withFiles, tables: {} };
+  if (isDemo) {
+    const s = load();
+    for (const [name] of BACKUP_TABLES) backup.tables[name] = JSON.parse(JSON.stringify(s[DEMO_KEYS[name]] || []));
+    if (!withFiles) backup.tables.files = backup.tables.files.map(({ path, ...f }) => ({ ...f, path: '' }));
+    return backup;
+  }
+  const { data: u } = await sb.auth.getUser();
+  backup.account = u.user?.email || '';
+  for (const [name, table] of BACKUP_TABLES) {
+    onProgress?.(`Lade ${name} …`);
+    backup.tables[name] = await fetchAllRows(table);
+  }
+  if (withFiles) {
+    const files = backup.tables.files;
+    for (let i = 0; i < files.length; i++) {
+      onProgress?.(`Bilder ${i + 1}/${files.length} …`);
+      try {
+        const { data, error } = await sb.storage.from(BUCKET).download(files[i].path);
+        if (error) throw error;
+        files[i].data = await blobToDataURL(data);
+      } catch { files[i].data = null; }
+    }
+  }
+  return backup;
+}
+
+export function backupSummary(b) {
+  const t = b?.tables || {};
+  const mats = t.materials || [];
+  return {
+    parts: mats.filter((m) => (m.kind || 'part') === 'part').length,
+    tools: mats.filter((m) => m.kind === 'tool').length,
+    locations: (t.locations || []).length, groups: (t.groups || []).length,
+    movements: (t.movements || []).length, files: (t.files || []).length,
+    withFiles: !!b?.with_files, created: b?.created_at, account: b?.account || '',
+  };
+}
+
+/**
+ * Stellt ein Backup wieder her. Vorhandene Einträge mit gleicher ID werden
+ * überschrieben, alles andere bleibt bestehen (nichts wird gelöscht).
+ */
+export async function restoreBackup(backup, { onProgress } = {}) {
+  if (backup?.app !== 'SpareSync' || !backup.tables) throw new Error('Das ist keine gültige SpareSync-Sicherung.');
+  const report = { ok: 0, errors: [] };
+  if (isDemo) {
+    const s = load();
+    for (const [name] of BACKUP_TABLES) {
+      const rows = backup.tables[name] || [];
+      const key = DEMO_KEYS[name];
+      const keyOf = name === 'stock' ? (r) => `${r.material_id}|${r.location_id}` : (r) => r.id;
+      const map = new Map((s[key] || []).map((r) => [keyOf(r), r]));
+      rows.forEach((r) => { const c = { ...r }; delete c.owner_id; if (name === 'files' && c.data) { c.path = c.data; delete c.data; } map.set(keyOf(c), c); report.ok++; });
+      s[key] = [...map.values()];
+    }
+    save(); return report;
+  }
+  const uid = await myId();
+  for (const [name, table, conflict] of BACKUP_TABLES) {
+    let rows = (backup.tables[name] || []).map((r) => { const c = { ...r }; delete c.owner_id; return c; });
+    if (!rows.length) continue;
+    if (name === 'files') {
+      // Bilder hochladen (nur wenn im Backup enthalten); Pfad ins eigene Konto umschreiben
+      const prepared = [];
+      for (let i = 0; i < rows.length; i++) {
+        const f = rows[i]; const data = f.data; delete f.data;
+        const base = String(f.path || '').split('/').pop() || `${f.id}.jpg`;
+        const newPath = `${uid}/${f.material_id}/${base}`;
+        if (data) {
+          onProgress?.(`Bilder ${i + 1}/${rows.length} …`);
+          try {
+            const blob = await dataURLToBlob(data);
+            const up = await sb.storage.from(BUCKET).upload(newPath, blob, { contentType: blob.type || undefined, upsert: true });
+            if (up.error) throw up.error;
+            f.path = newPath;
+          } catch (e) { report.errors.push(`Bild ${base}: ${e.message || e}`); continue; }
+        } else if (!String(f.path || '').startsWith(`${uid}/`)) continue;   // Datei liegt nicht im eigenen Speicher
+        prepared.push(f);
+      }
+      rows = prepared;
+    }
+    onProgress?.(`Speichere ${name} …`);
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const { error } = await sb.from(table).upsert(chunk, { onConflict: conflict });
+      if (error) {
+        if (table === T.fdef && /lager_field_defs/.test(error.message)) break;
+        report.errors.push(`${name}: ${error.message}`);
+      } else report.ok += chunk.length;
+    }
+  }
+  return report;
+}

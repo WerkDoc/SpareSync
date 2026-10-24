@@ -542,7 +542,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .alert-layer.show .alert { transform: scale(1); opacity: 1; }
 .alert-body { padding: 22px 18px 18px; text-align: center; }
 .alert-body h3 { margin: 0; font-size: 18px; }
-.alert-body p { margin: 6px 0 0; font-size: 14px; color: var(--text-2); }
+.alert-body p { margin: 6px 0 0; font-size: 14px; color: var(--text-2); white-space: pre-line; }
 .alert-input { width: 100%; height: 42px; margin-top: 16px; border: 1px solid var(--sep); border-radius: 8px; padding: 0 10px; background: var(--bg); font-size: 17px; }
 .alert-btn { display: block; width: 100%; height: 52px; border-top: .5px solid var(--sep); color: var(--blue); font-size: 18px; }
 .alert-btn.strong { font-weight: 700; }

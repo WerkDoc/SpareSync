@@ -1512,6 +1512,21 @@ async function viewInventory(q) {
 // =====================================================================
 //  MENÜ / EINSTELLUNGEN
 // =====================================================================
+function backupAgeText() {
+  let iso = null; try { iso = localStorage.getItem('wl-last-backup'); } catch {}
+  if (!iso) return 'Noch kein Backup auf diesem Gerät';
+  const days = Math.floor((Date.now() - new Date(iso)) / 86400000);
+  return days <= 0 ? 'Letztes Backup: heute' : days === 1 ? 'Letztes Backup: gestern' : `Letztes Backup: vor ${days} Tagen`;
+}
+/** Datei speichern – am iPhone über das Teilen-Menü („In Dateien sichern“), sonst als Download */
+function saveFile(blob, name) {
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare?.({ files: [file] })) { navigator.share({ files: [file], title: name }).catch(() => {}); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
 async function viewSettings() {
   const user = await db.getUser();
   const theme = localStorage.getItem('wl-theme') || '';
@@ -1539,6 +1554,11 @@ async function viewSettings() {
         ${item('boxes', 'Material Gruppen', 'go:/groups')}
         ${item('tag', 'Eigene Felder', 'go:/fields')}
         ${item('tally', 'Inventur', 'go:/inventory')}
+      </div>
+      <div class="set-group">
+        ${item('save', 'Backup erstellen', 'backup', '', '', 'green').replace('<span>Backup erstellen</span>', `<span>Backup erstellen<small>${backupAgeText()}</small></span>`)}
+        ${item('camera', 'Backup inkl. Bilder', 'backup-files', '', '', 'green')}
+        ${item('history', 'Backup wiederherstellen', 'restore', '', '', 'orange')}
       </div>
       <div class="set-group">
         ${item('download', 'Bestand als CSV exportieren', 'export')}
@@ -1584,6 +1604,44 @@ async function viewSettings() {
           <p class="stat-note">${fmtQty(parts.length)} Ersatzteile · ${fmtQty(units)} Stück auf Lager${tools.length ? ` · ${fmtQty(tools.length)} Werkzeuge` : ''}</p>
           ${noBuy || noSell ? `<p class="stat-note warn">${[noBuy ? `${noBuy} Teile ohne Einkaufspreis` : '', noSell ? `${noSell} ohne Verkaufspreis` : ''].filter(Boolean).join(' · ')} – diese zählen mit 0 €.</p>` : ''}`,
       });
+    } catch (e) { errToast(e); }
+  });
+  const runBackup = async (b, withFiles) => {
+    b.disabled = true;
+    try {
+      const data = await db.createBackup({ withFiles, onProgress: (t) => toast(t) });
+      const sum = db.backupSummary(data);
+      const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
+      const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
+      saveFile(new Blob([JSON.stringify(data)], { type: 'application/json' }), `SpareSync-Backup_${stamp}${withFiles ? '_mit-Bildern' : ''}.json`);
+      try { localStorage.setItem('wl-last-backup', new Date().toISOString()); } catch {}
+      toast(`Backup erstellt: ${sum.parts} Teile, ${sum.tools} Werkzeuge${withFiles ? `, ${sum.files} Bilder` : ''}`);
+      const sub = root.querySelector('[data-act=backup] small'); if (sub) sub.textContent = backupAgeText();
+    } catch (e) { errToast(e); }
+    b.disabled = false;
+  };
+  on(root, 'backup', (b) => runBackup(b, false));
+  on(root, 'backup-files', async (b) => {
+    if (await confirmBox({ title: 'Backup inkl. Bilder', message: 'Alle Bilder werden mitgesichert. Die Datei wird dadurch deutlich größer und das Erstellen dauert etwas länger.', okText: 'Erstellen' })) runBackup(b, true);
+  });
+  on(root, 'restore', async () => {
+    const [file] = await pickFiles({ accept: '.json,application/json', multiple: false }); if (!file) return;
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { return errToast(new Error('Die Datei konnte nicht gelesen werden.')); }
+    if (data?.app !== 'SpareSync') return errToast(new Error('Das ist keine SpareSync-Sicherung.'));
+    const sum = db.backupSummary(data);
+    const when = sum.created ? new Date(sum.created).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'unbekannt';
+    const ok = await confirmBox({
+      title: 'Backup wiederherstellen?',
+      message: `Sicherung vom ${when}${sum.account ? ` (${sum.account})` : ''}: ${sum.parts} Teile, ${sum.tools} Werkzeuge, ${sum.locations} Lagerorte, ${sum.movements} Buchungen${sum.withFiles ? `, ${sum.files} Bilder` : ''}.\n\nEinträge aus der Sicherung ersetzen die aktuellen Einträge mit gleicher Kennung. Danach neu angelegte Teile bleiben erhalten.`,
+      okText: 'Wiederherstellen',
+    });
+    if (!ok) return;
+    try {
+      const rep = await db.restoreBackup(data, { onProgress: (t) => toast(t) });
+      invalidate();
+      if (rep.errors.length) { console.warn(rep.errors); toast(`Wiederhergestellt mit ${rep.errors.length} Problem(en): ${rep.errors[0]}`, 'err'); }
+      else toast(`Wiederhergestellt: ${rep.ok} Einträge`);
     } catch (e) { errToast(e); }
   });
   on(root, 'export', async () => { try { exportCSV(await db.listMaterials()); } catch (e) { errToast(e); } });
