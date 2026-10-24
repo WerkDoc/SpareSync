@@ -11,14 +11,88 @@ export const fmtDate = (s) => new Date(s).toLocaleString('de-DE', { day: '2-digi
 export { haptic } from './haptics.js';
 import { haptic } from './haptics.js';
 
+// ---------- Hintergrund sperren, solange ein Fenster offen ist ----------
+// iOS ignoriert overflow:hidden am body – deshalb wird die Seite kurz fixiert
+// und die Scroll-Position danach exakt wiederhergestellt.
+let lockCount = 0; let lockedY = 0;
+function lockScroll() {
+  if (lockCount++ > 0) return;
+  lockedY = window.scrollY;
+  const b = document.body.style;
+  b.position = 'fixed'; b.top = `-${lockedY}px`; b.left = '0'; b.right = '0'; b.width = '100%';
+  document.documentElement.classList.add('modal-open');
+}
+function unlockScroll() {
+  if (lockCount === 0 || --lockCount > 0) return;
+  const b = document.body.style;
+  b.position = ''; b.top = ''; b.left = ''; b.right = ''; b.width = '';
+  document.documentElement.classList.remove('modal-open');
+  window.scrollTo(0, lockedY);
+}
+
 function layer(cls, html) {
   const el = document.createElement('div');
   el.className = `layer ${cls}`;
   el.innerHTML = html;
   document.body.appendChild(el);
+  lockScroll();
   requestAnimationFrame(() => el.classList.add('show'));
-  const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 250); };
+  let closed = false;
+  const close = () => {
+    if (closed) return; closed = true;
+    el.classList.remove('show');
+    setTimeout(() => { el.remove(); unlockScroll(); }, 250);
+  };
   return { el, close };
+}
+
+// ---------- Bottom-Sheet nach unten wegwischen ----------
+function enableSwipeDown(sheetEl, dismiss) {
+  const body = sheetEl.querySelector('.bsheet-body');
+  let startY = 0; let lastY = 0; let lastT = 0; let vel = 0;
+  let tracking = false; let dragging = false; let fromHandle = false;
+
+  sheetEl.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const t = e.target;
+    fromHandle = !!t.closest('.grabber, .bsheet-grab, .bsheet-head') && !t.closest('button');
+    // im Inhalt nur, wenn er ganz oben ist (sonst normales Scrollen)
+    tracking = fromHandle || (!t.closest('input, textarea, select') && (!body || body.scrollTop <= 0));
+    dragging = false;
+    startY = lastY = e.touches[0].clientY; lastT = performance.now(); vel = 0;
+  }, { passive: true });
+
+  sheetEl.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const y = e.touches[0].clientY; const dy = y - startY;
+    if (!dragging) {
+      if (dy < 0 || (!fromHandle && body && body.scrollTop > 0)) { tracking = false; return; }   // nach oben = Inhalt scrollen
+      if (dy < 4) return;
+      dragging = true;
+      sheetEl.style.transition = 'none';
+    }
+    e.preventDefault();
+    const now = performance.now();
+    vel = (y - lastY) / Math.max(1, now - lastT); lastY = y; lastT = now;
+    sheetEl.style.transform = `translate3d(0, ${Math.max(0, dy)}px, 0)`;
+  }, { passive: false });
+
+  const end = () => {
+    if (!dragging) { tracking = false; return; }
+    tracking = false; dragging = false;
+    const dy = Math.max(0, lastY - startY);
+    const h = sheetEl.offsetHeight || 400;
+    sheetEl.style.transition = 'transform .28s cubic-bezier(.2,.9,.3,1)';
+    if (dy > Math.min(140, h * 0.3) || (dy > 30 && vel > 0.55)) {
+      sheetEl.style.transform = 'translate3d(0, 105%, 0)';
+      dismiss();
+    } else {
+      sheetEl.style.transform = '';
+      setTimeout(() => { sheetEl.style.transition = ''; }, 300);
+    }
+  };
+  sheetEl.addEventListener('touchend', end, { passive: true });
+  sheetEl.addEventListener('touchcancel', end, { passive: true });
 }
 
 // ---------- Suchfelder: „x“ zum schnellen Löschen ----------
@@ -131,7 +205,10 @@ export function sheet(html, { title = '', onMount } = {}) {
       <div class="bsheet-body">${html}</div>
     </div>`);
   el.querySelectorAll('[data-a=x]').forEach((b) => (b.onclick = close));
-  onMount?.(el.querySelector('.bsheet'), close);
+  const sh = el.querySelector('.bsheet');
+  // Wegwischen wirkt wie ein Tipp auf den Hintergrund (damit auch Auswahl-Dialoge sauber „abbrechen“)
+  enableSwipeDown(sh, () => el.querySelector('.backdrop').click());
+  onMount?.(sh, close);
   return close;
 }
 
