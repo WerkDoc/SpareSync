@@ -240,7 +240,15 @@ code { font-size: 13px; background: var(--fill); padding: 1px 5px; border-radius
 input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .segment { display: flex; background: color-mix(in srgb, var(--text) 7%, transparent); border-radius: 12px; padding: 3px; gap: 2px; }
-.list-screen .segment { margin: 8px 10px 0; position: sticky; top: calc(64px + var(--safe-t)); z-index: 15; }
+.list-screen .segment { margin: 4px 10px 10px; }
+/* Fester Kopfbereich der Teile-Liste: Suche + Schalter + Filter bleiben oben, die Liste verschwindet sauber darunter */
+.list-head {
+  position: sticky; top: 0; z-index: 50; background: var(--bg-grouped);
+  box-shadow: 0 .5px 0 var(--sep);
+}
+.list-head .navbar { position: static; border-bottom: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.list-head .chips { padding: 0 12px 10px; }
+.list-screen .content { padding-top: 0; }
 .segment button { flex: 1; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 17px; color: var(--text); }
 .segment button.on { background: var(--surface); color: var(--blue); box-shadow: 0 2px 6px rgba(0,0,0,.12); font-weight: 500; }
 :root[data-theme="dark"] .segment button.on { background: #48484a; }
@@ -670,3 +678,29 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .sb-delete:disabled { opacity: .35; }
 .sb-delete:active { transform: scale(.97); }
 .selecting .tabbar { visibility: hidden; }
+
+/* ---------- Segmented Control: gleitender Aktiv-Hintergrund ---------- */
+:root { --seg-on: var(--surface); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --seg-on: #48484a; } }
+:root[data-theme="dark"] { --seg-on: #48484a; }
+.segment.has-ind { position: relative; gap: 0; isolation: isolate; }
+.seg-ind {
+  position: absolute; top: 3px; bottom: 3px; left: 3px; z-index: 0; pointer-events: none;
+  width: calc((100% - 6px) / var(--n, 3)); border-radius: 10px; background: var(--seg-on);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 1px 1px rgba(0, 0, 0, .04);
+  transition: transform .3s cubic-bezier(.32, .72, 0, 1); will-change: transform;
+}
+.segment.has-ind > button { position: relative; z-index: 1; transition: color .2s ease-out; }
+.segment.has-ind > button.on { background: transparent !important; box-shadow: none !important; }
+.segment.has-ind > button:active:not(.on) { opacity: .6; }
+@media (prefers-reduced-motion: reduce) { .seg-ind { transition: none; } }
+
+/* ---------- Lager Informationen (Modal) ---------- */
+.alert-content { margin-top: 12px; text-align: left; }
+.stat-rows { background: var(--surface); border-radius: 12px; overflow: hidden; }
+.stat-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 11px 12px; font-size: 15px; }
+.stat-row + .stat-row { border-top: .5px solid var(--sep); }
+.stat-row b { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat-row.muted-row span, .stat-row.muted-row b { color: var(--text-2); font-size: 14px; font-weight: 600; }
+.stat-note { margin: 10px 2px 0; font-size: 13px; color: var(--text-2); text-align: center; line-height: 1.4; }
+.stat-note.warn { color: var(--orange); }

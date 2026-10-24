@@ -55,6 +55,18 @@ export function prompt({ title, message = '', value = '', placeholder = '', okTe
   });
 }
 
+/** iOS-Hinweisfenster mit eigenem Inhalt (HTML) und einem OK-Knopf */
+export function infoBox({ title, html = '', okText = 'OK' }) {
+  return new Promise((resolve) => {
+    const { el, close } = layer('alert-layer', `
+      <div class="alert" role="dialog" aria-modal="true">
+        <div class="alert-body"><h3>${esc(title)}</h3><div class="alert-content">${html}</div></div>
+        <button class="alert-btn strong" data-a="ok">${esc(okText)}</button>
+      </div>`);
+    el.querySelector('[data-a=ok]').onclick = () => { close(); resolve(true); };
+  });
+}
+
 export function confirmBox({ title, message = '', okText = 'OK', danger = false }) {
   return new Promise((resolve) => {
     const { el, close } = layer('alert-layer', `

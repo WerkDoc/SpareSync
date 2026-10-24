@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
-  scan, showLabel, compressImage, pickFiles, copyText, haptic,
+  scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox,
 } from './ui.js';
 import { exportCSV, importCSV } from './csv.js';
 
@@ -218,12 +218,39 @@ function swapScreen(next, kind) {
   Promise.all(anims.map((a) => a.finished)).then(() => finishRunning?.()).catch(() => {});
 }
 
+// ================= Segmented Control mit gleitendem Hintergrund =================
+const segMemory = {};          // letzte Position je Schalter → gleitet auch nach Neuaufbau der Seite
+const segKey = (el) => el.dataset.seg || (el.querySelector('[data-tab]') ? 'list' : el.querySelector('[data-t]') ? 'mtab' : el.querySelector('[data-scope]') ? 'scope' : 'seg');
+function updateSegments(root) {
+  root.querySelectorAll('.segment').forEach((seg) => {
+    const btns = [...seg.querySelectorAll(':scope > button')];
+    if (!btns.length) return;
+    let ind = seg.querySelector(':scope > .seg-ind');
+    const idx = Math.max(0, btns.findIndex((b) => b.classList.contains('on')));
+    const key = segKey(seg);
+    if (!ind) {
+      ind = document.createElement('span'); ind.className = 'seg-ind'; ind.setAttribute('aria-hidden', 'true');
+      seg.prepend(ind); seg.classList.add('has-ind');
+      seg.style.setProperty('--n', btns.length);
+      const from = segMemory[key] ?? idx;
+      ind.style.transition = 'none';
+      ind.style.transform = `translateX(${from * 100}%)`;
+      if (from !== idx) requestAnimationFrame(() => requestAnimationFrame(() => { ind.style.transition = ''; ind.style.transform = `translateX(${idx * 100}%)`; }));
+      else requestAnimationFrame(() => { ind.style.transition = ''; });
+    } else {
+      ind.style.transform = `translateX(${idx * 100}%)`;
+    }
+    segMemory[key] = idx;
+  });
+}
+
 function screen({ header, body, tab = null, cls = '', footer = '' }) {
   const tmp = document.createElement('div');
   tmp.innerHTML = `<div class="screen ${cls} ${tab ? 'has-tabbar' : ''} ${footer ? 'has-footer' : ''}">${header}<main class="content">${body}</main>${footer}${tab ? tabbar(tab) : ''}</div>`;
   const root = tmp.firstElementChild;
   const kind = pendingTransition; pendingTransition = null;   // nur bei echtem Seitenwechsel gesetzt
   swapScreen(root, kind);
+  updateSegments(root);
   root.querySelectorAll('[data-tablink]').forEach((a) => a.addEventListener('click', () => { if (a.getAttribute('href') !== location.hash) nextTransition = 'fade'; }));
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
   return root;
@@ -389,7 +416,7 @@ async function viewList(q) {
   const tab = listState.tab;
 
   const root = screen({
-    header: `<header class="navbar list-nav">
+    header: `<div class="list-head"><header class="navbar list-nav">
         ${btn('menu', 'menu', 'Menü')}
         <button class="icon-btn" data-act="filter" aria-label="Filter">${icon('filter', 28)}${activeFilters ? `<em class="dot">${activeFilters}</em>` : ''}</button>
         <label class="search-field grow">${icon('search', 20)}<input type="search" id="q" placeholder="Suche…" value="${esc(listState.q)}" autocomplete="off"></label>
@@ -405,7 +432,7 @@ async function viewList(q) {
         ${listState.group ? `<button class="chip" data-clear="group">${esc((await getGroups()).find((g) => g.id === listState.group)?.name || 'Gruppe')} ${icon('x', 14)}</button>` : ''}
         ${listState.loc ? `<button class="chip" data-clear="loc">${esc((await getLocs()).find((l) => l.id === listState.loc)?.name || 'Lagerort')} ${icon('x', 14)}</button>` : ''}
         ${listState.low ? `<button class="chip red" data-clear="low">Unter Meldebestand ${icon('x', 14)}</button>` : ''}
-      </div>` : ''}`,
+      </div>` : ''}</div>`,
     body: `<div id="rows"></div>`,
     tab: 'list',
     cls: 'list-screen',
@@ -485,7 +512,14 @@ async function viewList(q) {
 
   const qi = root.querySelector('#q');
   qi.oninput = () => { listState.q = qi.value; saveListState(); if (listState.tab === 'cart') { listState.tab = 'part'; viewList({}); } else renderRows(); };
-  root.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { listState.tab = b.dataset.tab; saveListState(); viewList({}); }));
+  root.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
+    if (listState.tab === b.dataset.tab) return;
+    listState.tab = b.dataset.tab; saveListState();
+    root.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
+    updateSegments(root);
+    sel.on = false; sel.ids.clear();
+    renderRows(); window.scrollTo(0, 0);
+  }));
   root.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => { listState[b.dataset.clear] = b.dataset.clear === 'low' ? false : ''; saveListState(); viewList({}); }));
   on(root, 'menu', () => go('/settings'));
   on(root, 'add', async () => {
@@ -1294,9 +1328,11 @@ function openFieldEditor(def, onSaved) {
       let scope = d.applies_to;
       const type = root.querySelector('#fd-type');
       type.onchange = () => { root.querySelector('#fd-opt-row').hidden = type.value !== 'select'; };
+      updateSegments(root);
       root.querySelectorAll('[data-scope]').forEach((b) => (b.onclick = () => {
         scope = b.dataset.scope;
         root.querySelectorAll('[data-scope]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', String(x === b)); });
+        updateSegments(root);
       }));
       setTimeout(() => { if (!def) root.querySelector('#fd-name').focus(); }, 300);
       root.querySelector('[data-a=save]').onclick = async (e) => {
@@ -1469,7 +1505,7 @@ async function viewInventory(q) {
 async function viewSettings() {
   const user = await db.getUser();
   const theme = localStorage.getItem('wl-theme') || '';
-  const TONE = { list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tag: 'indigo', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
+  const TONE = { info: 'blue', list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tag: 'indigo', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
   const item = (ic, label, act, extra = '', cls = '') => `<button class="set-row ${cls}" data-act="${act}"><i class="tone-${TONE[ic] || 'primary'}">${icon(ic, 19)}</i><span>${label}</span>${extra || icon('chevR', 18)}</button>`;
   const root = screen({
     header: navbar({ left: backBtn(), title: 'Menü' }),
@@ -1477,6 +1513,9 @@ async function viewSettings() {
     body: `
       <div class="set-group">
         <div class="set-row static"><i class="tone-${db.isDemo ? 'orange' : 'green'}">${icon('database', 19)}</i><span>${db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
+      </div>
+      <div class="set-group">
+        ${item('info', 'Lager Informationen', 'stock-info')}
       </div>
       <div class="set-group">
         ${item('list', 'Alle Ersatzteile', 'go:/list?tab=part')}
@@ -1506,6 +1545,31 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  on(root, 'stock-info', async () => {
+    try {
+      invalidate('materials');
+      const mats = await getMats();
+      const parts = mats.filter((m) => m.kind === 'part');
+      const stockOf = (m) => Math.max(0, +m.total || 0);
+      const buy = parts.reduce((a, m) => a + stockOf(m) * (+m.purchase_price || 0), 0);
+      const sell = parts.reduce((a, m) => a + stockOf(m) * (+m.sale_price || 0), 0);
+      const units = parts.reduce((a, m) => a + stockOf(m), 0);
+      const noBuy = parts.filter((m) => stockOf(m) > 0 && !(+m.purchase_price > 0)).length;
+      const noSell = parts.filter((m) => stockOf(m) > 0 && !(+m.sale_price > 0)).length;
+      const tools = mats.filter((m) => m.kind === 'tool');
+      infoBox({
+        title: 'Lager Informationen',
+        html: `
+          <div class="stat-rows">
+            <div class="stat-row"><span>Ersatzteile Wert Einkauf</span><b>${fmtEUR(buy)}</b></div>
+            <div class="stat-row"><span>Ersatzteile Wert Verkauf</span><b>${fmtEUR(sell)}</b></div>
+            ${buy > 0 && sell > 0 ? `<div class="stat-row muted-row"><span>Möglicher Rohertrag</span><b>${fmtEUR(sell - buy)}</b></div>` : ''}
+          </div>
+          <p class="stat-note">${fmtQty(parts.length)} Ersatzteile · ${fmtQty(units)} Stück auf Lager${tools.length ? ` · ${fmtQty(tools.length)} Werkzeuge` : ''}</p>
+          ${noBuy || noSell ? `<p class="stat-note warn">${[noBuy ? `${noBuy} Teile ohne Einkaufspreis` : '', noSell ? `${noSell} ohne Verkaufspreis` : ''].filter(Boolean).join(' · ')} – diese zählen mit 0 €.</p>` : ''}`,
+      });
+    } catch (e) { errToast(e); }
+  });
   on(root, 'export', async () => { try { exportCSV(await db.listMaterials()); } catch (e) { errToast(e); } });
   on(root, 'import', async () => {
     const [file] = await pickFiles({ accept: '.csv,text/csv,text/plain', multiple: false }); if (!file) return;
