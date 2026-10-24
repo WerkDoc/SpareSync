@@ -8,7 +8,8 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 export const fmtQty = (n) => (n == null || n === '' ? '–' : (+n).toLocaleString('de-DE', { maximumFractionDigits: 3 }));
 export const fmtEUR = (n) => (+(n || 0)).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 export const fmtDate = (s) => new Date(s).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-export const haptic = (ms = 12) => { try { navigator.vibrate?.(ms); } catch {} };
+export { haptic } from './haptics.js';
+import { haptic } from './haptics.js';
 
 function layer(cls, html) {
   const el = document.createElement('div');
@@ -18,6 +19,29 @@ function layer(cls, html) {
   requestAnimationFrame(() => el.classList.add('show'));
   const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 250); };
   return { el, close };
+}
+
+// ---------- Suchfelder: „x“ zum schnellen Löschen ----------
+export function enhanceSearch(root) {
+  root.querySelectorAll('.search-field input[type="search"]').forEach((inp) => {
+    if (inp.dataset.clearable) return;
+    inp.dataset.clearable = '1';
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'search-clear'; btn.setAttribute('aria-label', 'Suche löschen');
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="var(--clear-x, #fff)" stroke-width="2.2" stroke-linecap="round"/></svg>';
+    inp.insertAdjacentElement('afterend', btn);
+    const sync = () => { btn.hidden = !inp.value; };
+    sync();
+    inp.addEventListener('input', sync);
+    // pointerdown: Tastatur bleibt offen, Fokus bleibt im Feld
+    btn.addEventListener('pointerdown', (e) => e.preventDefault());
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      inp.value = '';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.focus();
+    });
+  });
 }
 
 // ---------- Toast ----------
@@ -52,6 +76,18 @@ export function prompt({ title, message = '', value = '', placeholder = '', okTe
     el.querySelector('[data-a=cancel]').onclick = () => done(null);
     el.querySelector('[data-a=ok]').onclick = () => done(inp.value.trim());
     inp.onkeydown = (e) => { if (e.key === 'Enter') done(inp.value.trim()); };
+  });
+}
+
+/** iOS-Hinweisfenster mit eigenem Inhalt (HTML) und einem OK-Knopf */
+export function infoBox({ title, html = '', okText = 'OK' }) {
+  return new Promise((resolve) => {
+    const { el, close } = layer('alert-layer', `
+      <div class="alert" role="dialog" aria-modal="true">
+        <div class="alert-body"><h3>${esc(title)}</h3><div class="alert-content">${html}</div></div>
+        <button class="alert-btn strong" data-a="ok">${esc(okText)}</button>
+      </div>`);
+    el.querySelector('[data-a=ok]').onclick = () => { close(); resolve(true); };
   });
 }
 
@@ -122,6 +158,7 @@ export function pickFrom({ title, items, selected = null, allowNone = false, cre
         };
         render();
         root.querySelector('.pick-search').oninput = (e) => render(e.target.value);
+        enhanceSearch(root);
         const cb = root.querySelector('[data-a=create]');
         if (cb) cb.onclick = async () => {
           const v = await onCreate(); if (v) finish(v, close);
