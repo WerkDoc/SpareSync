@@ -289,7 +289,6 @@ export function scan({ title = 'Scanner' } = {}) {
           <span class="sc-side"></span>
           <h2>${esc(title)}</h2>
           <span class="sc-side right">
-            <button type="button" class="sc-icon sc-torch" data-a="torch" aria-label="Taschenlampe" hidden>${icon('flash', 23)}</button>
             <button type="button" class="sc-icon" data-a="help" aria-label="Scanner Hilfe">${icon('help', 24)}</button>
             <button type="button" class="sc-icon" data-a="x" aria-label="Schließen">${icon('x', 26)}</button>
           </span>
@@ -304,6 +303,7 @@ export function scan({ title = 'Scanner' } = {}) {
           <div class="sc-frame" hidden><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i><span class="sc-line"></span></div>
         </div>
         <div class="sc-msg" hidden></div>
+        <button type="button" class="sc-torch" data-a="torch" aria-label="Taschenlampe" hidden>${icon('flash', 28, 2)}</button>
       </div>
       <div class="sc-bottom">
         <label class="sc-zoom" hidden>${icon('search', 16)}<input type="range" min="1" max="5" step="0.1" value="1" aria-label="Zoom"><span>1×</span></label>
