@@ -316,6 +316,26 @@ export async function deleteMaterial(id) {
   if (files?.length) await sb.storage.from(BUCKET).remove(files.map((f) => f.path));
   const { error } = await sb.from(T.mat).delete().eq('id', id); fail(error);
 }
+/** Mehrere Materialien auf einmal löschen (inkl. Bestand, Historie, Bilder). onProgress(fertig, gesamt) */
+export async function deleteMaterials(ids, onProgress) {
+  ids = [...new Set(ids)];
+  if (isDemo) {
+    const s = load(); const set = new Set(ids);
+    s.materials = s.materials.filter((m) => !set.has(m.id));
+    ['stock', 'movements', 'tasks', 'files', 'cart'].forEach((k) => { s[k] = s[k].filter((x) => !set.has(x.material_id)); });
+    save(); onProgress?.(ids.length, ids.length); return ids.length;
+  }
+  let done = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data: files } = await sb.from(T.file).select('path').in('material_id', chunk);
+    const paths = (files || []).map((f) => f.path);
+    for (let j = 0; j < paths.length; j += 500) await sb.storage.from(BUCKET).remove(paths.slice(j, j + 500));
+    const { error } = await sb.from(T.mat).delete().in('id', chunk); fail(error);
+    done += chunk.length; onProgress?.(done, ids.length);
+  }
+  return done;
+}
 export async function addStockLocation(material_id, location_id) {
   if (isDemo) {
     const s = load();

@@ -412,19 +412,76 @@ async function viewList(q) {
   });
 
   const rows = root.querySelector('#rows');
+  // Mehrfachauswahl (Auswählen → Häkchen → Löschen)
+  const sel = { on: false, ids: new Set() };
+  let visible = [];
+  const selBar = document.createElement('div');
+  selBar.className = 'select-bar'; selBar.hidden = true;
+  selBar.innerHTML = `<span class="sb-count"></span><button class="sb-delete" data-act="bulk-delete">${icon('trash', 19)} Löschen</button>`;
+  root.appendChild(selBar);
+  const updateSel = () => {
+    const n = sel.ids.size;
+    selBar.hidden = !sel.on;
+    root.classList.toggle('selecting', sel.on);
+    selBar.querySelector('.sb-count').textContent = n ? `${n} ausgewählt` : 'Teile antippen zum Auswählen';
+    selBar.querySelector('.sb-delete').disabled = !n;
+    const all = rows.querySelector('[data-act=sel-all]');
+    if (all) all.textContent = visible.length && visible.every((m) => sel.ids.has(m.id)) ? 'Keine auswählen' : 'Alle auswählen';
+    rows.querySelectorAll('.mrow').forEach((r) => r.classList.toggle('is-selected', sel.ids.has(r.dataset.id)));
+  };
   const renderRows = () => {
-    if (listState.tab === 'cart') return renderCart(rows, mats, cart);
+    if (listState.tab === 'cart') { sel.on = false; updateSel(); return renderCart(rows, mats, cart); }
     let f = filterMats(listState.tab === 'tool' ? tools : parts, listState);
     const s = listState.sort;
     if (s === 'name') f.sort((a, b) => a.name.localeCompare(b.name, 'de'));
     else if (s === 'stock') f.sort((a, b) => a.total - b.total);
     else if (s === 'updated') f.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
     else f.sort((a, b) => a.number - b.number);
-    rows.innerHTML = f.length ? `<div class="mlist">${f.map((m) => materialRow(m)).join('')}</div><p class="muted center small pad">${f.length} Einträge</p>`
+    visible = f;
+    rows.innerHTML = f.length ? `
+      <div class="list-tools">
+        ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.length} Einträge</span>`}
+        <button class="text-btn strong" data-act="sel-toggle">${sel.on ? 'Fertig' : 'Auswählen'}</button>
+      </div>
+      <div class="mlist">${f.map((m) => materialRow(m)).join('')}</div>`
       : empty('search', listState.q ? `Nichts gefunden für „${esc(listState.q)}“` : 'Noch keine Einträge',
         `<a class="btn-tinted" href="#/new?kind=${listState.tab}">${icon('plus', 18)} Anlegen</a>`);
+    rows.querySelectorAll('.mrow').forEach((r) => {
+      r.insertAdjacentHTML('afterbegin', `<span class="sel-check" aria-hidden="true">${icon('check', 15, 3)}</span>`);
+      r.addEventListener('click', (e) => {
+        if (!sel.on) return;
+        e.preventDefault();
+        sel.ids.has(r.dataset.id) ? sel.ids.delete(r.dataset.id) : sel.ids.add(r.dataset.id);
+        haptic(); updateSel();
+      });
+    });
+    const tgl = rows.querySelector('[data-act=sel-toggle]');
+    if (tgl) tgl.onclick = () => { sel.on = !sel.on; sel.ids.clear(); renderRows(); };
+    const all = rows.querySelector('[data-act=sel-all]');
+    if (all) all.onclick = () => {
+      const everything = visible.every((m) => sel.ids.has(m.id));
+      visible.forEach((m) => (everything ? sel.ids.delete(m.id) : sel.ids.add(m.id)));
+      updateSel();
+    };
+    updateSel();
   };
   renderRows();
+  selBar.querySelector('[data-act=bulk-delete]').onclick = async () => {
+    const ids = [...sel.ids]; const n = ids.length; if (!n) return;
+    const what = listState.tab === 'tool' ? (n === 1 ? 'Werkzeug' : 'Werkzeuge') : (n === 1 ? 'Teil' : 'Teile');
+    const allOfThem = n === (listState.tab === 'tool' ? tools : parts).length && n > 5;
+    if (!await confirmBox({ title: `${n} ${what} löschen?`, message: 'Bestand, Historie und Bilder werden ebenfalls gelöscht. Das kann nicht rückgängig gemacht werden.', okText: 'Löschen', danger: true })) return;
+    if (allOfThem) {
+      const typed = await prompt({ title: 'Wirklich alle löschen?', message: 'Zur Sicherheit bitte LÖSCHEN eintippen.', placeholder: 'LÖSCHEN', okText: 'Endgültig löschen' });
+      if ((typed || '').trim().toUpperCase() !== 'LÖSCHEN') { toast('Abgebrochen – nichts gelöscht'); return; }
+    }
+    const b = selBar.querySelector('.sb-delete'); b.disabled = true;
+    try {
+      await db.deleteMaterials(ids, (d, t) => { if (t > 100) selBar.querySelector('.sb-count').textContent = `Lösche … ${d}/${t}`; });
+      invalidate(); toast(`${n} ${what} gelöscht`);
+      sel.on = false; sel.ids.clear(); viewList({});
+    } catch (e) { errToast(e); b.disabled = false; }
+  };
 
   const qi = root.querySelector('#q');
   qi.oninput = () => { listState.q = qi.value; saveListState(); if (listState.tab === 'cart') { listState.tab = 'part'; viewList({}); } else renderRows(); };
@@ -1454,7 +1511,9 @@ async function viewSettings() {
     const [file] = await pickFiles({ accept: '.csv,text/csv,text/plain', multiple: false }); if (!file) return;
     try {
       const res = await importCSV(await file.text(), (i, n) => toast(`Import ${i}/${n}…`));
-      invalidate(); toast(`${res.created} angelegt, ${res.updated} aktualisiert${res.errors.length ? `, ${res.errors.length} Fehler` : ''}`, res.errors.length ? 'err' : 'ok');
+      invalidate();
+      const imgInfo = res.images || res.imageErrors ? ` · ${res.images || 0} Bilder${res.imageErrors ? ` (${res.imageErrors} blockiert – dafür das PC-Import-Skript nutzen)` : ''}` : '';
+      toast(`${res.created} angelegt, ${res.updated} aktualisiert${res.errors.length ? `, ${res.errors.length} Fehler` : ''}${imgInfo}`, res.errors.length || res.imageErrors ? 'err' : 'ok');
       if (res.errors.length) console.warn(res.errors);
     } catch (e) { errToast(e); }
   });

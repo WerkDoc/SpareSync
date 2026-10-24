@@ -47,8 +47,9 @@ function parse(text) {
 
 const ALIASES = {
   number: ['nr', 'nummer', 'artikelnummer', 'artikelnr', 'id'], kind: ['typ', 'art', 'kind'], name: ['name', 'bezeichnung', 'artikel', 'material'],
-  barcode: ['barcode', 'ean', 'code'], group: ['gruppe', 'ersatzteil gruppe', 'kategorie', 'materialgruppe'], location: ['lagerort', 'lager', 'ort'],
-  qty: ['bestand', 'menge', 'aktueller bestand', 'anzahl'], min_stock: ['meldebestand', 'meb', 'mindestbestand'], max_stock: ['maximalbestand', 'max'],
+  barcode: ['barcode', 'ean', 'code'], group: ['gruppe', 'ersatzteil gruppe', 'kategorie', 'materialgruppe', 'material gruppe'], location: ['lagerort', 'lager', 'ort', 'haupt lagerort (hl)', 'haupt lagerort', 'hauptlagerort'],
+  qty: ['bestand', 'menge', 'aktueller bestand', 'anzahl', 'hl bestand'], min_stock: ['meldebestand', 'meb', 'mindestbestand', 'hl meldebestand'], max_stock: ['maximalbestand', 'max', 'hl maximalbestand'],
+  image: ['bild', 'bild url', 'image', 'foto'],
   unit: ['einheit'], sale_price: ['verkaufspreis', 'vk', 'preis'], purchase_price: ['einkaufspreis', 'ek'], supplier: ['lieferant'], notes: ['notizen', 'notiz', 'bemerkung'],
 };
 const num = (s) => { s = String(s ?? '').trim(); if (!s) return null; s = s.replace(/\s|€/g, ''); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); return Number.isNaN(+s) ? null : +s; };
@@ -57,7 +58,7 @@ const num = (s) => { s = String(s ?? '').trim(); if (!s) return null; s = s.repl
 export async function importCSV(text, progress) {
   const rows = parse(text);
   if (rows.length < 2) throw new Error('CSV enthält keine Daten');
-  const head = rows[0].map((h) => h.trim().toLowerCase());
+  const head = rows[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, ' '));
   const idx = {};
   for (const [k, al] of Object.entries(ALIASES)) idx[k] = head.findIndex((h) => al.includes(h));
   if (idx.name < 0) throw new Error('Spalte „Name“ fehlt in der Kopfzeile');
@@ -95,6 +96,14 @@ export async function importCSV(text, progress) {
         const id = await db.saveMaterial(null, d, { initial: location_id ? { location_id, qty: qty || 0 } : null });
         mats.push({ id, name, number: d.number, locations: [] });
         res.created++;
+        const img = get('image');
+        if (/^https?:\/\//i.test(img)) {
+          try {
+            const r = await fetch(img); if (!r.ok) throw new Error('HTTP ' + r.status);
+            const blob = await r.blob(); if (!blob.type.startsWith('image/')) throw new Error('kein Bild');
+            await db.addFile(id, blob, 'bild.jpg', 'image'); res.images = (res.images || 0) + 1;
+          } catch { res.imageErrors = (res.imageErrors || 0) + 1; }
+        }
       }
     } catch (e) { res.errors.push(`Zeile ${i + 2}: ${e.message}`); }
   }
