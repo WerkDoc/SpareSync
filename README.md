@@ -1,4 +1,4 @@
-# WerkDoc Lager
+# SpareSync
 
 Werkstatt-Lagerverwaltung als PWA für Ersatzteile, Kleinteile und Werkzeuge – iOS-Look, Barcode-Scan, Supabase-Cloud.
 
@@ -20,7 +20,7 @@ Werkstatt-Lagerverwaltung als PWA für Ersatzteile, Kleinteile und Werkzeuge –
 
 ## 1. Supabase einrichten (einmalig)
 
-Du kannst dein bestehendes WerkDoc-Supabase-Projekt verwenden – alle Tabellen heißen `lager_…` und stören nichts.
+SpareSync nutzt ein **eigenes** Supabase-Projekt – getrennt von anderen Apps, mit eigenen Benutzerkonten.
 
 1. Supabase → **SQL Editor** → *New query* → Inhalt von `supabase/schema.sql` einfügen → **Run**.
 2. Supabase → **Project Settings → API**: `Project URL` und `anon public` Key kopieren.
@@ -71,3 +71,16 @@ public/                    Manifest, Service Worker, App-Icons
 supabase/schema.sql        Datenbank, Sicherheit, Buchungsfunktion, Storage
 .github/workflows/         Automatisches Deployment auf GitHub Pages
 ```
+
+## Alte Teile mit Bildern importieren (PC)
+
+Das Skript `tools/import-csv.mjs` liest eine CSV (Spalten z. B. „Bild“, „Name“, „Ersatzteil Gruppe“, „Haupt Lagerort (HL)“, „HL Bestand“, „HL Meldebestand“), lädt jedes Bild von der URL herunter, speichert es im Supabase-Bucket `lager-files` und legt das Teil mit Gruppe, Lagerort, Bestand und Meldebestand an.
+
+```bash
+npm install                                   # einmalig
+node tools/import-csv.mjs teile.csv --probe   # Test mit 3 Zeilen
+node tools/import-csv.mjs teile.csv           # alles importieren
+```
+
+Optionen: `--dry-run` (nur anzeigen), `--no-images`, `--update` (vorhandene Teile mit gleichem Namen aktualisieren statt überspringen).
+Anmeldung mit dem eigenen SpareSync-Login; benötigt wird nur die Supabase-URL und der Publishable Key – kein geheimer Schlüssel.

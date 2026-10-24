@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "import": "node tools/import-csv.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
