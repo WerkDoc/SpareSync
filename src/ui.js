@@ -247,43 +247,225 @@ export function pickFrom({ title, items, selected = null, allowNone = false, cre
 }
 
 // ---------- Barcode-Scanner (Kamera) ----------
-export function scan({ title = 'Barcode scannen' } = {}) {
+// Erkennung läuft NUR im sichtbaren Rahmen: html5-qrcode schneidet über „qrbox“
+// genau diesen Ausschnitt aus jedem Kamerabild und wertet nur ihn aus.
+// Damit Rahmen und Ausschnitt deckungsgleich sind, wird das Video NICHT
+// beschnitten (kein object-fit: cover) und der Rahmen exakt in Video-Mitte
+// mit denselben Maßen gezeichnet, die die Library verwendet.
+const SCAN_MODES = [
+  { id: 'auto', label: 'Auto', icon: 'corners' },
+  { id: 'area', label: 'Bereich', icon: 'barcode' },
+  { id: 'multi', label: 'Multi', icon: 'list' },
+  { id: 'ocr', label: 'OCR', icon: 'camera' },
+  { id: 'input', label: 'Eingabe', icon: 'edit' },
+  { id: 'nfc', label: 'NFC', icon: 'nfc' },
+];
+const SCAN_HINTS = {
+  auto: 'Barcode oder QR-Code in den Rahmen halten',
+  area: 'Nur der Code im schmalen Rahmen wird gelesen – ideal bei vielen Etiketten nebeneinander',
+  multi: 'Codes nacheinander in den Rahmen halten, dann den richtigen antippen',
+  input: 'Code eintippen oder mit einem Bluetooth-/USB-Scanner einlesen',
+  nfc: 'NFC-Tag an die Rückseite des Geräts halten',
+};
+/** Rahmengröße je Modus – wird 1:1 für Erkennung (qrbox) UND Anzeige verwendet */
+function scanBox(mode, vw, vh) {
+  const area = mode === 'area';
+  let w = vw * (area ? 0.74 : 0.84);
+  let h = area ? Math.min(vh * 0.26, w * 0.4) : Math.min(vh * 0.5, w * 0.62);
+  w = Math.floor(Math.max(80, Math.min(w, vw - 8)));
+  h = Math.floor(Math.max(56, Math.min(h, vh - 8)));
+  return { width: w, height: h };
+}
+
+export function scan({ title = 'Scanner' } = {}) {
   return new Promise((resolve) => {
-    const { el, close } = layer('scan-layer', `
-      <div class="scan-top">
-        <button class="scan-x" data-a="x">${icon('x', 26)}</button>
-        <span>${esc(title)}</span><span style="width:44px"></span>
+    let mode = 'auto';
+    try { mode = localStorage.getItem('wl-scan-mode') || 'auto'; } catch {}
+    if (!['auto', 'area', 'multi', 'input'].includes(mode)) mode = 'auto';
+
+    const { el, close } = layer('sc-layer', `
+      <div class="sc-top">
+        <div class="sc-bar">
+          <span class="sc-side"></span>
+          <h2>${esc(title)}</h2>
+          <span class="sc-side right">
+            <button type="button" class="sc-icon sc-torch" data-a="torch" aria-label="Taschenlampe" hidden>${icon('flash', 23)}</button>
+            <button type="button" class="sc-icon" data-a="help" aria-label="Scanner Hilfe">${icon('help', 24)}</button>
+            <button type="button" class="sc-icon" data-a="x" aria-label="Schließen">${icon('x', 26)}</button>
+          </span>
+        </div>
+        <div class="sc-modes" role="tablist" aria-label="Scan-Modus">
+          ${SCAN_MODES.map((m) => `<button type="button" role="tab" data-mode="${m.id}">${icon(m.icon, 23, 1.8)}<span>${m.label}</span></button>`).join('')}
+        </div>
       </div>
-      <div id="wl-reader" class="scan-reader"></div>
-      <div class="scan-frame"><i></i></div>
-      <div class="scan-bottom">
-        <p class="scan-hint">Barcode oder QR-Code in den Rahmen halten</p>
-        <div class="scan-manual"><input placeholder="…oder Code eintippen" enterkeyhint="go"><button data-a="ok">OK</button></div>
+      <div class="sc-view">
+        <div class="sc-stage">
+          <div id="sc-reader"></div>
+          <div class="sc-frame" hidden><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i><span class="sc-line"></span></div>
+        </div>
+        <div class="sc-msg" hidden></div>
+      </div>
+      <div class="sc-bottom">
+        <label class="sc-zoom" hidden>${icon('search', 16)}<input type="range" min="1" max="5" step="0.1" value="1" aria-label="Zoom"><span>1×</span></label>
+        <div class="sc-multi" hidden>
+          <div class="sc-multi-head"><b>Gefundene Codes</b><button type="button" data-a="mclear">Leeren</button></div>
+          <div class="sc-chips"><span class="sc-empty">Noch nichts erkannt</span></div>
+        </div>
+        <p class="sc-hint"></p>
+        <form class="sc-manual"><input placeholder="…oder Code eintippen" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit">OK</button></form>
       </div>`);
-    let qr = null; let finished = false;
+
+    const $ = (q) => el.querySelector(q);
+    const frame = $('.sc-frame'); const msg = $('.sc-msg'); const hint = $('.sc-hint');
+    const torchBtn = $('.sc-torch'); const zoomWrap = $('.sc-zoom'); const multiBox = $('.sc-multi');
+    const input = $('.sc-manual input');
+    let qr = null; let lib = null; let running = false; let starting = null; let finished = false;
+    let lastBox = null; let torchOn = false; let nfcAbort = null;
+    const found = [];
+
+    const showMsg = (t) => { msg.textContent = t; msg.hidden = !t; };
+    const placeFrame = () => {
+      if (!lastBox) return;
+      frame.style.width = `${lastBox.width}px`;
+      frame.style.height = `${lastBox.height}px`;
+      frame.hidden = false;
+    };
+    const stopCam = async () => {
+      if (starting) { try { await starting; } catch {} }
+      if (qr && running) { try { await qr.stop(); } catch {} }
+      running = false;
+      try { qr?.clear(); } catch {}
+      qr = null; frame.hidden = true; torchBtn.hidden = true; zoomWrap.hidden = true; torchOn = false;
+    };
     const finish = async (v) => {
       if (finished) return; finished = true;
-      try { if (qr?.isScanning) await qr.stop(); qr?.clear(); } catch {}
-      close(); resolve(v);
+      try { nfcAbort?.abort(); } catch {}
+      await stopCam(); close(); resolve(v);
     };
-    el.querySelector('[data-a=x]').onclick = () => finish(null);
-    const inp = el.querySelector('input');
-    el.querySelector('[data-a=ok]').onclick = () => inp.value.trim() && finish(inp.value.trim());
-    inp.onkeydown = (e) => { if (e.key === 'Enter' && inp.value.trim()) finish(inp.value.trim()); };
+    const renderChips = () => {
+      $('.sc-chips').innerHTML = found.length
+        ? found.map((c, i) => `<button type="button" class="sc-chip" data-i="${i}">${esc(c)}</button>`).join('')
+        : '<span class="sc-empty">Noch nichts erkannt</span>';
+      el.querySelectorAll('.sc-chip').forEach((b) => (b.onclick = () => finish(found[+b.dataset.i])));
+    };
+    const onCode = (text) => {
+      text = String(text || '').trim(); if (!text || finished) return;
+      if (mode === 'multi') {
+        if (found.includes(text)) return;
+        found.unshift(text); haptic('light'); renderChips();
+        frame.classList.remove('hit'); void frame.offsetWidth; frame.classList.add('hit');
+        return;
+      }
+      haptic('success'); frame.classList.add('hit');
+      setTimeout(() => finish(text), 120);
+    };
 
-    import('html5-qrcode').then(({ Html5Qrcode, Html5QrcodeSupportedFormats: F }) => {
-      if (finished) return;
-      qr = new Html5Qrcode('wl-reader', {
-        verbose: false, useBarCodeDetectorIfSupported: true,
-        formatsToSupport: [F.QR_CODE, F.CODE_128, F.CODE_39, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.DATA_MATRIX, F.ITF, F.CODE_93],
-      });
-      qr.start({ facingMode: 'environment' }, { fps: 12, aspectRatio: window.innerHeight / window.innerWidth },
-        (text) => { haptic(40); finish(text); }, () => {})
-        .catch(() => {
-          el.querySelector('.scan-hint').textContent = 'Kamera nicht verfügbar – bitte Code eintippen (Kamera-Zugriff in den Einstellungen erlauben).';
-          inp.focus();
+    const startCam = () => {
+      starting = (async () => {
+        lib ??= await import('html5-qrcode');
+        if (finished) return;
+        const { Html5Qrcode, Html5QrcodeSupportedFormats: F } = lib;
+        const m = mode;
+        qr = new Html5Qrcode('sc-reader', {
+          verbose: false,
+          useBarCodeDetectorIfSupported: true,
+          formatsToSupport: [F.QR_CODE, F.CODE_128, F.CODE_39, F.CODE_93, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.ITF, F.DATA_MATRIX, F.CODABAR],
         });
+        await qr.start(
+          { facingMode: 'environment' },
+          {
+            fps: 15,
+            aspectRatio: 1.7777778,          // Hochformat am Handy: füllt den Bildschirm weitgehend
+            disableFlip: true,
+            qrbox: (vw, vh) => { lastBox = scanBox(m, vw, vh); requestAnimationFrame(placeFrame); return lastBox; },
+          },
+          (text) => onCode(text),
+          () => {},
+        );
+        running = true;
+        placeFrame();
+        // Taschenlampe & Zoom nur anzeigen, wenn die Kamera es kann
+        try {
+          const caps = qr.getRunningTrackCameraCapabilities();
+          const torch = caps.torchFeature();
+          if (torch.isSupported()) {
+            torchBtn.hidden = false;
+            torchBtn.onclick = async () => {
+              torchOn = !torchOn;
+              try { await torch.apply(torchOn); torchBtn.classList.toggle('on', torchOn); haptic('light'); } catch { torchOn = !torchOn; }
+            };
+          }
+          const zoom = caps.zoomFeature();
+          if (m === 'area' && zoom.isSupported()) {
+            const r = zoomWrap.querySelector('input'); const lab = zoomWrap.querySelector('span');
+            r.min = zoom.min(); r.max = Math.min(zoom.max(), 8); r.step = zoom.step() || 0.1; r.value = zoom.value() || zoom.min();
+            lab.textContent = `${(+r.value).toFixed(1)}×`;
+            r.oninput = () => { lab.textContent = `${(+r.value).toFixed(1)}×`; try { zoom.apply(+r.value); } catch {} };
+            zoomWrap.hidden = false;
+          }
+        } catch { /* Funktionen nicht verfügbar */ }
+      })();
+      return starting.then(() => { starting = null; showMsg(''); }).catch(() => {
+        starting = null; running = false;
+        showMsg('Kamera nicht verfügbar. Bitte Kamera-Zugriff erlauben (Einstellungen › Safari › Kamera) oder den Code unten eintippen.');
+      });
+    };
+
+    const startNfc = async () => {
+      try {
+        nfcAbort = new AbortController();
+        const reader = new window.NDEFReader();
+        await reader.scan({ signal: nfcAbort.signal });
+        reader.onreading = (e) => {
+          let text = '';
+          for (const rec of e.message?.records || []) {
+            if (rec.recordType === 'text' || rec.recordType === 'url') { text = new TextDecoder(rec.encoding || 'utf-8').decode(rec.data); break; }
+          }
+          onCode(text || e.serialNumber);
+        };
+      } catch { showMsg('NFC konnte nicht gestartet werden.'); }
+    };
+
+    const setMode = async (m, first = false) => {
+      if (m === 'ocr') { toast('OCR (Text aus Foto) folgt im nächsten Schritt – bis dahin bitte „Eingabe“ nutzen.'); return; }
+      if (m === 'nfc' && !('NDEFReader' in window)) { toast('NFC wird von iPhone-Browsern leider nicht unterstützt (nur Android/Chrome).', 'err'); return; }
+      if (m === mode && !first) return;
+      mode = m;
+      if (m !== 'nfc') { try { localStorage.setItem('wl-scan-mode', m); } catch {} }
+      el.querySelectorAll('[data-mode]').forEach((b) => {
+        const on = b.dataset.mode === m; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on));
+      });
+      el.classList.toggle('mode-input', m === 'input' || m === 'nfc');
+      hint.textContent = SCAN_HINTS[m] || '';
+      multiBox.hidden = m !== 'multi';
+      try { nfcAbort?.abort(); } catch {} nfcAbort = null;
+      await stopCam();
+      if (finished) return;
+      if (m === 'input') { showMsg(''); setTimeout(() => input.focus(), 50); return; }
+      if (m === 'nfc') { showMsg('NFC-Tag an das Gerät halten …'); startNfc(); return; }
+      startCam();
+    };
+
+    el.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => { haptic('light'); setMode(b.dataset.mode); }));
+    $('[data-a=x]').onclick = () => finish(null);
+    $('[data-a=mclear]').onclick = () => { found.length = 0; renderChips(); };
+    $('[data-a=help]').onclick = () => infoBox({
+      title: 'Scanner Hilfe',
+      html: `<dl class="sc-help">
+        <dt>Auto</dt><dd>Erster erkannter Barcode wird übernommen.</dd>
+        <dt>Bereich</dt><dd>Nur Barcodes im markierten Bereich.${'' /* Zoom, falls verfügbar */}</dd>
+        <dt>Multi</dt><dd>Mehrere Barcodes sammeln, dann auswählen.</dd>
+        <dt>OCR</dt><dd>Text aus Foto erkennen (z.&nbsp;B. Seriennummern).</dd>
+        <dt>Eingabe</dt><dd>Tastatur oder Bluetooth-/USB-Scanner.</dd>
+        <dt>NFC</dt><dd>Liest einen NFC-Tag aus.</dd>
+      </dl>`,
+      okText: 'Ok',
     });
+    $('.sc-manual').onsubmit = (e) => { e.preventDefault(); const v = input.value.trim(); if (v) finish(v); };
+    const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.alert-layer')) { document.removeEventListener('keydown', onKey); finish(null); } };
+    document.addEventListener('keydown', onKey);
+
+    setMode(mode, true);
   });
 }
 

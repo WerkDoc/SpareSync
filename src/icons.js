@@ -1,6 +1,10 @@
 // Schlanke Linien-Icons (SVG) – stroke = currentColor
 const P = {
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
+  corners: '<path d="M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3"/>',
+  help: '<circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.2a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.4-2.7 4.1"/><circle cx="12" cy="17.6" r=".7" fill="currentColor"/>',
+  nfc: '<path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>',
+  flash: '<path d="M8 2h8l-1 6H9z"/><path d="M9 8h6v3l-1.5 2v8.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5V13L9 11z"/><path d="M12 14.5v2"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   filter: '<path d="M3 5h12l-4.5 6v6l-3 2v-8z"/><path d="M15 12h6M15 16h6M17 8h4"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
