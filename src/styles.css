@@ -825,3 +825,32 @@ html.modal-open, html.modal-open body { overscroll-behavior: none; }
 .sc-help { margin: 12px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; text-align: left; font-size: 14.5px; line-height: 1.35; }
 .sc-help dt { font-weight: 700; }
 .sc-help dd { margin: 0; color: var(--text-2); }
+
+/* ---------- Fortschritts-Kachel (Backup) ---------- */
+.progress-layer .pp { max-width: 340px; }
+.pp-body { padding: 24px 22px 20px; text-align: center; }
+.pp-ic { width: 54px; height: 54px; margin: 0 auto 12px; border-radius: 16px; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); transition: background-color .3s, color .3s; }
+.pp.is-done .pp-ic { background: var(--green-soft); color: var(--green); animation: ppPop .4s cubic-bezier(.2,.9,.3,1.4); }
+.pp.is-error .pp-ic { background: var(--red-soft); color: var(--red); }
+@keyframes ppPop { 0% { transform: scale(.6); } 100% { transform: scale(1); } }
+.pp-title { margin: 0; font-size: 18px; }
+.pp-step { margin: 6px 0 16px; min-height: 1.4em; font-size: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pp-bar { position: relative; height: 10px; border-radius: 5px; overflow: hidden; background: color-mix(in srgb, var(--text) 10%, transparent); }
+.pp-bar i {
+  position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0); border-radius: 5px;
+  background: linear-gradient(90deg, #2f7bf6, #4f9bff); transition: transform .35s ease-out;
+}
+/* laufender Glanz auf dem Balken – wie bei einer Installation */
+.pp-bar i::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.55) 50%, transparent 100%);
+  background-size: 40% 100%; background-repeat: no-repeat; animation: ppShine 1.4s linear infinite;
+}
+@keyframes ppShine { from { background-position: -60% 0; } to { background-position: 160% 0; } }
+.pp.is-done .pp-bar i { background: var(--green); }
+.pp.is-done .pp-bar i::after, .pp.is-error .pp-bar i::after { animation: none; display: none; }
+.pp.is-error .pp-bar i { background: var(--red); }
+.pp-pct { margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
+.pp.is-done .pp-pct { color: var(--green); }
+.pp-actions:empty { display: none; }
+@media (prefers-reduced-motion: reduce) { .pp-bar i::after { animation: none; } }

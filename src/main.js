@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
-  scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch,
+  scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
 } from './ui.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
@@ -1608,16 +1608,27 @@ async function viewSettings() {
   });
   const runBackup = async (b, withFiles) => {
     b.disabled = true;
+    const pp = progressPanel({ title: withFiles ? 'Backup inkl. Bilder' : 'Backup wird erstellt', icon: 'save' });
     try {
-      const data = await db.createBackup({ withFiles, onProgress: (t) => toast(t) });
+      const data = await db.createBackup({ withFiles, onProgress: (t, f) => pp.set(f, t) });
       const sum = db.backupSummary(data);
       const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
       const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
-      saveFile(new Blob([JSON.stringify(data)], { type: 'application/json' }), `SpareSync-Backup_${stamp}${withFiles ? '_mit-Bildern' : ''}.json`);
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const name = `SpareSync-Backup_${stamp}${withFiles ? '_mit-Bildern' : ''}.json`;
       try { localStorage.setItem('wl-last-backup', new Date().toISOString()); } catch {}
-      toast(`Backup erstellt: ${sum.parts} Teile, ${sum.tools} Werkzeuge${withFiles ? `, ${sum.files} Bilder` : ''}`);
       const sub = root.querySelector('[data-act=backup] small'); if (sub) sub.textContent = backupAgeText();
-    } catch (e) { errToast(e); }
+      const mb = blob.size / 1048576;
+      // Teilen erst nach erneutem Antippen – Safari erlaubt das Teilen-Menü nur direkt nach einer Berührung
+      pp.done({
+        title: 'Backup ist fertig',
+        message: `${sum.parts} Teile · ${sum.tools} Werkzeuge${withFiles ? ` · ${sum.files} Bilder` : ''} · ${mb < 1 ? `${Math.max(1, Math.round(blob.size / 1024))} KB` : `${mb.toFixed(1).replace('.', ',')} MB`}`,
+        actions: [
+          { label: 'Backup speichern', primary: true, onClick: () => saveFile(blob, name) },
+          { label: 'Schließen' },
+        ],
+      });
+    } catch (e) { pp.fail(e?.message || String(e)); }
     b.disabled = false;
   };
   on(root, 'backup', (b) => runBackup(b, false));
@@ -1637,12 +1648,17 @@ async function viewSettings() {
       okText: 'Wiederherstellen',
     });
     if (!ok) return;
+    const pp = progressPanel({ title: 'Backup wird wiederhergestellt', icon: 'history' });
     try {
-      const rep = await db.restoreBackup(data, { onProgress: (t) => toast(t) });
+      const rep = await db.restoreBackup(data, { onProgress: (t, f) => pp.set(f, t) });
       invalidate();
-      if (rep.errors.length) { console.warn(rep.errors); toast(`Wiederhergestellt mit ${rep.errors.length} Problem(en): ${rep.errors[0]}`, 'err'); }
-      else toast(`Wiederhergestellt: ${rep.ok} Einträge`);
-    } catch (e) { errToast(e); }
+      if (rep.errors.length) console.warn(rep.errors);
+      pp.done({
+        title: rep.errors.length ? 'Teilweise wiederhergestellt' : 'Wiederherstellung fertig',
+        message: rep.errors.length ? `${rep.ok} Einträge übernommen, ${rep.errors.length} Problem(e): ${rep.errors[0]}` : `${rep.ok} Einträge übernommen.`,
+        actions: [{ label: 'OK', primary: true }],
+      });
+    } catch (e) { pp.fail(e?.message || String(e)); }
   });
   on(root, 'export', async () => { try { exportCSV(await db.listMaterials()); } catch (e) { errToast(e); } });
   on(root, 'import', async () => {

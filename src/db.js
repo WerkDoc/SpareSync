@@ -588,21 +588,31 @@ export async function createBackup({ withFiles = false, onProgress } = {}) {
   }
   const { data: u } = await sb.auth.getUser();
   backup.account = u.user?.email || '';
-  for (const [name, table] of BACKUP_TABLES) {
-    onProgress?.(`Lade ${name} …`);
+  const LABEL = { locations: 'Lagerorte', groups: 'Gruppen', field_defs: 'Eigene Felder', materials: 'Teile & Werkzeuge', stock: 'Bestände', movements: 'Buchungen', tasks: 'Aufgaben', files: 'Bilderliste', cart: 'Warenkorb' };
+  const dataShare = withFiles ? 0.15 : 0.95;           // Anteil am Balken für die Tabellen
+  for (let i = 0; i < BACKUP_TABLES.length; i++) {
+    const [name, table] = BACKUP_TABLES[i];
+    onProgress?.(`${LABEL[name]} …`, (i / BACKUP_TABLES.length) * dataShare);
     backup.tables[name] = await fetchAllRows(table);
   }
   if (withFiles) {
     const files = backup.tables.files;
-    for (let i = 0; i < files.length; i++) {
-      onProgress?.(`Bilder ${i + 1}/${files.length} …`);
-      try {
-        const { data, error } = await sb.storage.from(BUCKET).download(files[i].path);
-        if (error) throw error;
-        files[i].data = await blobToDataURL(data);
-      } catch { files[i].data = null; }
-    }
+    let done = 0; let next = 0;
+    const worker = async () => {                        // 6 Bilder gleichzeitig laden
+      while (next < files.length) {
+        const f = files[next++];
+        try {
+          const { data, error } = await sb.storage.from(BUCKET).download(f.path);
+          if (error) throw error;
+          f.data = await blobToDataURL(data);
+        } catch { f.data = null; }
+        done++;
+        onProgress?.(`Bilder ${done} von ${files.length}`, 0.15 + (done / Math.max(1, files.length)) * 0.8);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, files.length) }, worker));
   }
+  onProgress?.('Datei wird erstellt …', 0.97);
   return backup;
 }
 
@@ -638,7 +648,9 @@ export async function restoreBackup(backup, { onProgress } = {}) {
     save(); return report;
   }
   const uid = await myId();
-  for (const [name, table, conflict] of BACKUP_TABLES) {
+  for (let ti = 0; ti < BACKUP_TABLES.length; ti++) {
+    const [name, table, conflict] = BACKUP_TABLES[ti];
+    onProgress?.(null, 0.6 + (ti / BACKUP_TABLES.length) * 0.4);
     let rows = (backup.tables[name] || []).map((r) => { const c = { ...r }; delete c.owner_id; return c; });
     if (!rows.length) continue;
     if (name === 'files') {
@@ -649,7 +661,7 @@ export async function restoreBackup(backup, { onProgress } = {}) {
         const base = String(f.path || '').split('/').pop() || `${f.id}.jpg`;
         const newPath = `${uid}/${f.material_id}/${base}`;
         if (data) {
-          onProgress?.(`Bilder ${i + 1}/${rows.length} …`);
+          onProgress?.(`Bilder ${i + 1} von ${rows.length}`, 0.1 + ((i + 1) / rows.length) * 0.5);
           try {
             const blob = await dataURLToBlob(data);
             const up = await sb.storage.from(BUCKET).upload(newPath, blob, { contentType: blob.type || undefined, upsert: true });
@@ -661,7 +673,7 @@ export async function restoreBackup(backup, { onProgress } = {}) {
       }
       rows = prepared;
     }
-    onProgress?.(`Speichere ${name} …`);
+    onProgress?.(`Speichere ${({ locations: 'Lagerorte', groups: 'Gruppen', field_defs: 'Eigene Felder', materials: 'Teile & Werkzeuge', stock: 'Bestände', movements: 'Buchungen', tasks: 'Aufgaben', files: 'Bilder', cart: 'Warenkorb' })[name]} …`);
     for (let i = 0; i < rows.length; i += 500) {
       const chunk = rows.slice(i, i + 500);
       const { error } = await sb.from(table).upsert(chunk, { onConflict: conflict });

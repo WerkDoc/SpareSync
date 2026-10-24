@@ -165,6 +165,57 @@ export function infoBox({ title, html = '', okText = 'OK' }) {
   });
 }
 
+/**
+ * Fortschritts-Fenster im iOS-Stil mit blauem Balken.
+ * const pp = progressPanel({ title }); pp.set(0.4, 'Bilder 120/307'); pp.done({...}); pp.fail('…');
+ */
+export function progressPanel({ title = 'Bitte warten …', icon: ic = 'save' } = {}) {
+  const { el, close } = layer('alert-layer progress-layer', `
+    <div class="alert pp" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="pp-body">
+        <div class="pp-ic">${icon(ic, 26, 2)}</div>
+        <h3 class="pp-title">${esc(title)}</h3>
+        <p class="pp-step">Vorbereiten …</p>
+        <div class="pp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+        <div class="pp-pct">0 %</div>
+      </div>
+      <div class="pp-actions"></div>
+    </div>`);
+  const $ = (q) => el.querySelector(q);
+  let last = 0;
+  const api = {
+    set(frac, text) {
+      if (typeof frac === 'number' && !Number.isNaN(frac)) {
+        last = Math.max(last, Math.min(1, frac));                 // Balken läuft nie rückwärts
+        $('.pp-bar i').style.transform = `scaleX(${last})`;
+        $('.pp-bar').setAttribute('aria-valuenow', String(Math.round(last * 100)));
+        $('.pp-pct').textContent = `${Math.round(last * 100)} %`;
+      }
+      if (text) $('.pp-step').textContent = text;
+    },
+    done({ title: t, message = '', actions = [] } = {}) {
+      api.set(1);
+      el.querySelector('.pp').classList.add('is-done');
+      $('.pp-ic').innerHTML = icon('check', 28, 2.6);
+      if (t) $('.pp-title').textContent = t;
+      $('.pp-step').textContent = message;
+      const box = $('.pp-actions');
+      box.innerHTML = actions.map((a, i) => `<button class="alert-btn ${a.primary ? 'strong' : ''}" data-i="${i}">${esc(a.label)}</button>`).join('');
+      box.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { const a = actions[+b.dataset.i]; if (a.close !== false) close(); a.onClick?.(); }));
+    },
+    fail(message) {
+      el.querySelector('.pp').classList.add('is-error');
+      $('.pp-ic').innerHTML = icon('alert', 26, 2.2);
+      $('.pp-title').textContent = 'Das hat nicht geklappt';
+      $('.pp-step').textContent = message;
+      $('.pp-actions').innerHTML = '<button class="alert-btn strong" data-a="ok">OK</button>';
+      $('[data-a=ok]').onclick = close;
+    },
+    close,
+  };
+  return api;
+}
+
 export function confirmBox({ title, message = '', okText = 'OK', danger = false }) {
   return new Promise((resolve) => {
     const { el, close } = layer('alert-layer', `
