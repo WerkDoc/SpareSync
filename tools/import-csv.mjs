@@ -15,6 +15,16 @@
 //    --dry-run      nichts speichern, nur anzeigen, was passieren würde
 //    --no-images    Bilder überspringen
 //    --update       vorhandene Teile (gleicher Name) aktualisieren statt überspringen
+//                   (es werden nur die Spalten geändert, die in der CSV vorkommen)
+//    --all-columns  alle unbekannten Spalten als „Eigene Felder“ übernehmen
+//    --no-create    keine neuen Teile anlegen, nur vorhandene aktualisieren
+//    --as-tool      als Werkzeug/Gerät importieren (statt Ersatzteil)
+//    --fields-only  NUR Eigene Felder (z. B. Chargennummer Platz) nachtragen –
+//                   Bestand, Bilder, Gruppe, Lagerort usw. bleiben unberührt
+//
+//  Eigene Felder: Jede Spalte, deren Überschrift genau wie ein Feld unter
+//  Menü → Eigene Felder heißt (z. B. „Chargennummer Platz“), wird automatisch
+//  in dieses Feld übernommen.
 //
 //  Anmeldung erfolgt mit DEINEM SpareSync-Login (E-Mail + Passwort).
 //  Es wird KEIN geheimer Supabase-Schlüssel benötigt – nur der öffentliche
@@ -36,11 +46,16 @@ const file = args.find((a) => !a.startsWith('--'));
 const flag = (f) => args.includes(f);
 const DRY = flag('--dry-run');
 const PROBE = flag('--probe');
-const NO_IMAGES = flag('--no-images');
-const UPDATE = flag('--update');
+const NO_IMAGES = flag('--no-images') || flag('--fields-only');
+const UPDATE = flag('--update') || flag('--fields-only');
+const ALL_COLUMNS = flag('--all-columns');
+const FIELDS_ONLY = flag('--fields-only');
+const AS_TOOL = flag('--as-tool') || flag('--geraete');
+const KIND = AS_TOOL ? 'tool' : 'part';
+const NO_CREATE = flag('--no-create') || FIELDS_ONLY;
 
 if (!file) {
-  console.log('\nAufruf:  node tools/import-csv.mjs <datei.csv> [--probe] [--dry-run] [--no-images] [--update]\n');
+  console.log('\nAufruf:  node tools/import-csv.mjs <datei.csv> [--probe] [--dry-run] [--no-images] [--as-tool] [--update] [--no-create] [--fields-only] [--all-columns]\n');
   exit(1);
 }
 if (!existsSync(file)) { console.error(`Datei nicht gefunden: ${file}`); exit(1); }
@@ -93,14 +108,15 @@ function parseCSV(text) {
 const ALIASES = {
   image: ['bild', 'bild url', 'image', 'foto', 'vorschaubild'],
   name: ['name', 'bezeichnung', 'artikel', 'material'],
-  group: ['ersatzteil gruppe', 'gruppe', 'materialgruppe', 'material gruppe', 'kategorie'],
+  group: ['ersatzteil gruppe', 'geräte gruppe', 'gerätegruppe', 'geraete gruppe', 'werkzeug gruppe', 'gerät gruppe', 'gruppe', 'materialgruppe', 'material gruppe', 'kategorie'],
   location: ['haupt lagerort (hl)', 'haupt lagerort', 'hauptlagerort', 'lagerort', 'lager'],
   qty: ['hl bestand', 'bestand', 'aktueller bestand', 'menge'],
   min: ['hl meldebestand', 'meldebestand', 'meb', 'mindestbestand'],
-  max: ['hl maximalbestand', 'maximalbestand', 'max'],
+  max: ['hl maximalbestand', 'hl max. bestand', 'hl max bestand', 'max. bestand', 'maximalbestand', 'max'],
   number: ['nr', 'nummer', 'artikelnummer', 'id'],
   barcode: ['barcode', 'ean'],
   price: ['verkaufspreis', 'vk', 'preis'],
+  buy: ['einkaufspreis', 'einkaufpreis', 'ek', 'einkauf', 'ek-preis'],
 };
 const num = (s) => {
   s = String(s ?? '').trim().replace(/\s|€/g, ''); if (!s) return null;
@@ -135,7 +151,8 @@ for (const [k, al] of Object.entries(ALIASES)) col[k] = head.findIndex((h) => al
 if (col.name < 0) { console.error(`Spalte „Name“ nicht gefunden. Gefundene Spalten: ${rows[0].join(' | ')}`); exit(1); }
 
 console.log('Erkannte Spalten:');
-for (const [k, label] of [['image', 'Bild'], ['name', 'Name'], ['group', 'Gruppe'], ['location', 'Lagerort'], ['qty', 'Bestand'], ['min', 'Meldebestand'], ['max', 'Maximalbestand'], ['number', 'Nummer'], ['barcode', 'Barcode']]) {
+console.log(`Importiere als: ${AS_TOOL ? c.b('Werkzeug / Gerät') : 'Ersatzteil'}\n`);
+for (const [k, label] of [['image', 'Bild'], ['name', 'Name'], ['group', 'Gruppe'], ['location', 'Lagerort'], ['qty', 'Bestand'], ['min', 'Meldebestand'], ['max', 'Maximalbestand'], ['number', 'Nummer'], ['barcode', 'Barcode'], ['price', 'Verkaufspreis'], ['buy', 'Einkaufspreis']]) {
   console.log(`  ${label.padEnd(15)} ${col[k] >= 0 ? c.g('✓ ' + rows[0][col[k]]) : c.d('– nicht vorhanden')}`);
 }
 let data = rows.slice(1);
@@ -156,11 +173,25 @@ if (authErr) { console.error(c.r(`\nAnmeldung fehlgeschlagen: ${authErr.message}
 const uid = auth.user.id;
 console.log(c.g(`\nAngemeldet als ${auth.user.email}\n`));
 
-// Vorhandene Daten laden (Gruppen, Lagerorte, Teile) – für Zuordnung & Duplikat-Schutz
+// Vorhandene Daten laden (Gruppen, Lagerorte, Teile, Eigene Felder) – für Zuordnung & Duplikat-Schutz
 const load = async (table, cols) => { const { data: d, error } = await sb.from(table).select(cols).range(0, 9999); if (error) throw error; return d; };
 const groups = await load('lager_groups', 'id,name');
 const locs = await load('lager_locations', 'id,name');
-const mats = await load('lager_materials', 'id,name,number');
+const mats = (await load('lager_materials', 'id,name,number,kind,custom_fields')).filter((m) => (m.kind || 'part') === KIND);
+let fieldDefs = [];
+try { fieldDefs = await load('lager_field_defs', 'name,type'); } catch { /* Tabelle noch nicht angelegt – dann nur --all-columns */ }
+
+// Spalten für Eigene Felder bestimmen
+const known = new Set(Object.values(col).filter((i) => i >= 0));
+const customCols = [];
+rows[0].forEach((h, i) => {
+  const name = h.trim(); if (!name || known.has(i)) return;
+  const def = fieldDefs.find((f) => f.name.trim().toLowerCase() === name.toLowerCase());
+  if (def) customCols.push({ i, name: def.name, type: def.type });
+  else if (ALL_COLUMNS) customCols.push({ i, name, type: 'text' });
+});
+if (customCols.length) console.log(`Eigene Felder aus CSV:  ${customCols.map((c) => c.name).join(', ')}\n`);
+else if (fieldDefs.length) console.log(c.d(`Keine Spalte passt zu deinen Eigenen Feldern (${fieldDefs.map((f) => f.name).join(', ')}).\n`));
 const byName = (list, n) => list.find((x) => x.name.trim().toLowerCase() === n.trim().toLowerCase());
 
 async function ensure(list, table, name) {
@@ -182,16 +213,38 @@ for (let i = 0; i < data.length; i++) {
   const tag = c.d(`[${String(i + 1).padStart(String(data.length).length)}/${data.length}]`);
   if (!name) continue;
   try {
-    const group_id = await ensure(groups, 'lager_groups', get('group'));
-    const location_id = await ensure(locs, 'lager_locations', get('location'));
-    const qty = num(get('qty')) ?? 0;
-    const payload = { name, kind: 'part', group_id, default_location_id: location_id, min_stock: num(get('min')) ?? 0 };
+    const existingRow = byName(mats, name);
+    if (!existingRow && NO_CREATE) { stats.skipped++; console.log(`${tag} ${c.y('nicht gefunden')}  ${name} ${c.d('(wird nicht angelegt)')}`); continue; }
+    const group_id = FIELDS_ONLY ? null : await ensure(groups, 'lager_groups', get('group'));
+    const location_id = FIELDS_ONLY ? null : await ensure(locs, 'lager_locations', get('location'));
+    const hasQty = !FIELDS_ONLY && col.qty >= 0 && get('qty') !== '';
+    const qty = num(get('qty')) ?? (AS_TOOL && col.qty < 0 ? 1 : 0);
+    const payload = existingRow
+      ? { name }                                   // Aktualisieren: nur Spalten setzen, die in der CSV stehen
+      : { name, kind: KIND, min_stock: 0 };
+    if (col.group >= 0 && group_id) payload.group_id = group_id;
+    if (col.location >= 0 && location_id) payload.default_location_id = location_id;
+    if (col.min >= 0 && get('min') !== '') payload.min_stock = num(get('min')) ?? 0;
+    // Eigene Felder übernehmen (vorhandene Werte bleiben erhalten)
+    if (customCols.length) {
+      const cf = { ...(existingRow?.custom_fields || {}) };
+      for (const cc of customCols) {
+        const raw = (r[cc.i] ?? '').trim(); if (raw === '') continue;
+        cf[cc.name] = cc.type === 'bool' ? /^(ja|yes|true|1|x)$/i.test(raw) : cc.type === 'number' ? String(num(raw) ?? raw) : raw;
+      }
+      payload.custom_fields = cf;
+    }
     if (col.max >= 0 && num(get('max')) != null) payload.max_stock = num(get('max'));
     if (col.barcode >= 0 && get('barcode')) payload.barcode = get('barcode');
     if (col.price >= 0 && num(get('price')) != null) payload.sale_price = num(get('price'));
+    if (col.buy >= 0 && num(get('buy')) != null) payload.purchase_price = num(get('buy'));
     if (col.number >= 0 && num(get('number')) != null && !mats.some((m) => m.number === num(get('number')))) payload.number = num(get('number'));
 
-    const existing = byName(mats, name);
+    if (FIELDS_ONLY) {
+      for (const k of Object.keys(payload)) if (k !== 'name' && k !== 'custom_fields') delete payload[k];
+      if (!payload.custom_fields) { stats.skipped++; console.log(`${tag} ${c.d('nichts zu tun')}  ${name}`); continue; }
+    }
+    const existing = existingRow;
     if (existing && !UPDATE) { stats.skipped++; console.log(`${tag} ${c.y('übersprungen')}  ${name} ${c.d('(existiert schon)')}`); continue; }
     if (DRY) { console.log(`${tag} ${c.g(existing ? 'würde aktualisieren' : 'würde anlegen')}  ${name}  ${c.d(`· ${get('group') || '–'} · ${get('location') || '–'} · ${qty} Stk.`)}`); existing ? stats.updated++ : stats.created++; continue; }
 
@@ -201,13 +254,14 @@ for (let i = 0; i < data.length; i++) {
       delete payload.number;
       const { error } = await sb.from('lager_materials').update(payload).eq('id', existing.id); if (error) throw error;
       id = existing.id;
+      if (payload.custom_fields) existing.custom_fields = payload.custom_fields;
     } else {
-      const { data: row, error } = await sb.from('lager_materials').insert(payload).select('id,name,number').single(); if (error) throw error;
+      const { data: row, error } = await sb.from('lager_materials').insert(payload).select('id,name,number,custom_fields').single(); if (error) throw error;
       id = row.id; mats.push(row);
     }
 
     // 2) Bestand buchen (Anfangsbestand bzw. Inventur bei Aktualisierung)
-    if (location_id) {
+    if (!FIELDS_ONLY && location_id && (hasQty || !existing)) {
       if (existing) {
         const { error } = await sb.rpc('lager_book', { p_material: id, p_type: 'inventory', p_qty: qty, p_location: location_id, p_to_location: null, p_note: 'CSV-Import' });
         if (error) throw error;
@@ -243,7 +297,8 @@ for (let i = 0; i < data.length; i++) {
       }
     }
     existing ? stats.updated++ : stats.created++;
-    console.log(`${tag} ${c.g(existing ? 'aktualisiert' : 'angelegt   ')}  ${name}  ${c.d(`· ${qty} Stk.`)}${imgNote}`);
+    const cfNote = customCols.length ? c.d(' · ' + customCols.map((cc) => `${cc.name}: ${(r[cc.i] ?? '').trim() || '–'}`).join(', ')) : '';
+    console.log(`${tag} ${c.g(existing ? 'aktualisiert' : 'angelegt   ')}  ${name}  ${hasQty || (!existing && !FIELDS_ONLY) ? c.d(`· ${qty} Stk.`) : ''}${cfNote}${imgNote}`);
   } catch (e) {
     stats.errors++;
     failures.push({ zeile: i + 2, name, fehler: e.message || String(e), url: get('image') });
