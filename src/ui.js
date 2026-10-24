@@ -20,6 +20,29 @@ function layer(cls, html) {
   return { el, close };
 }
 
+// ---------- Suchfelder: „x“ zum schnellen Löschen ----------
+export function enhanceSearch(root) {
+  root.querySelectorAll('.search-field input[type="search"]').forEach((inp) => {
+    if (inp.dataset.clearable) return;
+    inp.dataset.clearable = '1';
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'search-clear'; btn.setAttribute('aria-label', 'Suche löschen');
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="var(--clear-x, #fff)" stroke-width="2.2" stroke-linecap="round"/></svg>';
+    inp.insertAdjacentElement('afterend', btn);
+    const sync = () => { btn.hidden = !inp.value; };
+    sync();
+    inp.addEventListener('input', sync);
+    // pointerdown: Tastatur bleibt offen, Fokus bleibt im Feld
+    btn.addEventListener('pointerdown', (e) => e.preventDefault());
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      inp.value = '';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.focus();
+    });
+  });
+}
+
 // ---------- Toast ----------
 let toastTimer;
 export function toast(msg, type = 'ok') {
@@ -134,6 +157,7 @@ export function pickFrom({ title, items, selected = null, allowNone = false, cre
         };
         render();
         root.querySelector('.pick-search').oninput = (e) => render(e.target.value);
+        enhanceSearch(root);
         const cb = root.querySelector('[data-a=create]');
         if (cb) cb.onclick = async () => {
           const v = await onCreate(); if (v) finish(v, close);

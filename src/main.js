@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
-  scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox,
+  scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch,
 } from './ui.js';
 import { exportCSV, importCSV } from './csv.js';
 
@@ -251,6 +251,7 @@ function screen({ header, body, tab = null, cls = '', footer = '' }) {
   const kind = pendingTransition; pendingTransition = null;   // nur bei echtem Seitenwechsel gesetzt
   swapScreen(root, kind);
   updateSegments(root);
+  enhanceSearch(root);
   root.querySelectorAll('[data-tablink]').forEach((a) => a.addEventListener('click', () => { if (a.getAttribute('href') !== location.hash) nextTransition = 'fade'; }));
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
   return root;
@@ -417,11 +418,11 @@ async function viewList(q) {
 
   const root = screen({
     header: `<div class="list-head"><header class="navbar list-nav">
-        ${btn('menu', 'menu', 'Menü')}
-        <button class="icon-btn" data-act="filter" aria-label="Filter">${icon('filter', 28)}${activeFilters ? `<em class="dot">${activeFilters}</em>` : ''}</button>
-        <label class="search-field grow">${icon('search', 20)}<input type="search" id="q" placeholder="Suche…" value="${esc(listState.q)}" autocomplete="off"></label>
-        ${btn('scan', 'scan', 'Scannen')}
-        <button class="icon-btn blue" data-act="add" aria-label="Neu">${icon('plusCircle', 32, 1.8)}</button>
+        <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 21)}</button>
+        <button class="glass-btn" data-act="filter" aria-label="Filter">${icon('filter', 21)}${activeFilters ? `<em class="dot">${activeFilters}</em>` : ''}</button>
+        <label class="search-field grow">${icon('search', 18)}<input type="search" id="q" placeholder="Suche…" value="${esc(listState.q)}" autocomplete="off" enterkeyhint="search"></label>
+        <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
+        <button class="glass-btn" data-act="add" aria-label="Neu">${icon('plus', 22, 2.3)}</button>
       </header>
       <div class="segment seg-icons">
         <button data-tab="part" class="${tab === 'part' ? 'on' : ''}">${icon('dolly', 22)} (${parts.length})</button>
