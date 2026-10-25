@@ -31,6 +31,13 @@ const getFields = async () => {
   try { cache.fields = await db.listFieldDefs(); } catch (e) { if (!fieldWarned) { fieldWarned = true; errToast(e); } return []; }
   return cache.fields;
 };
+/** Einmal pro Sitzung alle Listen im Hintergrund laden → vollständige Offline-Kopie */
+let warmed = false;
+function warmOffline() {
+  if (warmed || db.isDemo || !navigator.onLine) return;
+  warmed = true;
+  setTimeout(() => { Promise.all([getMats(), getCart(), getLocs(), getGroups(), getFields()]).catch(() => { warmed = false; }); }, 1500);
+}
 /** Alle Daten frisch aus Supabase laden (Pull-to-Refresh, „Neu laden“) */
 async function refreshAll() {
   invalidate();
@@ -113,6 +120,7 @@ async function route() {
     if (!user) return go('/login', true);
     // nach Klick auf den Bestätigungslink: ersten Lagerort aus der Registrierung anlegen
     if (await db.ensureStarterLocation()) invalidate('locations');
+    warmOffline();
   }
   const routes = [
     [/^\/fav$/, () => viewFav()],
@@ -251,6 +259,35 @@ function updateSegments(root) {
   });
 }
 
+// ========================= Offline-Badge =========================
+const isOfflineNow = () => !db.isDemo && (!navigator.onLine || db.offlineState.active);
+function applyOfflineBadge(root = app.querySelector('.screen')) {
+  if (!root) return;
+  const host = root.querySelector('.list-head') || root.querySelector('header');
+  const existing = root.querySelector('.offline-badge');
+  if (!isOfflineNow() || !host) { existing?.remove(); return; }
+  if (existing) return;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'offline-badge';
+  b.innerHTML = `<i></i>Offline-Modus`;
+  b.onclick = () => {
+    const t = db.offlineSavedAt();
+    infoBox({
+      title: 'Offline-Modus',
+      html: `<p class="stat-note" style="margin-top:4px">Keine Internetverbindung. Du siehst die zuletzt gespeicherte Kopie${t ? ` vom <b>${new Date(t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</b>` : ''}.</p>
+        <p class="stat-note warn">Buchungen und Änderungen sind erst wieder mit Internet möglich.</p>`,
+    });
+  };
+  host.appendChild(b);
+}
+window.addEventListener('ss-offline', () => applyOfflineBadge());
+window.addEventListener('offline', () => { applyOfflineBadge(); toast('Keine Internetverbindung – Offline-Modus', 'err'); });
+window.addEventListener('online', async () => {
+  try { await refreshAll(); } catch {}
+  applyOfflineBadge();
+  if (!isOfflineNow()) { toast('Wieder online – Daten aktualisiert'); route(); }
+});
+
 function screen({ header, body, tab = null, cls = '', footer = '' }) {
   const tmp = document.createElement('div');
   tmp.innerHTML = `<div class="screen ${cls} ${tab ? 'has-tabbar' : ''} ${footer ? 'has-footer' : ''}">${header}<main class="content">${body}</main>${footer}${tab ? tabbar(tab) : ''}</div>`;
@@ -258,6 +295,7 @@ function screen({ header, body, tab = null, cls = '', footer = '' }) {
   const kind = pendingTransition; pendingTransition = null;   // nur bei echtem Seitenwechsel gesetzt
   swapScreen(root, kind);
   updateSegments(root);
+  applyOfflineBadge(root);
   enhanceSearch(root);
   root.querySelectorAll('[data-tablink]').forEach((a) => a.addEventListener('click', () => { if (a.getAttribute('href') !== location.hash) nextTransition = 'fade'; }));
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
@@ -715,6 +753,7 @@ async function viewPick(q) {
 //  BUCHUNG (Bottom-Sheet) – Entnehmen / Dazu buchen / Umbuchen
 // =====================================================================
 async function openBooking(m, type, onDone, preset = {}) {
+  if (isOfflineNow()) { toast('Offline – Buchungen sind erst wieder mit Internet möglich.', 'err'); return; }
   const conf = {
     in: { title: 'Dazu buchen', cls: 'green', icon: 'plus' },
     out: { title: 'Entnehmen', cls: 'red', icon: 'minus' },
@@ -822,7 +861,18 @@ async function viewMaterial(id, q) {
     if (!files.length) return;
     try { toast('Bild wird hochgeladen…'); for (const f of files) await db.addFile(id, await compressImage(f), f.name, 'image'); toast('Bild gespeichert'); reload(); } catch (e) { errToast(e); }
   });
-  on(root, 'label', () => showLabel({ title: `${m.number}: ${m.name}`, sub: m.locations.map((l) => l.name).join(', '), code: m.barcode || String(m.number) }));
+  on(root, 'label', () => {
+    // 2. Zeile: Chargennummer/Platz (eigenes Feld), sonst Artikelnummer
+    const cf = m.custom_fields || {};
+    const platzKey = Object.keys(cf).find((k) => /charge|platz|fach/i.test(k) && String(cf[k]).trim());
+    const where = (m.locations.find((l) => l.location_id === m.default_location_id) || m.locations[0])?.name || '';
+    showLabel({
+      title: m.name,
+      sub: platzKey ? `${/platz|fach/i.test(platzKey) ? 'Platz' : 'Charge'} ${cf[platzKey]}` : `Nr. ${m.number}`,
+      extra: [platzKey ? `Nr. ${m.number}` : '', where].filter(Boolean).join(' · '),
+      code: m.barcode || String(m.number),
+    });
+  });
   root.querySelectorAll('[data-img]').forEach((el) => (el.onclick = () => openImage(m, m.images[+el.dataset.img], reload)));
 
   if (tab === 'infos') {
@@ -1002,6 +1052,7 @@ async function infosTab(m) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}">${fmtQty(m.total)}</span></div>
     </div>
     ${+m.min_stock || m.max_stock ? `<p class="muted small">Meldebestand ${fmtQty(m.min_stock)}${m.max_stock ? ` · Maximalbestand ${fmtQty(m.max_stock)}` : ''}${low ? ' · <b class="red">nachbestellen!</b>' : ''}</p>` : ''}
+    <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
     <div class="tasks">

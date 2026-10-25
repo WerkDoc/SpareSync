@@ -604,10 +604,30 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .label-bc { max-width: 100%; height: auto; }
 .label-title { font-weight: 700; font-size: 16px; margin-top: 6px; }
 .label-sub { font-size: 13px; color: #555; }
+/* ---------- Etikett (Vorschau + Druck) ---------- */
+.lbl {
+  width: var(--lw); height: var(--lh); box-sizing: border-box; padding: 1.6mm 2mm; background: #fff; color: #000;
+  display: flex; align-items: center; gap: 2mm; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+}
+.lbl-qr { flex: 0 0 auto; height: calc(var(--lh) - 3.2mm); aspect-ratio: 1; }
+.lbl-qr svg { width: 100%; height: 100%; display: block; }
+.lbl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: .6mm; }
+.lbl-name { font-size: 8.5pt; font-weight: 700; line-height: 1.12; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.lbl-l2 { font-size: 10pt; font-weight: 800; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbl-l3 { font-size: 6.5pt; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Vorschau im Dialog: Etikett groß skaliert, mit Rollen-Optik */
+.lbl-preview { display: grid; place-items: center; padding: 22px 8px; margin: 4px 0 10px; border-radius: 16px; background: repeating-linear-gradient(45deg, var(--fill), var(--fill) 8px, transparent 8px, transparent 16px); }
+.lbl-scale { zoom: 1.35; box-shadow: 0 1px 2px rgba(0,0,0,.15), 0 4px 14px rgba(0,0,0,.12); border-radius: 1.2mm; overflow: hidden; }
+
+#print-root { display: none; }
 @media print {
-  body * { visibility: hidden !important; }
-  .print-area, .print-area * { visibility: visible !important; }
-  .print-area { position: fixed; left: 0; top: 0; border: 0; width: 62mm; padding: 2mm; }
+  html.print-label body > *:not(#print-root) { display: none !important; }
+  html.print-label, html.print-label body { background: #fff !important; margin: 0 !important; padding: 0 !important; position: static !important; }
+  html.print-label #print-root { display: block !important; }
+  html.print-label .print-page { break-after: page; page-break-after: always; }
+  html.print-label .print-page:last-child { break-after: auto; page-break-after: auto; }
+  html.print-label .lbl { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
 /* =====================================================================
@@ -854,3 +874,14 @@ html.modal-open, html.modal-open body { overscroll-behavior: none; }
 .pp.is-done .pp-pct { color: var(--green); }
 .pp-actions:empty { display: none; }
 @media (prefers-reduced-motion: reduce) { .pp-bar i::after { animation: none; } }
+
+/* ---------- Offline-Badge (hängt mittig unter der Kopfleiste) ---------- */
+.list-head, .dash-nav, .navbar { position: sticky; }
+.offline-badge {
+  position: absolute; left: 50%; bottom: -13px; transform: translateX(-50%); z-index: 60;
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px 4px 9px; border-radius: 999px;
+  background: #ffd60a; color: #3a2a00; font-size: 12px; font-weight: 700; letter-spacing: .01em; white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(120, 90, 0, .25); animation: offIn .3s cubic-bezier(.2,.9,.3,1.3);
+}
+.offline-badge i { width: 7px; height: 7px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 0 2px rgba(255,59,48,.25); }
+@keyframes offIn { from { transform: translate(-50%, -6px) scale(.9); opacity: 0; } }

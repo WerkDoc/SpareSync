@@ -130,7 +130,14 @@ export function toast(msg, type = 'ok') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, type === 'err' ? 4200 : 2200);
 }
-export const errToast = (e) => { console.error(e); toast(e?.message || String(e), 'err'); };
+export const errToast = (e) => {
+  console.error(e);
+  const msg = e?.message || String(e);
+  if (!navigator.onLine || /failed to fetch|load failed|networkerror|fetch failed/i.test(msg)) {
+    toast('Offline – Änderungen sind erst wieder mit Internet möglich.', 'err'); return;
+  }
+  toast(msg, 'err');
+};
 
 // ---------- iOS-Alert mit Eingabefeld ----------
 export function prompt({ title, message = '', value = '', placeholder = '', okText = 'Speichern', type = 'text' }) {
@@ -520,24 +527,84 @@ export function scan({ title = 'Scanner' } = {}) {
   });
 }
 
-// ---------- Etikett mit Barcode drucken ----------
-export async function showLabel({ title, sub = '', code }) {
-  const { default: JsBarcode } = await import('jsbarcode');
-  sheet(`
-    <div class="label-card print-area">
-      <svg class="label-bc"></svg>
-      <div class="label-title">${esc(title)}</div>
-      ${sub ? `<div class="label-sub">${esc(sub)}</div>` : ''}
+// ---------- Etikett mit QR-Code drucken ----------
+// Gängige Rollen: Brother DK-11209 (62×29), Dymo 11352 (54×25), Zebra/Allgemein (50×30)
+export const LABEL_SIZES = [
+  { id: '62x29', w: 62, h: 29, label: '62 × 29 mm', hint: 'Brother DK-11209' },
+  { id: '54x25', w: 54, h: 25, label: '54 × 25 mm', hint: 'Dymo 11352' },
+  { id: '50x30', w: 50, h: 30, label: '50 × 30 mm', hint: 'Allgemein' },
+];
+async function qrSvg(text) {
+  const QR = (await import('qrcode')).default;
+  return QR.toString(String(text), { type: 'svg', margin: 0, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
+}
+/** Etikett-HTML in Millimetern (für Vorschau und Druck identisch) */
+function labelHTML({ name, line2 = '', line3 = '', svg }, size) {
+  return `<div class="lbl" style="--lw:${size.w}mm;--lh:${size.h}mm">
+    <div class="lbl-qr">${svg}</div>
+    <div class="lbl-text">
+      <div class="lbl-name">${esc(name)}</div>
+      ${line2 ? `<div class="lbl-l2">${esc(line2)}</div>` : ''}
+      ${line3 ? `<div class="lbl-l3">${esc(line3)}</div>` : ''}
     </div>
-    <button class="btn-filled full mt" data-a="print">${icon('print', 20)} Drucken</button>
-    <p class="muted small center mt">Tipp: Am iPhone über AirPrint oder „Als PDF sichern“.</p>`,
+  </div>`;
+}
+/** Druckt NUR das Etikett: eigenes Druck-Element + @page in Etikettengröße, alles andere ist beim Druck ausgeblendet */
+function printLabel(html, size, copies = 1) {
+  document.getElementById('print-root')?.remove();
+  document.getElementById('print-page')?.remove();
+  const rootEl = document.createElement('div');
+  rootEl.id = 'print-root';
+  rootEl.innerHTML = Array.from({ length: Math.max(1, Math.min(50, copies)) }, () => `<div class="print-page">${html}</div>`).join('');
+  document.body.appendChild(rootEl);
+  const st = document.createElement('style');
+  st.id = 'print-page';
+  st.textContent = `@page { size: ${size.w}mm ${size.h}mm; margin: 0; }`;
+  document.head.appendChild(st);
+  document.documentElement.classList.add('print-label');
+  const cleanup = () => {
+    document.documentElement.classList.remove('print-label');
+    rootEl.remove(); st.remove();
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 60);
+  setTimeout(() => { if (document.documentElement.classList.contains('print-label')) cleanup(); }, 60000);
+}
+
+/**
+ * Etikett-Dialog: Vorschau, Größe, Anzahl, Drucken.
+ * @param {{title:string, sub?:string, code:string, number?:string|number}} o
+ *   title = Name, sub = 2. Zeile (z. B. Chargennummer/Platz), code = Inhalt des QR-Codes
+ */
+export async function showLabel({ title, sub = '', code, extra = '' }) {
+  let sizeId = '62x29';
+  try { sizeId = localStorage.getItem('wl-label-size') || sizeId; } catch {}
+  let svg;
+  try { svg = await qrSvg(code); } catch (e) { toast('QR-Code konnte nicht erzeugt werden', 'err'); return; }
+  const size = () => LABEL_SIZES.find((x) => x.id === sizeId) || LABEL_SIZES[0];
+  const data = { name: title, line2: sub, line3: extra, svg };
+  sheet(`
+    <div class="lbl-preview"><div class="lbl-scale"></div></div>
+    <p class="muted small center"><span data-f="hint"></span> · QR-Inhalt: <b class="selectable">${esc(code)}</b></p>
+    <div class="form-group">
+      <label class="frow"><span>Etikettengröße</span>
+        <select data-f="size">${LABEL_SIZES.map((x) => `<option value="${x.id}" ${x.id === sizeId ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
+      <div class="frow"><span>Anzahl</span>
+        <div class="stepper sm"><button type="button" data-c="-1" aria-label="Weniger">${icon('minus', 16, 2.4)}</button><span data-f="copies">1</span><button type="button" data-c="1" aria-label="Mehr">${icon('plus', 16, 2.4)}</button></div></div>
+    </div>
+    <button class="btn-filled full mt" data-a="print">${icon('print', 20)} Etikett drucken</button>
+    <p class="muted small center mt">Am iPhone: Drucker auswählen (WLAN/AirPrint) und als Papier die Etikettenrolle wählen.</p>`,
   {
-    title: 'Etikett',
+    title: 'Etikett drucken',
     onMount: (root) => {
-      try {
-        JsBarcode(root.querySelector('.label-bc'), code, { format: 'CODE128', height: 60, displayValue: true, fontSize: 14, margin: 4 });
-      } catch { root.querySelector('.label-bc').outerHTML = `<p class="muted">Code „${esc(code)}“ kann nicht als Barcode dargestellt werden.</p>`; }
-      root.querySelector('[data-a=print]').onclick = () => window.print();
+      const prev = root.querySelector('.lbl-scale');
+      const render = () => { prev.innerHTML = labelHTML(data, size()); root.querySelector('[data-f=hint]').textContent = `${size().label} (${size().hint})`; };
+      render();
+      let copies = 1;
+      root.querySelector('[data-f=size]').onchange = (e) => { sizeId = e.target.value; try { localStorage.setItem('wl-label-size', sizeId); } catch {} render(); };
+      root.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { copies = Math.max(1, Math.min(50, copies + +b.dataset.c)); root.querySelector('[data-f=copies]').textContent = copies; haptic('light'); }));
+      root.querySelector('[data-a=print]').onclick = () => printLabel(labelHTML(data, size()), size(), copies);
     },
   });
 }

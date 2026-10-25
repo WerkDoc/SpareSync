@@ -124,8 +124,24 @@ async function myId() {
 // =====================================================================
 export async function getUser() {
   if (isDemo) return { email: 'Demo-Modus' };
-  const { data } = await sb.auth.getSession();
-  return data.session?.user || null;
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data.session?.user) return data.session.user;
+  } catch { /* offline */ }
+  // Offline: gespeicherte Anmeldung lesen, damit die App ohne Netz nicht zum Login springt
+  if (!navigator.onLine) {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (/^sb-.*-auth-token$/.test(k)) {
+          const v = JSON.parse(localStorage.getItem(k));
+          const u = v?.user || v?.currentSession?.user;
+          if (u) return u;
+        }
+      }
+    } catch {}
+  }
+  return null;
 }
 export async function signIn(email, password) {
   const { error } = await sb.auth.signInWithPassword({ email, password }); fail(error);
@@ -163,7 +179,7 @@ export async function ensureStarterLocation() {
     return true;
   } catch { return false; }
 }
-export async function signOut() { starterChecked = false; if (!isDemo) await sb.auth.signOut(); }
+export async function signOut() { starterChecked = false; clearOfflineCache(); if (!isDemo) await sb.auth.signOut(); }
 
 // =====================================================================
 //  GRUPPEN
@@ -685,3 +701,66 @@ export async function restoreBackup(backup, { onProgress } = {}) {
   }
   return report;
 }
+
+// =====================================================================
+//  OFFLINE-MODUS
+//  Jede erfolgreich geladene Liste wird lokal gespeichert (localStorage).
+//  Ohne Netz liefert die App diese Kopie – nur lesend.
+// =====================================================================
+const OFF = 'ss-offline:';
+export const offlineState = { active: false, savedAt: null };
+const isNetError = (e) => !navigator.onLine || /failed to fetch|load failed|networkerror|network request failed|fetch failed|err_internet|timeout/i.test(e?.message || String(e || ''));
+function setOffline(active, savedAt = null) {
+  const changed = offlineState.active !== active;
+  offlineState.active = active;
+  if (savedAt) offlineState.savedAt = savedAt;
+  if (changed) window.dispatchEvent(new CustomEvent('ss-offline', { detail: { ...offlineState } }));
+}
+function cacheWrite(key, data) {
+  try { localStorage.setItem(OFF + key, JSON.stringify({ t: Date.now(), data })); } catch { /* Speicher voll – egal */ }
+}
+function cacheRead(key) {
+  try { return JSON.parse(localStorage.getItem(OFF + key) || 'null'); } catch { return null; }
+}
+export function clearOfflineCache() {
+  try { Object.keys(localStorage).filter((k) => k.startsWith(OFF)).forEach((k) => localStorage.removeItem(k)); } catch {}
+}
+export function offlineSavedAt() { return cacheRead('materials')?.t || null; }
+
+/** Online laden & lokal sichern – offline (oder bei Netzfehler) aus der lokalen Kopie */
+function withOffline(key, fn, fallback) {
+  return async (...args) => {
+    if (isDemo) return fn(...args);
+    const k = typeof key === 'function' ? key(...args) : key;
+    const fromCache = () => {
+      const c = cacheRead(k);
+      if (c) { setOffline(true, c.t); return c.data; }
+      const fb = fallback?.(...args);
+      if (fb !== undefined) { setOffline(true); return fb; }
+      return undefined;
+    };
+    if (!navigator.onLine) { const v = fromCache(); if (v !== undefined) return v; }
+    try {
+      const data = await fn(...args);
+      cacheWrite(k, data);
+      setOffline(false);
+      return data;
+    } catch (e) {
+      if (isNetError(e)) {
+        const v = fromCache(); if (v !== undefined) return v;
+        throw new Error('Keine Internetverbindung – und noch keine Offline-Kopie vorhanden. Bitte einmal mit Internet öffnen.');
+      }
+      throw e;
+    }
+  };
+}
+// Lese-Funktionen mit Offline-Kopie versehen (die exportierten Namen bleiben gleich)
+listMaterials = withOffline('materials', listMaterials);
+listGroups = withOffline('groups', listGroups);
+listLocations = withOffline('locations', listLocations);
+listCart = withOffline('cart', listCart);
+listFieldDefs = withOffline('fields', listFieldDefs, () => []);
+listMovements = withOffline((id) => `mov:${id}`, listMovements, () => []);
+listTasks = withOffline((id) => `tasks:${id}`, listTasks, () => []);
+getMaterial = withOffline((id) => `mat:${id}`, getMaterial,
+  (id) => (cacheRead('materials')?.data || []).find((m) => m.id === id) ?? undefined);
