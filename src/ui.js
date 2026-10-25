@@ -569,7 +569,8 @@ function printLabel(html, size, copies = 1) {
     window.removeEventListener('afterprint', cleanup);
   };
   window.addEventListener('afterprint', cleanup);
-  setTimeout(() => window.print(), 60);
+  // direkt im Klick aufrufen – Safari blockiert print() nach einer Verzögerung
+  try { window.print(); } catch { cleanup(); }
   setTimeout(() => { if (document.documentElement.classList.contains('print-label')) cleanup(); }, 60000);
 }
 
@@ -595,7 +596,7 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
         <div class="stepper sm"><button type="button" data-c="-1" aria-label="Weniger">${icon('minus', 16, 2.4)}</button><span data-f="copies">1</span><button type="button" data-c="1" aria-label="Mehr">${icon('plus', 16, 2.4)}</button></div></div>
     </div>
     <button class="btn-filled full mt" data-a="print">${icon('print', 20)} Etikett drucken</button>
-    <p class="muted small center mt">Am iPhone: Drucker auswählen (WLAN/AirPrint) und als Papier die Etikettenrolle wählen.</p>`,
+    <p class="muted small center mt">Drucken am PC (Edge/Chrome): Ränder „Keine“, Kopf- und Fußzeilen aus.</p>`,
   {
     title: 'Etikett drucken',
     onMount: (root) => {
@@ -605,7 +606,20 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
       let copies = 1;
       root.querySelector('[data-f=size]').onchange = (e) => { sizeId = e.target.value; try { localStorage.setItem('wl-label-size', sizeId); } catch {} render(); };
       root.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { copies = Math.max(1, Math.min(50, copies + +b.dataset.c)); root.querySelector('[data-f=copies]').textContent = copies; haptic('light'); }));
-      root.querySelector('[data-a=print]').onclick = () => printLabel(labelHTML(data, size()), size(), copies);
+      root.querySelector('[data-a=print]').onclick = () => {
+        const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const homeApp = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+        if (iOS && homeApp) {
+          infoBox({
+            title: 'Drucken am iPhone',
+            html: `<p>Als App vom Home-Bildschirm lässt iOS leider keinen Druckdialog zu.</p>
+                   <p>Der <b>Brother QL-800</b> hängt außerdem nur per USB am PC – das iPhone erreicht ihn nicht.</p>
+                   <p>Etiketten bitte am <b>PC</b> drucken. Scannen klappt am iPhone ganz normal.</p>`,
+          });
+          return;
+        }
+        printLabel(labelHTML(data, size()), size(), copies);
+      };
     },
   });
 }
