@@ -1,5 +1,5 @@
 {
-  "name": "werkdoc-lager",
+  "name": "sparesync",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -12,7 +12,8 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "html5-qrcode": "^2.3.8",
-    "jsbarcode": "^3.11.6"
+    "jsbarcode": "^3.11.6",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "vite": "^5.4.10"
