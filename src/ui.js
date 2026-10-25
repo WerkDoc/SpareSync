@@ -566,9 +566,10 @@ function printLabel(html, size, copies = 1) {
   const cleanup = () => {
     document.documentElement.classList.remove('print-label');
     rootEl.remove(); st.remove();
-    window.removeEventListener('afterprint', cleanup);
+    window.removeEventListener('afterprint', onAfter);
   };
-  window.addEventListener('afterprint', cleanup);
+  const onAfter = () => { cleanup(); successHUD('Etikett gesendet', copies > 1 ? `${copies} Stück` : ''); };
+  window.addEventListener('afterprint', onAfter);
   // direkt im Klick aufrufen – Safari blockiert print() nach einer Verzögerung
   try { window.print(); } catch { cleanup(); }
   setTimeout(() => { if (document.documentElement.classList.contains('print-label')) cleanup(); }, 60000);
@@ -653,3 +654,81 @@ export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast('Kopiert'); }
   catch { toast('Kopieren nicht möglich', 'err'); }
 }
+
+// =====================================================================
+//  Micro-Interactions: Count-Up, Pop, Erfolgs-HUD
+// =====================================================================
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Wartet, bis der Video-Splash ausgeblendet wird (sonst liefe die Animation unsichtbar darunter ab) */
+export function afterSplash() {
+  const sp = document.getElementById('splash');
+  if (!sp || sp.classList.contains('out')) return Promise.resolve();
+  return new Promise((resolve) => {
+    const mo = new MutationObserver(() => { if (!sp.isConnected || sp.classList.contains('out')) { mo.disconnect(); resolve(); } });
+    mo.observe(sp, { attributes: true, attributeFilter: ['class'] });
+    mo.observe(document.body, { childList: true });
+  });
+}
+
+/** Zahl weich von `from` auf `to` hochzählen (ease-out: schnell los, sanft bremsen) */
+export function countUp(el, to, { from = 0, dur = 800 } = {}) {
+  to = +to || 0; from = +from || 0;
+  const fmt = (v) => fmtQty(Number.isInteger(to) ? Math.round(v) : Math.round(v * 10) / 10);
+  if (from === to || reducedMotion()) { el.textContent = fmtQty(to); return; }
+  el.textContent = fmt(from);
+  afterSplash().then(() => {
+    const t0 = performance.now();
+    const ease = (t) => 1 - Math.pow(1 - t, 3);        // easeOutCubic
+    const step = (now) => {
+      if (!el.isConnected) return;
+      const t = Math.min(1, (now - t0) / dur);
+      el.textContent = fmt(from + (to - from) * ease(t));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+/** Kurzes „Pop“ (scale 1.2 → zurückfedern) */
+export function pop(el) {
+  if (!el || reducedMotion()) return;
+  el.classList.remove('num-pop');
+  void el.offsetWidth;                                  // Animation neu starten
+  el.classList.add('num-pop');
+  el.addEventListener('animationend', () => el.classList.remove('num-pop'), { once: true });
+}
+/** Alle [data-pop="key"] mit data-v vergleichen: hat sich der Wert seit dem letzten Anzeigen geändert → Pop */
+const popMemo = new Map();
+export function popChanged(root) {
+  root.querySelectorAll('[data-pop]').forEach((el) => {
+    const k = el.dataset.pop; const v = el.dataset.v;
+    if (popMemo.has(k) && popMemo.get(k) !== v) pop(el);
+    popMemo.set(k, v);
+  });
+}
+
+/** Natives iOS-Erfolgs-HUD: dunkles, unscharfes Quadrat mit animiertem Haken; blendet nach 1,5 s aus */
+let hudTimer;
+export function successHUD(title = 'Erledigt', sub = '') {
+  document.querySelector('.hud')?.remove();
+  clearTimeout(hudTimer);
+  const el = document.createElement('div');
+  el.className = 'hud'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  el.innerHTML = `
+    <svg class="hud-check" viewBox="0 0 52 52" aria-hidden="true">
+      <circle class="hud-ring" cx="26" cy="26" r="23"/>
+      <path class="hud-tick" d="M15 27.5l7.2 7.2L37.5 19"/>
+    </svg>
+    <b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}`;
+  document.body.appendChild(el);
+  haptic('success');
+  requestAnimationFrame(() => el.classList.add('show'));
+  hudTimer = setTimeout(() => {
+    el.classList.remove('show'); el.classList.add('hide');
+    setTimeout(() => el.remove(), 320);
+  }, 1500);
+}
+
+/** Skeleton-Bausteine (grau mit wanderndem Glanz) */
+export const skel = (cls = '', style = '') => `<span class="skel ${cls}" ${style ? `style="${style}"` : ''}></span>`;

@@ -7,6 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
+  countUp, popChanged, successHUD, skel,
 } from './ui.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
@@ -79,6 +80,7 @@ let pendingTransition = null;
 const scrollMemo = {};        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
 let currentHash = null;
 let pendingScroll = 0;
+let pendingScrollWas = 0;     // für die Listen-Kaskade: beim Zurückkehren an eine Scrollposition nicht animieren
 // Menü (Einstellungen) fliegt je nach Ausgangsseite von rechts (Übersicht) oder links (Teile) ein
 let menuSide = null;          // 'R' | 'L' | null
 // Navigation ersetzt immer den aktuellen Browser-Eintrag (replaceState) statt neue anzulegen.
@@ -130,6 +132,7 @@ async function route() {
   if (currentHash && currentHash !== h) scrollMemo[currentHash] = window.scrollY;
   const isBack = kind === 'pop' || kind === 'menuCloseR' || kind === 'menuCloseL';
   pendingScroll = isBack ? (scrollMemo[h] || 0) : 0;
+  pendingScrollWas = pendingScroll;
   if (kind === 'push' || kind === 'menuR' || kind === 'menuL') delete scrollMemo[h];
   currentHash = h;
   const { path, q } = parseHash();
@@ -174,7 +177,8 @@ document.addEventListener('click', (e) => {
   if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
   e.preventDefault();
   const path = a.getAttribute('href').slice(1);
-  if (path) go(path, false, a.hasAttribute('data-tablink') ? 'fade' : undefined);
+  // Tab-Leiste: Crossfade mit leichtem Slide – zur „Teile“-Seite nach links, zurück zur Übersicht nach rechts
+  if (path) go(path, false, a.hasAttribute('data-tablink') ? (path.startsWith('/list') ? 'tabF' : 'tabB') : undefined);
 });
 // Android-Zurück-Taste: ein „Wächter“-Eintrag fängt sie ab und führt das App-eigene Zurück aus.
 // Auf iOS bewusst NICHT, damit die Wischgeste am Rand dort gar nichts auslöst.
@@ -248,11 +252,25 @@ function swapScreen(next, kind) {
   window.scrollTo(0, 0);
 
   const isMenu = kind.startsWith('menu');
-  const dur = kind === 'fade' ? 200 : isMenu ? MENU_DUR : 360;
-  const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : isMenu ? MENU_EASE : IOS_EASE, fill: 'both' };
+  const isTab = kind === 'tabF' || kind === 'tabB';
+  const dur = kind === 'fade' ? 200 : kind === 'swap' ? 220 : isTab ? 280 : isMenu ? MENU_DUR : 360;
+  const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : (isMenu || isTab || kind === 'swap') ? MENU_EASE : IOS_EASE, fill: 'both' };
   const T = (x) => ({ transform: `translate3d(${x},0,0)` });
   let anims;
-  if (isMenu) {
+  if (isTab) {
+    // Neue Seite blendet über der alten ein (alte bleibt voll sichtbar darunter → kein „Durchscheinen“),
+    // Kopf und Inhalt gleiten dabei minimal von der Seite herein. Die Tab-Leiste selbst bleibt ruhig stehen.
+    const dx = kind === 'tabF' ? 18 : -18;
+    const moving = [...next.children].filter((c) => !c.classList.contains('tabbar'));
+    const oldMoving = [...prev.children].filter((c) => !c.classList.contains('tabbar'));
+    anims = [
+      next.animate([{ opacity: 0 }, { opacity: 1 }], opts),
+      ...moving.map((c) => c.animate([{ translate: `${dx}px 0` }, { translate: '0 0' }], opts)),
+      ...oldMoving.map((c) => c.animate([{ translate: '0 0' }, { translate: `${-dx * 0.5}px 0` }], opts)),
+    ];
+  } else if (kind === 'swap') {
+    anims = [next.animate([{ opacity: 0 }, { opacity: 1 }], opts)];
+  } else if (isMenu) {
     // R = Menü kommt von rechts (Übersicht), L = von links (Teile); Close läuft genau umgekehrt
     const fromRight = kind === 'menuR' || kind === 'menuCloseR';
     const off = fromRight ? '100%' : '-100%';      // wo das Menü außerhalb liegt
@@ -296,6 +314,7 @@ function swapScreen(next, kind) {
     next.classList.remove('screen-edge', 'screen-edge-r');
     unfreeze(next);
     if (target) window.scrollTo(0, target);
+    updateScrolled();
   };
   Promise.all(anims.map((a) => a.finished)).then(() => finishRunning?.()).catch(() => {});
 }
@@ -365,6 +384,7 @@ function screen({ header, body, tab = null, cls = '', footer = '' }) {
   applyOfflineBadge(root);
   enhanceSearch(root);
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
+  requestAnimationFrame(updateScrolled);
   return root;
 }
 const on = (root, act, fn) => root.querySelectorAll(`[data-act="${act}"]`).forEach((el) => (el.onclick = (e) => { e.preventDefault(); fn(el, e); }));
@@ -379,9 +399,11 @@ const locLabel = (m) => {
   if (!ls.length) return '<span class="muted">Kein Lagerort</span>';
   return esc(ls[0].name) + (ls.length > 1 ? ` <span class="muted">+${ls.length - 1}</span>` : '');
 };
-const stockLabel = (m) => `${+m.min_stock > 0 ? `<span>Meb: ${fmtQty(m.min_stock)}</span> ` : ''}<span class="${isLow(m) ? 'red' : ''}">[${fmtQty(m.total)}]</span>`;
-function materialRow(m, href = `#/m/${m.id}`) {
-  return `<a class="mrow" href="${href}" data-id="${m.id}">
+const stockLabel = (m) => `${+m.min_stock > 0 ? `<span>Meb: ${fmtQty(m.min_stock)}</span> ` : ''}<span class="${isLow(m) ? 'red' : ''}" data-pop="list:${m.id}" data-v="${m.total}">[${fmtQty(m.total)}]</span>`;
+function materialRow(m, href = `#/m/${m.id}`, idx = -1) {
+  // idx < 14 → gestaffeltes Einblenden (weiter unten liegt ohnehin außerhalb des Bildschirms)
+  const st = idx >= 0 && idx < 14 ? ` style="--i:${idx}"` : idx >= 14 ? ' data-nostag' : '';
+  return `<a class="mrow" href="${href}" data-id="${m.id}"${st}>
       ${thumb(m)}
       <div class="mrow-main">
         <div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div>
@@ -422,50 +444,120 @@ const MANAGE = [
 const isDark = () => document.documentElement.dataset.theme === 'dark'
   || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
 
-async function viewFav() {
-  let mats = []; let cart = []; let locs = []; let groups = [];
-  try { [mats, cart, locs, groups] = await Promise.all([getMats(), getCart(), getLocs(), getGroups()]); } catch (e) { errToast(e); }
-  const parts = mats.filter((m) => m.kind === 'part');
-  const units = parts.reduce((a, m) => a + (m.total > 0 ? m.total : 0), 0);
-  const low = parts.filter(isLow);
-  const cartN = cart.filter((c) => c.list === 'cart').length;
-  const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 3);
-  const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
-  const counts = { locs: locs.length, groups: groups.length };
-
-  const root = screen({
-    header: `<header class="dash-nav">
+// ---------- Skeleton-Loader (nur beim allerersten Laden, solange noch nichts im Cache ist) ----------
+const dashHeader = () => `<header class="dash-nav">
         ${brandLogo()}
+        <span class="dash-nav-title" aria-hidden="true">Übersicht</span>
         <span class="dash-nav-right">
           <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel">${icon(isDark() ? 'sun' : 'moon', 21)}</button>
           <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
           <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
         </span>
-      </header>`,
+      </header>`;
+const dashHead = () => `<div class="dash-head">
+        <p class="dash-date">${esc(new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
+        <h1 class="dash-title large-title">Übersicht</h1>
+      </div>`;
+const skelRows = (n) => Array.from({ length: n }, (_, i) => `<div class="mrow skel-row">
+      ${skel('skel-thumb')}
+      <div class="mrow-main">${skel('skel-line', `width:${[78, 64, 86, 58, 72][i % 5]}%`)}${skel('skel-line sm', `width:${[46, 38, 52, 30, 42][i % 5]}%`)}</div>
+    </div>`).join('');
+function dashSkeleton() {
+  screen({
+    header: dashHeader(), cls: 'dash-screen is-loading', tab: 'fav',
+    body: `${dashHead()}
+      <section class="widgets">${Array.from({ length: 3 }, () => `<div class="widget skel-card">${skel('skel-ic')}${skel('skel-num')}${skel('skel-line sm', 'width:80%')}${skel('skel-line xs', 'width:55%')}</div>`).join('')}</section>
+      <h2 class="dash-sec">Schnellaktionen</h2>
+      <section class="quick-grid">${Array.from({ length: 4 }, () => `<div class="quick skel-card">${skel('skel-qic')}<span class="q-text">${skel('skel-line', 'width:70%')}${skel('skel-line xs', 'width:85%')}</span></div>`).join('')}</section>
+      <h2 class="dash-sec">Verwalten</h2>
+      <section class="ios-list">${skelRows(3)}</section>`,
+  });
+}
+function listSkeleton() {
+  screen({
+    header: `<div class="list-head"><header class="navbar list-nav">
+        <span class="glass-btn">${icon('menu', 21)}</span><span class="glass-btn">${icon('filter', 21)}</span>
+        <label class="search-field grow">${icon('search', 18)}<input type="search" placeholder="Suche…" disabled></label>
+        <span class="glass-btn">${icon('scan', 21)}</span><span class="glass-btn">${icon('plus', 22, 2.3)}</span>
+      </header>
+      <div class="segment seg-icons"><button class="on">${icon('dolly', 22)}</button><button>${icon('tools', 22)}</button><button>${icon('cart', 22)}</button></div></div>`,
+    body: `<div class="list-tools">${skel('skel-line sm', 'width:90px')}</div><div class="mlist">${skelRows(10)}</div>`,
+    tab: 'list', cls: 'list-screen is-loading',
+  });
+}
+/** Lädt Daten; ist noch nichts im Cache, erscheint sofort das Skeleton und danach blendet der echte Inhalt weich ein */
+async function withSkeleton(showSkeleton, load) {
+  const rid = renderId;
+  if (cache.materials) return { data: await load(), ok: true };
+  showSkeleton();
+  const data = await load();
+  if (rid !== renderId) return { data, ok: false };   // inzwischen woanders hin navigiert
+  pendingTransition = 'swap';
+  return { data, ok: true };
+}
+
+// ---------- Collapsing Header (großer Titel schrumpft beim Scrollen in die Leiste) ----------
+let scrollRaf = 0;
+function updateScrolled() {
+  scrollRaf = 0;
+  const scr = app.querySelector('.screen:last-child');
+  if (!scr || scr.classList.contains('screen-anim')) return;
+  const lt = scr.querySelector('.large-title');
+  if (!lt) return;
+  // umschalten, sobald der große Titel unter der Leiste verschwindet (mit kleiner Hysterese gegen Flackern)
+  const bar = scr.querySelector('.dash-nav, .navbar');
+  const barBottom = bar ? bar.getBoundingClientRect().bottom : 0;
+  const r = lt.getBoundingClientRect();
+  const on = scr.classList.contains('scrolled');
+  const mid = r.top + r.height * 0.5;
+  if (!on && mid < barBottom) scr.classList.add('scrolled');
+  else if (on && mid > barBottom + 6) scr.classList.remove('scrolled');
+}
+window.addEventListener('scroll', () => { if (!scrollRaf) scrollRaf = requestAnimationFrame(updateScrolled); }, { passive: true });
+
+// Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
+const dashShown = {};
+
+async function viewFav() {
+  let mats = []; let cart = []; let locs = []; let groups = [];
+  const res = await withSkeleton(dashSkeleton, async () => {
+    try { return await Promise.all([getMats(), getCart(), getLocs(), getGroups()]); } catch (e) { errToast(e); return [[], [], [], []]; }
+  });
+  if (!res.ok) return;
+  [mats, cart, locs, groups] = res.data;
+  const parts = mats.filter((m) => m.kind === 'part');
+  const units = parts.reduce((a, m) => a + (m.total > 0 ? m.total : 0), 0);
+  const low = parts.filter(isLow);
+  const cartN = cart.filter((c) => c.list === 'cart').length;
+  const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 3);
+  const counts = { locs: locs.length, groups: groups.length };
+  const nums = { parts: parts.length, units, low: low.length, cart: cartN };
+  // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
+  const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
+
+  const root = screen({
+    header: dashHeader(),
     cls: 'dash-screen',
     body: `
-      <div class="dash-head">
-        <p class="dash-date">${esc(today)}</p>
-        <h1 class="dash-title">Übersicht</h1>
-      </div>
+      ${dashHead()}
       ${db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
 
       <section class="widgets" aria-label="Status">
         <a class="widget" href="#/list?tab=part">
           <span class="w-ic tone-primary">${icon('box', 18, 2.2)}</span>
-          <span class="w-val">${fmtQty(parts.length)}</span>
+          <span class="w-val">${cu('parts')}</span>
           <span class="w-label">Teile im Lager</span>
-          <span class="w-sub">${fmtQty(units)} Stück</span>
+          <span class="w-sub">${cu('units')} Stück</span>
         </a>
         <a class="widget ${low.length ? 'is-alert' : ''}" href="#/list?tab=part&low=1">
           <span class="w-ic tone-red">${icon('alert', 18, 2.2)}</span>
-          <span class="w-val">${fmtQty(low.length)}</span>
+          <span class="w-val">${cu('low')}</span>
           <span class="w-label">Unter Meldebestand</span>
           <span class="w-sub">${low.length ? 'nachbestellen' : 'alles im grünen Bereich'}</span>
         </a>
         <a class="widget" href="#/list?tab=cart">
           <span class="w-ic tone-green">${icon('cart', 18, 2.2)}</span>
-          <span class="w-val">${fmtQty(cartN)}</span>
+          <span class="w-val">${cu('cart')}</span>
           <span class="w-label">Im Warenkorb</span>
           <span class="w-sub">zum Bestellen</span>
         </a>
@@ -493,11 +585,19 @@ async function viewFav() {
         ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}">
             ${thumb(m, 'sm')}
             <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
-            <span class="r-qty ${isLow(m) ? 'red' : ''}">${fmtQty(m.total)}</span>
+            <span class="r-qty ${isLow(m) ? 'red' : ''}" data-pop="dash:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span>
           </a>`).join('')}
       </section>` : ''}`,
     tab: 'fav',
   });
+  root.querySelectorAll('[data-count]').forEach((el) => {
+    const k = el.dataset.count; const from = dashShown[k] ?? 0;
+    countUp(el, nums[k], { from });
+    if (dashShown[k] != null && dashShown[k] !== nums[k]) setTimeout(() => el.closest('.w-val, .w-sub')?.classList.add('num-pop'), 780);
+    dashShown[k] = nums[k];
+  });
+  popChanged(root);
+  updateScrolled();
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
   setupPullToRefresh(root, refreshAll, () => viewFav());
@@ -523,7 +623,9 @@ async function viewList(q) {
   saveListState();
   if (Object.keys(q).length) replaceHash('#/list');
 
-  const [mats, cart] = await Promise.all([getMats(), getCart()]);
+  const res = await withSkeleton(listSkeleton, () => Promise.all([getMats(), getCart()]));
+  if (!res.ok) return;
+  const [mats, cart] = res.data;
   const parts = mats.filter((m) => m.kind === 'part'); const tools = mats.filter((m) => m.kind === 'tool');
   const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0);
   const tab = listState.tab;
@@ -569,7 +671,7 @@ async function viewList(q) {
     if (all) all.textContent = visible.length && visible.every((m) => sel.ids.has(m.id)) ? 'Keine auswählen' : 'Alle auswählen';
     rows.querySelectorAll('.mrow').forEach((r) => r.classList.toggle('is-selected', sel.ids.has(r.dataset.id)));
   };
-  const renderRows = () => {
+  const renderRows = (stagger = false) => {
     if (listState.tab === 'cart') { sel.on = false; updateSel(); return renderCart(rows, mats, cart); }
     let f = filterMats(listState.tab === 'tool' ? tools : parts, listState);
     const s = listState.sort;
@@ -583,7 +685,7 @@ async function viewList(q) {
         ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.length} Einträge</span>`}
         <button class="text-btn strong" data-act="sel-toggle">${sel.on ? 'Fertig' : 'Auswählen'}</button>
       </div>
-      <div class="mlist">${f.map((m) => materialRow(m)).join('')}</div>`
+      <div class="mlist ${stagger ? 'stagger' : ''}">${f.map((m, i) => materialRow(m, undefined, stagger ? i : -1)).join('')}</div>`
       : empty('search', listState.q ? `Nichts gefunden für „${esc(listState.q)}“` : 'Noch keine Einträge',
         `<a class="btn-tinted" href="#/new?kind=${listState.tab}">${icon('plus', 18)} Anlegen</a>`);
     rows.querySelectorAll('.mrow').forEach((r) => {
@@ -595,6 +697,9 @@ async function viewList(q) {
         haptic(); updateSel();
       });
     });
+    popChanged(rows);
+    const ml = rows.querySelector('.mlist.stagger');
+    if (ml) setTimeout(() => ml.classList.remove('stagger'), 1200);   // nur beim Einblenden, nicht bei jeder Auswahl
     const tgl = rows.querySelector('[data-act=sel-toggle]');
     if (tgl) tgl.onclick = () => { sel.on = !sel.on; sel.ids.clear(); renderRows(); };
     const all = rows.querySelector('[data-act=sel-all]');
@@ -605,7 +710,8 @@ async function viewList(q) {
     };
     updateSel();
   };
-  renderRows();
+  // Kaskade nur beim Öffnen der Seite (nicht beim Zurückkommen an die alte Scroll-Position oder beim Tippen in der Suche)
+  renderRows(pendingScrollWas === 0);
   selBar.querySelector('[data-act=bulk-delete]').onclick = async () => {
     const ids = [...sel.ids]; const n = ids.length; if (!n) return;
     const what = listState.tab === 'tool' ? (n === 1 ? 'Werkzeug' : 'Werkzeuge') : (n === 1 ? 'Teil' : 'Teile');
@@ -631,7 +737,7 @@ async function viewList(q) {
     root.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
     updateSegments(root);
     sel.on = false; sel.ids.clear();
-    renderRows(); window.scrollTo(0, 0);
+    renderRows(true); window.scrollTo(0, 0);
   }));
   root.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => { listState[b.dataset.clear] = b.dataset.clear === 'low' ? false : ''; saveListState(); viewList({}); }));
   setupPullToRefresh(root, refreshAll, () => viewList({}));
@@ -878,9 +984,9 @@ async function openBooking(m, type, onDone, preset = {}) {
         const b = e.currentTarget; b.disabled = true;
         try {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
-          haptic(30); close(); invalidate('materials', 'locations');
-          toast(`${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}`);
-          if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') setTimeout(() => toast(`Meldebestand erreicht (${fmtQty(total)} / ${fmtQty(m.min_stock)})`, 'err'), 2300);
+          close(); invalidate('materials', 'locations');
+          successHUD('Bestand aktualisiert', `${conf.title}: ${fmtQty(qty.value)} · Gesamt ${fmtQty(total)}`);
+          if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') setTimeout(() => toast(`Meldebestand erreicht (${fmtQty(total)} / ${fmtQty(m.min_stock)})`, 'err'), 1900);
           await onDone?.(total);
         } catch (err) { errToast(err); b.disabled = false; }
       };
@@ -911,6 +1017,7 @@ async function viewMaterial(id, q) {
     tab: 'none',
   });
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
+  popChanged(root);
 
   // ----- gemeinsame Aktionen -----
   on(root, 'book-out', () => openBooking(m, 'out', reload));
@@ -962,7 +1069,7 @@ async function viewMaterial(id, q) {
         if (['out', 'in', 'transfer'].includes(v)) openBooking(m, v, reload, { location_id: l.location_id });
         if (v === 'inv') {
           const n = await prompt({ title: 'Gezählter Bestand', message: l.name, value: l.qty, type: 'number', okText: 'Buchen' });
-          if (n !== null && n !== '') { await db.book({ material_id: id, type: 'inventory', qty: +n, location_id: l.location_id, note: 'Korrektur' }); toast('Bestand korrigiert'); reload(); }
+          if (n !== null && n !== '') { await db.book({ material_id: id, type: 'inventory', qty: +n, location_id: l.location_id, note: 'Korrektur' }); successHUD('Bestand korrigiert', `${l.name}: ${fmtQty(n)}`); reload(); }
         }
         if (v === 'def') { await db.saveMaterial(id, { default_location_id: l.location_id }); toast('Standard-Lagerort gesetzt'); reload(); }
         if (v === 'del') { await db.removeStockLocation(id, l.location_id); reload(); }
@@ -1113,10 +1220,10 @@ async function infosTab(m) {
     <div class="sec-title"><span>LAGERORTE</span><button class="icon-btn" data-act="add-loc" aria-label="Lagerort hinzufügen">${icon('plus', 26)}</button></div>
     <div class="group-card">
     <div class="loc-list">
-      ${m.locations.map((l) => `<button class="loc-row" data-loc="${l.location_id}"><b>${esc(l.name)}${l.location_id === m.default_location_id ? ' <small class="muted">· Standard</small>' : ''}</b><span class="${low || l.qty === 0 ? 'red' : ''}">${fmtQty(l.qty)}</span></button>`).join('')
+      ${m.locations.map((l) => `<button class="loc-row" data-loc="${l.location_id}"><b>${esc(l.name)}${l.location_id === m.default_location_id ? ' <small class="muted">· Standard</small>' : ''}</b><span class="${low || l.qty === 0 ? 'red' : ''}" data-pop="loc:${m.id}:${l.location_id}" data-v="${l.qty}">${fmtQty(l.qty)}</span></button>`).join('')
         || '<p class="muted small">Noch kein Lagerort – oben auf + tippen.</p>'}
     </div>
-    <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}">${fmtQty(m.total)}</span></div>
+    <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${+m.min_stock || m.max_stock ? `<p class="muted small">Meldebestand ${fmtQty(m.min_stock)}${m.max_stock ? ` · Maximalbestand ${fmtQty(m.max_stock)}` : ''}${low ? ' · <b class="red">nachbestellen!</b>' : ''}</p>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
@@ -1384,7 +1491,7 @@ async function viewForm(id, q) {
     try {
       const nid = await db.saveMaterial(id, data, { images: st.images, initial: id ? null : { location_id: st.location_id, qty: num(fd.qty) } });
       if (st.location_id) localStorage.setItem('wl-last-loc', st.location_id);
-      invalidate(); toast(id ? 'Gespeichert' : `${kind === 'tool' ? 'Werkzeug' : 'Ersatzteil'} angelegt`);
+      invalidate(); successHUD(id ? 'Gespeichert' : `${kind === 'tool' ? 'Werkzeug' : 'Ersatzteil'} angelegt`);
       sessionStorage.setItem('wl-mtab', 'infos');
       go(`/m/${nid}`, true);
     } catch (e) { errToast(e); saving = false; root.querySelectorAll('[data-act=save], [type=submit]').forEach((b) => (b.disabled = false)); }
@@ -1622,7 +1729,7 @@ async function viewInventory(q) {
     b.disabled = true;
     try {
       for (const [mid, v] of changes) await db.book({ material_id: mid, type: 'inventory', qty: +v, location_id: loc.id, note: 'Inventur' });
-      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); toast('Inventur gebucht'); go('/inventory', true);
+      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); successHUD('Inventur gebucht'); go('/inventory', true);
     } catch (e) { errToast(e); b.disabled = false; }
   });
 }
@@ -1651,9 +1758,10 @@ async function viewSettings() {
   const TONE = { info: 'blue', list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tag: 'indigo', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
   const item = (ic, label, act, extra = '', cls = '', tone = '') => `<button class="set-row ${cls}" data-act="${act}"><i class="tone-${tone || TONE[ic] || 'primary'}">${icon(ic, 19)}</i><span>${label}</span>${extra || icon('chevR', 18)}</button>`;
   const root = screen({
-    header: navbar({ left: backBtn(), title: 'Menü' }),
+    header: navbar({ left: backBtn(), title: 'Menü', cls: 'lt-nav' }),
     cls: 'settings-screen',
     body: `
+      <h1 class="large-title page-lt">Menü</h1>
       <div class="set-group">
         <div class="set-row static"><i class="tone-${db.isDemo ? 'orange' : 'green'}">${icon('database', 19)}</i><span>${db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
       </div>
