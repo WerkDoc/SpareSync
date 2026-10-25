@@ -79,15 +79,27 @@ let pendingTransition = null;
 const scrollMemo = {};        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
 let currentHash = null;
 let pendingScroll = 0;
+// Menü (Einstellungen) fliegt je nach Ausgangsseite von rechts (Übersicht) oder links (Teile) ein
+let menuSide = null;          // 'R' | 'L' | null
+// Navigation ersetzt immer den aktuellen Browser-Eintrag (replaceState) statt neue anzulegen.
+// So gibt es keinen Browser-Verlauf, durch den man am Bildschirmrand vor/zurück wischen kann –
+// „Zurück“ läuft ausschließlich über den eigenen navStack.
+const nav = (hash) => {
+  try { history.replaceState(history.state, '', hash); } catch { location.replace(hash); return; }
+  route();
+};
 const go = (path, replace = false, transition) => {
-  if ('#' + path !== location.hash) nextTransition = transition || (replace ? 'fade' : 'push');
-  if (replace) { navStack.pop(); location.replace('#' + path); } else location.hash = path;
+  if ('#' + path === location.hash) return;
+  nextTransition = transition || (replace ? 'fade' : 'push');
+  if (replace) navStack.pop();
+  nav('#' + path);
 };
 const back = (fallback = '/fav') => {
   nextTransition = 'pop';
-  if (navStack.length > 1) { navStack.pop(); location.replace(navStack[navStack.length - 1]); }
-  else { navStack.length = 0; location.replace('#' + fallback); }
+  if (navStack.length > 1) { navStack.pop(); nav(navStack[navStack.length - 1]); }
+  else { navStack.length = 0; nav('#' + fallback); }
 };
+const openMenu = (side) => { menuSide = side; go('/settings', false, side === 'L' ? 'menuL' : 'menuR'); };
 const replaceHash = (h) => {
   try { history.replaceState(null, '', h); } catch {}
   if (navStack.length) navStack[navStack.length - 1] = h;
@@ -109,10 +121,16 @@ async function route() {
     else { navStack.push(h); kind = kind || 'push'; }
   }
   nextTransition = null;
+  // Menü schließen: in die Richtung zurückgleiten, aus der es gekommen ist
+  if (currentHash === '#/settings' && h !== '#/settings' && menuSide) {
+    if (kind === 'pop') kind = menuSide === 'L' ? 'menuCloseL' : 'menuCloseR';
+    if (kind !== 'push') menuSide = null;     // Unterseiten des Menüs (push) behalten die Richtung
+  }
   pendingTransition = kind || 'none';
   if (currentHash && currentHash !== h) scrollMemo[currentHash] = window.scrollY;
-  pendingScroll = kind === 'pop' ? (scrollMemo[h] || 0) : 0;
-  if (kind === 'push') delete scrollMemo[h];
+  const isBack = kind === 'pop' || kind === 'menuCloseR' || kind === 'menuCloseL';
+  pendingScroll = isBack ? (scrollMemo[h] || 0) : 0;
+  if (kind === 'push' || kind === 'menuR' || kind === 'menuL') delete scrollMemo[h];
   currentHash = h;
   const { path, q } = parseHash();
   if (!db.isDemo && path !== '/login' && path !== '/register') {
@@ -148,7 +166,33 @@ async function route() {
   }
   go('/fav', true);
 }
-window.addEventListener('hashchange', route);
+// Nur echte, manuelle Hash-Änderungen (z. B. Adresse eingetippt) – eigene Navigation ruft route() direkt auf
+window.addEventListener('hashchange', () => { if ((location.hash || '#/fav') !== currentHash) route(); });
+// Alle internen Links (<a href="#/…">) über den Router statt über den Browser-Verlauf
+document.addEventListener('click', (e) => {
+  const a = e.target.closest?.('a[href^="#"]');
+  if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  const path = a.getAttribute('href').slice(1);
+  if (path) go(path, false, a.hasAttribute('data-tablink') ? 'fade' : undefined);
+});
+// Android-Zurück-Taste: ein „Wächter“-Eintrag fängt sie ab und führt das App-eigene Zurück aus.
+// Auf iOS bewusst NICHT, damit die Wischgeste am Rand dort gar nichts auslöst.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (!isIOS) {
+  try {
+    history.replaceState({ ssBase: 1 }, '', location.href);
+    history.pushState({ ssGuard: 1 }, '', location.href);
+    window.addEventListener('popstate', (e) => {
+      if (e.state?.ssGuard) return;
+      const cur = currentHash || '#/fav';
+      history.replaceState({ ssBase: 1 }, '', cur);
+      history.pushState({ ssGuard: 1 }, '', cur);
+      if (document.querySelector('.layer')) return;   // offenes Fenster: nichts tun
+      if (navStack.length > 1) back();
+    });
+  } catch {}
+}
 
 // ============================== Layout ===============================
 const navbar = ({ left = '', title = '', right = '', cls = '' }) => `
@@ -172,6 +216,8 @@ function tabbar(active) {
 // pop:  aktuelle Seite gleitet nach rechts hinaus, vorherige kommt von links zurück
 // fade: schnelles Überblenden (Tab-Leiste, Anmeldung)
 const IOS_EASE = 'cubic-bezier(.32, .72, 0, 1)';   // iOS-typisches, weiches ease-out
+const MENU_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'; // Menü: startet sehr schnell, bremst sanft ab – ohne Nachfedern
+const MENU_DUR = 350;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let finishRunning = null;
 
@@ -195,15 +241,36 @@ function swapScreen(next, kind) {
     return;
   }
   const y = window.scrollY;
-  if (kind === 'pop') app.insertBefore(next, prev); else app.appendChild(next);
-  freeze(prev, y, kind === 'pop' ? 2 : 1);
-  freeze(next, target || 0, kind === 'pop' ? 1 : 2);
+  const closing = kind === 'pop' || kind === 'menuCloseR' || kind === 'menuCloseL';
+  if (closing) app.insertBefore(next, prev); else app.appendChild(next);
+  freeze(prev, y, closing ? 2 : 1);
+  freeze(next, target || 0, closing ? 1 : 2);
   window.scrollTo(0, 0);
 
-  const dur = kind === 'fade' ? 200 : 360;
-  const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : IOS_EASE, fill: 'both' };
+  const isMenu = kind.startsWith('menu');
+  const dur = kind === 'fade' ? 200 : isMenu ? MENU_DUR : 360;
+  const opts = { duration: dur, easing: kind === 'fade' ? 'ease-out' : isMenu ? MENU_EASE : IOS_EASE, fill: 'both' };
+  const T = (x) => ({ transform: `translate3d(${x},0,0)` });
   let anims;
-  if (kind === 'push') {
+  if (isMenu) {
+    // R = Menü kommt von rechts (Übersicht), L = von links (Teile); Close läuft genau umgekehrt
+    const fromRight = kind === 'menuR' || kind === 'menuCloseR';
+    const off = fromRight ? '100%' : '-100%';      // wo das Menü außerhalb liegt
+    const under = fromRight ? '-20%' : '20%';      // Seite darunter weicht leicht zur Gegenseite aus
+    if (kind === 'menuR' || kind === 'menuL') {
+      next.classList.add(fromRight ? 'screen-edge' : 'screen-edge-r');
+      anims = [
+        next.animate([T(off), T('0')], opts),
+        prev.animate([{ ...T('0'), opacity: 1 }, { ...T(under), opacity: 0.72 }], opts),
+      ];
+    } else {
+      prev.classList.add(fromRight ? 'screen-edge' : 'screen-edge-r');
+      anims = [
+        prev.animate([T('0'), T(off)], opts),
+        next.animate([{ ...T(under), opacity: 0.72 }, { ...T('0'), opacity: 1 }], opts),
+      ];
+    }
+  } else if (kind === 'push') {
     next.classList.add('screen-edge');
     anims = [
       next.animate([{ transform: 'translate3d(100%,0,0)' }, { transform: 'translate3d(0,0,0)' }], opts),
@@ -226,7 +293,7 @@ function swapScreen(next, kind) {
     if (done) return; done = true; finishRunning = null;
     anims.forEach((a) => { try { a.cancel(); } catch {} });
     prev.remove();
-    next.classList.remove('screen-edge');
+    next.classList.remove('screen-edge', 'screen-edge-r');
     unfreeze(next);
     if (target) window.scrollTo(0, target);
   };
@@ -297,7 +364,6 @@ function screen({ header, body, tab = null, cls = '', footer = '' }) {
   updateSegments(root);
   applyOfflineBadge(root);
   enhanceSearch(root);
-  root.querySelectorAll('[data-tablink]').forEach((a) => a.addEventListener('click', () => { if (a.getAttribute('href') !== location.hash) nextTransition = 'fade'; }));
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
   return root;
 }
@@ -432,7 +498,7 @@ async function viewFav() {
       </section>` : ''}`,
     tab: 'fav',
   });
-  on(root, 'menu', () => go('/settings'));
+  on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
   setupPullToRefresh(root, refreshAll, () => viewFav());
   on(root, 'scan', async () => {
@@ -569,7 +635,7 @@ async function viewList(q) {
   }));
   root.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => { listState[b.dataset.clear] = b.dataset.clear === 'low' ? false : ''; saveListState(); viewList({}); }));
   setupPullToRefresh(root, refreshAll, () => viewList({}));
-  on(root, 'menu', () => go('/settings'));
+  on(root, 'menu', () => openMenu('L'));
   on(root, 'add', async () => {
     const v = await actionSheet('Neu anlegen', [
       { label: 'Ersatzteil anlegen', value: 'part', icon: 'box' },
