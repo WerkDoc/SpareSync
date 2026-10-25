@@ -606,11 +606,11 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .label-sub { font-size: 13px; color: #555; }
 /* ---------- Etikett (Vorschau + Druck) ---------- */
 .lbl {
-  width: var(--lw); height: var(--lh); box-sizing: border-box; padding: 1.6mm 2mm; background: #fff; color: #000;
+  width: var(--lw); height: var(--lh); box-sizing: border-box; padding: 3mm 2.5mm; background: #fff; color: #000;   /* Sicherheitsrand: Brother bedruckt die Kanten nicht */
   display: flex; align-items: center; gap: 2mm; overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 }
-.lbl-qr { flex: 0 0 auto; height: calc(var(--lh) - 3.2mm); aspect-ratio: 1; }
+.lbl-qr { flex: 0 0 auto; height: calc(var(--lh) - 6mm); aspect-ratio: 1; }
 .lbl-qr svg { width: 100%; height: 100%; display: block; }
 .lbl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: .6mm; }
 .lbl-name { font-size: 8.5pt; font-weight: 700; line-height: 1.12; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }

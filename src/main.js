@@ -870,7 +870,8 @@ async function viewMaterial(id, q) {
       title: m.name,
       sub: platzKey ? `${/platz|fach/i.test(platzKey) ? 'Platz' : 'Charge'} ${cf[platzKey]}` : `Nr. ${m.number}`,
       extra: [platzKey ? `Nr. ${m.number}` : '', where].filter(Boolean).join(' · '),
-      code: m.barcode || String(m.number),
+      // Kurzer Code = großer, gut scanbarer QR. Lange Barcodes (z. B. Name aus Lager im Griff) → Artikelnummer
+      code: m.barcode && m.barcode.length <= 20 ? m.barcode : String(m.number),
     });
   });
   root.querySelectorAll('[data-img]').forEach((el) => (el.onclick = () => openImage(m, m.images[+el.dataset.img], reload)));

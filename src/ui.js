@@ -536,7 +536,8 @@ export const LABEL_SIZES = [
 ];
 async function qrSvg(text) {
   const QR = (await import('qrcode')).default;
-  return QR.toString(String(text), { type: 'svg', margin: 0, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
+  // margin 1 = schmaler weißer Ruherand (wichtig fürs Scannen); kurze Inhalte → große, robuste Punkte
+  return QR.toString(String(text), { type: 'svg', margin: 1, errorCorrectionLevel: String(text).length <= 24 ? 'Q' : 'M', color: { dark: '#000000', light: '#ffffff' } });
 }
 /** Etikett-HTML in Millimetern (für Vorschau und Druck identisch) */
 function labelHTML({ name, line2 = '', line3 = '', svg }, size) {
