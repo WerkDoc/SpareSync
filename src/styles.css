@@ -1064,3 +1064,50 @@ html.modal-open, html.modal-open body { overscroll-behavior: none; }
 .ctx-item.danger { color: var(--red); }
 @media (prefers-reduced-motion: reduce) { .ctx-menu, .ctx-preview, .toast { transition-duration: .01s !important; } }
 .ctx-head small b { font-weight: 700; color: var(--text); } .ctx-head small b.red { color: var(--red); }
+
+/* =====================================================================
+   Gyro-Parallax (Dashboard-Kacheln als physische Objekte)
+   ===================================================================== */
+@property --press { syntax: '<number>'; inherits: false; initial-value: 1; }
+.dash-screen.gyro { --gs: rgba(15, 23, 42, .13); --glare: rgba(255, 255, 255, .55); }
+:root[data-theme="dark"] .dash-screen.gyro { --gs: rgba(0, 0, 0, .6); --glare: rgba(255, 255, 255, .07); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .dash-screen.gyro { --gs: rgba(0, 0, 0, .6); --glare: rgba(255, 255, 255, .07); } }
+.dash-screen.gyro .widget, .dash-screen.gyro .quick {
+  position: relative; will-change: transform;
+  /* Neigung: max. ±7° – Schatten wandert entgegen der Neigung, wie bei einer Lichtquelle von oben */
+  transform: perspective(700px) rotateX(calc(var(--ty, 0) * -7deg)) rotateY(calc(var(--tx, 0) * 7deg)) scale(var(--press));
+  box-shadow:
+    calc(var(--tx, 0) * -12px) calc(10px + var(--ty, 0) * -9px) 28px var(--gs),
+    calc(var(--tx, 0) * -3px) calc(2px + var(--ty, 0) * -2px) 6px color-mix(in srgb, var(--gs) 50%, transparent);
+  transition: --press .2s var(--press-ease, ease);
+}
+.dash-screen.gyro .widget:active, .dash-screen.gyro .quick:active { --press: .98; }
+.dash-screen.gyro .widget.is-alert {
+  box-shadow:
+    calc(var(--tx, 0) * -12px) calc(10px + var(--ty, 0) * -9px) 28px var(--gs),
+    inset 0 0 0 1.5px color-mix(in srgb, var(--red) 35%, transparent);
+}
+/* Lichtreflex, der über die Oberfläche wandert */
+.dash-screen.gyro .widget::after, .dash-screen.gyro .quick::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(120% 90% at calc(50% - var(--tx, 0) * 70%) calc(0% - var(--ty, 0) * 60%), var(--glare), transparent 55%);
+  mix-blend-mode: soft-light; opacity: .9;
+}
+
+/* =====================================================================
+   Hero-Animation (View Transitions API): Vorschaubild → großes Bild
+   ===================================================================== */
+::view-transition-group(hero) { animation-duration: .5s; animation-timing-function: cubic-bezier(.32, .72, 0, 1); }
+::view-transition-image-pair(hero) { isolation: isolate; }
+::view-transition-old(hero), ::view-transition-new(hero) {
+  animation-duration: .5s; animation-timing-function: cubic-bezier(.32, .72, 0, 1);
+  width: 100%; height: 100%; object-fit: contain; border-radius: 12px; overflow: hidden;
+}
+html.vt-fwd::view-transition-old(root) { animation: vt-root-out .42s cubic-bezier(.32, .72, 0, 1) both; }
+html.vt-fwd::view-transition-new(root) { animation: vt-root-in .42s cubic-bezier(.32, .72, 0, 1) both; }
+html.vt-back::view-transition-old(root) { animation: vt-root-out-back .38s cubic-bezier(.32, .72, 0, 1) both; }
+html.vt-back::view-transition-new(root) { animation: vt-root-in-back .38s cubic-bezier(.32, .72, 0, 1) both; }
+@keyframes vt-root-out { to { opacity: 0; transform: scale(.96); } }
+@keyframes vt-root-in { from { opacity: 0; transform: scale(1.03); } }
+@keyframes vt-root-out-back { to { opacity: 0; transform: scale(1.03); } }
+@keyframes vt-root-in-back { from { opacity: 0; transform: scale(.96); } }

@@ -9,6 +9,7 @@ import {
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
   countUp, popChanged, successHUD, skel, onLongPress, contextMenu,
 } from './ui.js';
+import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
 import { setupPullToRefresh } from './ptr.js';
@@ -80,23 +81,71 @@ let pendingTransition = null;
 const scrollMemo = {};        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
 let currentHash = null;
 let pendingScroll = 0;
-let pendingScrollWas = 0;     // für die Listen-Kaskade: beim Zurückkehren an eine Scrollposition nicht animieren
+let pendingScrollWas = 0;
+let lastNavBack = false;     // für die Listen-Kaskade: beim Zurückkehren an eine Scrollposition nicht animieren
 // Menü (Einstellungen) fliegt je nach Ausgangsseite von rechts (Übersicht) oder links (Teile) ein
 let menuSide = null;          // 'R' | 'L' | null
 // Navigation ersetzt immer den aktuellen Browser-Eintrag (replaceState) statt neue anzulegen.
 // So gibt es keinen Browser-Verlauf, durch den man am Bildschirmrand vor/zurück wischen kann –
 // „Zurück“ läuft ausschließlich über den eigenen navStack.
 const nav = (hash) => {
-  try { history.replaceState(history.state, '', hash); } catch { location.replace(hash); return; }
-  route();
+  try { history.replaceState(history.state, '', hash); } catch { location.replace(hash); return Promise.resolve(); }
+  return route();
 };
 const go = (path, replace = false, transition) => {
-  if ('#' + path === location.hash) return;
+  if ('#' + path === location.hash) return Promise.resolve();
   nextTransition = transition || (replace ? 'fade' : 'push');
   if (replace) navStack.pop();
-  nav('#' + path);
+  return nav('#' + path);
 };
+
+// ================= Hero-Animation (View Transitions API) =================
+// Liste → Detail: das Vorschaubild fliegt und morpht ins große Bild. Zurück: umgekehrt.
+const canVT = () => typeof document.startViewTransition === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function settleImg(img) { if (img && !img.complete) await Promise.race([img.decode().catch(() => {}), sleep(450)]); }
+function runHero(dir, update) {
+  finishRunning?.();
+  document.documentElement.classList.add('vt-hero', dir === 'back' ? 'vt-back' : 'vt-fwd');
+  let vt;
+  try { vt = document.startViewTransition(update); } catch { document.documentElement.classList.remove('vt-hero', 'vt-back', 'vt-fwd'); return false; }
+  const clean = () => {
+    document.documentElement.classList.remove('vt-hero', 'vt-back', 'vt-fwd');
+    document.querySelectorAll('[style*="view-transition-name"]').forEach((el) => (el.style.viewTransitionName = ''));
+  };
+  vt.finished.then(clean, clean);
+  return true;
+}
+/** Klick auf einen Listeneintrag mit Bild → Hero-Flug ins Detail */
+function heroOpen(a, path) {
+  const th = a.querySelector('.thumb');
+  if (!canVT() || !th?.querySelector('img') || (sessionStorage.getItem('wl-mtab') || 'infos') !== 'infos') return false;
+  th.style.viewTransitionName = 'hero';
+  return runHero('fwd', async () => {
+    th.style.viewTransitionName = '';
+    await go(path, false, 'none');
+    const big = app.querySelector('.gal-main img');
+    if (big) { big.style.viewTransitionName = 'hero'; await settleImg(big); }
+  });
+}
+/** Zurück aus dem Detail in Liste/Übersicht → Bild fliegt zurück in sein Vorschaubild */
+function heroBack() {
+  const m = location.hash.match(/^#\/m\/([^/?]+)/);
+  const prev = navStack[navStack.length - 2] || '';
+  const big = app.querySelector('.gal-main img');
+  if (!m || !big || !canVT() || !/^#\/(list|fav)/.test(prev)) return false;
+  big.style.viewTransitionName = 'hero';
+  return runHero('back', async () => {
+    big.style.viewTransitionName = '';
+    nextTransition = 'popvt'; navStack.pop();
+    await nav(prev);
+    const th = app.querySelector(`[data-id="${m[1]}"] .thumb`);
+    if (th) th.style.viewTransitionName = 'hero';
+  });
+}
+
 const back = (fallback = '/fav') => {
+  if (heroBack()) return;
   nextTransition = 'pop';
   if (navStack.length > 1) { navStack.pop(); nav(navStack[navStack.length - 1]); }
   else { navStack.length = 0; nav('#' + fallback); }
@@ -130,7 +179,8 @@ async function route() {
   }
   pendingTransition = kind || 'none';
   if (currentHash && currentHash !== h) scrollMemo[currentHash] = window.scrollY;
-  const isBack = kind === 'pop' || kind === 'menuCloseR' || kind === 'menuCloseL';
+  const isBack = kind === 'pop' || kind === 'popvt' || kind === 'menuCloseR' || kind === 'menuCloseL';
+  lastNavBack = isBack;
   pendingScroll = isBack ? (scrollMemo[h] || 0) : 0;
   pendingScrollWas = pendingScroll;
   if (kind === 'push' || kind === 'menuR' || kind === 'menuL') delete scrollMemo[h];
@@ -177,6 +227,7 @@ document.addEventListener('click', (e) => {
   if (!a || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
   e.preventDefault();
   const path = a.getAttribute('href').slice(1);
+  if (/^\/m\/[^/]+$/.test(path) && a.matches('.mrow, .ios-row.recent') && heroOpen(a, path)) return;
   // Tab-Leiste: Crossfade mit leichtem Slide – zur „Teile“-Seite nach links, zurück zur Übersicht nach rechts
   if (path) go(path, false, a.hasAttribute('data-tablink') ? (path.startsWith('/list') ? 'tabF' : 'tabB') : undefined);
 });
@@ -237,11 +288,11 @@ function unfreeze(el) {
 function swapScreen(next, kind) {
   finishRunning?.();                       // laufende Animation sofort abschließen
   const prev = app.querySelector('.screen');
-  const animate = prev && kind && kind !== 'none' && !reduceMotion.matches && next.animate;
+  const animate = prev && kind && kind !== 'none' && kind !== 'popvt' && !reduceMotion.matches && next.animate;
   const target = kind ? pendingScroll : null; pendingScroll = 0;
   if (!animate) {
     app.replaceChildren(next);
-    if (kind) requestAnimationFrame(() => window.scrollTo(0, target || 0));
+    if (kind) { window.scrollTo(0, target || 0); requestAnimationFrame(() => window.scrollTo(0, target || 0)); }
     return;
   }
   const y = window.scrollY;
@@ -602,6 +653,7 @@ async function viewFav() {
   popChanged(root);
   updateScrolled();
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
+  attachGyro(root);
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
   setupPullToRefresh(root, refreshAll, () => viewFav());
@@ -715,7 +767,7 @@ async function viewList(q) {
     updateSel();
   };
   // Kaskade nur beim Öffnen der Seite (nicht beim Zurückkommen an die alte Scroll-Position oder beim Tippen in der Suche)
-  renderRows(pendingScrollWas === 0);
+  renderRows(pendingScrollWas === 0 && !lastNavBack);
   selBar.querySelector('[data-act=bulk-delete]').onclick = async () => {
     const ids = [...sel.ids]; const n = ids.length; if (!n) return;
     const what = listState.tab === 'tool' ? (n === 1 ? 'Werkzeug' : 'Werkzeuge') : (n === 1 ? 'Teil' : 'Teile');
@@ -1851,6 +1903,8 @@ async function viewSettings() {
       <div class="set-group">
         <label class="set-row"><i class="tone-indigo">${icon('moon', 19)}</i><span>Erscheinungsbild</span>
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
+        <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
+          <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
       </div>
       <div class="set-group">
         ${db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
@@ -1860,6 +1914,11 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-gyro]').onchange = async (e) => {
+    const on = e.target.checked;
+    setGyroEnabled(on);
+    if (on && !(await requestGyro())) toast('Bewegungssensor nicht verfügbar oder nicht erlaubt', 'err');
+  };
   on(root, 'reload', async (b) => {
     b.disabled = true; b.querySelector('i')?.classList.add('spin-once');
     try { await refreshAll(); toast('Daten aktualisiert'); } catch (e) { errToast(e); }
