@@ -128,7 +128,7 @@ export function toast(msg, type = 'ok') {
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add('show'));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, type === 'err' ? 4200 : 2200);
+  toastTimer = setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 450); }, type === 'err' ? 3500 : 2600);
 }
 export const errToast = (e) => {
   console.error(e);
@@ -732,3 +732,100 @@ export function successHUD(title = 'Erledigt', sub = '') {
 
 /** Skeleton-Bausteine (grau mit wanderndem Glanz) */
 export const skel = (cls = '', style = '') => `<span class="skel ${cls}" ${style ? `style="${style}"` : ''}></span>`;
+
+// =====================================================================
+//  Haptic Touch: langes Drücken → schwebendes Kontextmenü
+// =====================================================================
+/**
+ * Langes Drücken (500 ms) auf Elemente innerhalb von `container`.
+ * Abbruch bei Bewegung (Scrollen) oder frühem Loslassen. Der Klick danach wird geschluckt.
+ */
+export function onLongPress(container, selector, handler, { delay = 500, enabled = () => true } = {}) {
+  let timer = 0; let startX = 0; let startY = 0; let target = null; let fired = 0;
+  const cancel = () => { clearTimeout(timer); timer = 0; target?.classList.remove('lp-hold'); target = null; };
+  container.addEventListener('pointerdown', (e) => {
+    if (e.button > 0 || !enabled()) return;
+    const el = e.target.closest(selector);
+    if (!el || !container.contains(el)) return;
+    cancel();
+    target = el; startX = e.clientX; startY = e.clientY;
+    el.classList.add('lp-hold');                    // sanftes Eindrücken während des Haltens
+    timer = setTimeout(() => {
+      const t = target; cancel();
+      if (!t) return;
+      fired = Date.now();
+      haptic('medium');
+      handler(t);
+    }, delay);
+  });
+  container.addEventListener('pointermove', (e) => {
+    if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > 10) cancel();
+  }, { passive: true });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => container.addEventListener(ev, cancel));
+  window.addEventListener('scroll', cancel, { passive: true });
+  // Klick, der direkt auf das lange Drücken folgt, nicht als „Öffnen“ werten
+  container.addEventListener('click', (e) => {
+    if (Date.now() - fired < 900) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  // Rechtsklick am PC bzw. Android-Kontextereignis → gleiches Menü
+  container.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest(selector);
+    if (!el || !enabled()) return;
+    e.preventDefault();
+    if (Date.now() - fired < 900) return;
+    cancel(); fired = Date.now(); handler(el);
+  });
+}
+
+/**
+ * iOS-Kontextmenü: Element „hebt ab“ (scale 1.03), Rest verschwimmt, Menü schwebt darunter/darüber.
+ * items: [{ label, value, icon, danger }] oder '-' als Trenner. Liefert den gewählten value (oder null).
+ */
+export function contextMenu(sourceEl, { title = '', sub = '', items = [] } = {}) {
+  return new Promise((resolve) => {
+    const rect = sourceEl.getBoundingClientRect();
+    const groups = [[]];
+    items.forEach((it) => (it === '-' ? groups.push([]) : groups[groups.length - 1].push(it)));
+    const { el, close } = layer('ctx-layer', `
+      <div class="ctx-backdrop"></div>
+      <div class="ctx-preview"></div>
+      <div class="ctx-menu" role="menu">
+        ${title ? `<div class="ctx-head"><b>${esc(title)}</b>${sub ? `<small>${sub}</small>` : ''}</div>` : ''}
+        ${groups.filter((g) => g.length).map((g) => `<div class="ctx-group">${g.map((it, i) => `
+          <button class="ctx-item ${it.danger ? 'danger' : ''}" role="menuitem" data-v="${esc(it.value)}"><span>${esc(it.label)}</span>${it.icon ? icon(it.icon, 20) : ''}</button>`).join('')}</div>`).join('')}
+      </div>`);
+    // Vorschau: Kopie des Elements an exakt derselben Stelle, leicht vergrößert
+    const prev = el.querySelector('.ctx-preview');
+    const clone = sourceEl.cloneNode(true);
+    clone.removeAttribute('href'); clone.classList.remove('lp-hold');
+    prev.appendChild(clone);
+    Object.assign(prev.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    sourceEl.classList.add('ctx-source');
+
+    const menu = el.querySelector('.ctx-menu');
+    const vh = window.innerHeight; const vw = window.innerWidth;
+    const safeT = 54; const safeB = 34; const gap = 10;
+    const mh = menu.offsetHeight; const mw = menu.offsetWidth;
+    let top; let shift = 0; let origin = 'top';
+    if (rect.bottom + gap + mh <= vh - safeB) top = rect.bottom + gap;
+    else if (rect.top - gap - mh >= safeT) { top = rect.top - gap - mh; origin = 'bottom'; }
+    else { top = vh - safeB - mh; shift = Math.min(0, top - gap - rect.bottom); }   // Element nach oben schieben
+    if (shift && rect.top + shift < safeT) shift = safeT - rect.top;
+    const left = Math.min(Math.max(12, rect.left + 16), vw - mw - 12);
+    Object.assign(menu.style, { top: `${top}px`, left: `${left}px`, transformOrigin: `${origin} left` });
+    prev.style.setProperty('--shift', `${shift}px`);
+
+    let done = false;
+    const opened = Date.now();
+    const finish = (v) => {
+      if (done || Date.now() - opened < 350) return;   // Loslassen des Fingers nicht als Tipp werten
+      done = true;
+      el.classList.add('closing');
+      setTimeout(() => sourceEl.classList.remove('ctx-source'), 230);
+      close(); resolve(v);
+    };
+    el.querySelector('.ctx-backdrop').onclick = () => finish(null);
+    prev.onclick = () => finish(null);
+    el.querySelectorAll('.ctx-item').forEach((b) => (b.onclick = () => { haptic('light'); finish(b.dataset.v); }));
+  });
+}

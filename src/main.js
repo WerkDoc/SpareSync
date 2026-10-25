@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu,
 } from './ui.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
@@ -486,11 +486,13 @@ function listSkeleton() {
   });
 }
 /** Lädt Daten; ist noch nichts im Cache, erscheint sofort das Skeleton und danach blendet der echte Inhalt weich ein */
+let loadedOnce = false;        // Skeleton nur beim allerersten Laden – nicht nach jeder Buchung (Cache wird da neu geholt)
 async function withSkeleton(showSkeleton, load) {
   const rid = renderId;
-  if (cache.materials) return { data: await load(), ok: true };
+  if (cache.materials || loadedOnce) { const data = await load(); loadedOnce = true; return { data, ok: true }; }
   showSkeleton();
   const data = await load();
+  loadedOnce = true;
   if (rid !== renderId) return { data, ok: false };   // inzwischen woanders hin navigiert
   pendingTransition = 'swap';
   return { data, ok: true };
@@ -502,6 +504,7 @@ function updateScrolled() {
   scrollRaf = 0;
   const scr = app.querySelector('.screen:last-child');
   if (!scr || scr.classList.contains('screen-anim')) return;
+  scr.classList.toggle('at-top', window.scrollY < 4);   // ganz oben: Leiste durchsichtig, beim Scrollen Milchglas
   const lt = scr.querySelector('.lt-collapse');
   if (!lt) return;
   // umschalten, sobald der große Titel unter der Leiste verschwindet (mit kleiner Hysterese gegen Flackern)
@@ -582,7 +585,7 @@ async function viewFav() {
 
       ${recent.length ? `<h2 class="dash-sec">Zuletzt bewegt</h2>
       <section class="ios-list">
-        ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}">
+        ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
             ${thumb(m, 'sm')}
             <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
             <span class="r-qty ${isLow(m) ? 'red' : ''}" data-pop="dash:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span>
@@ -598,6 +601,7 @@ async function viewFav() {
   });
   popChanged(root);
   updateScrolled();
+  onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
   setupPullToRefresh(root, refreshAll, () => viewFav());
@@ -729,7 +733,22 @@ async function viewList(q) {
     } catch (e) { errToast(e); b.disabled = false; }
   };
 
+  onLongPress(rows, '.mrow', (el) => materialContextMenu(el, () => viewList({})), { enabled: () => !sel.on && listState.tab !== 'cart' });
+
   const qi = root.querySelector('#q');
+  // Fokus-Modus: Suche angetippt → Inhalt darunter abdunkeln, bis getippt wird
+  const dim = document.createElement('div');
+  dim.className = 'search-dim';
+  root.appendChild(dim);
+  const setDim = () => {
+    const on = document.activeElement === qi && !qi.value;
+    if (on) dim.style.top = `${Math.round(root.querySelector('.list-head').getBoundingClientRect().bottom)}px`;
+    root.classList.toggle('search-focus', on);
+  };
+  qi.addEventListener('focus', setDim);
+  qi.addEventListener('blur', () => root.classList.remove('search-focus'));
+  qi.addEventListener('input', setDim);
+  dim.addEventListener('pointerdown', (e) => { e.preventDefault(); qi.blur(); });
   qi.oninput = () => { listState.q = qi.value; saveListState(); if (listState.tab === 'cart') { listState.tab = 'part'; viewList({}); } else renderRows(); };
   root.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
     if (listState.tab === b.dataset.tab) return;
@@ -1034,19 +1053,7 @@ async function viewMaterial(id, q) {
     if (!files.length) return;
     try { toast('Bild wird hochgeladen…'); for (const f of files) await db.addFile(id, await compressImage(f), f.name, 'image'); toast('Bild gespeichert'); reload(); } catch (e) { errToast(e); }
   });
-  on(root, 'label', () => {
-    // 2. Zeile: Chargennummer/Platz (eigenes Feld), sonst Artikelnummer
-    const cf = m.custom_fields || {};
-    const platzKey = Object.keys(cf).find((k) => /charge|platz|fach/i.test(k) && String(cf[k]).trim());
-    const where = (m.locations.find((l) => l.location_id === m.default_location_id) || m.locations[0])?.name || '';
-    showLabel({
-      title: m.name,
-      sub: platzKey ? `${/platz|fach/i.test(platzKey) ? 'Platz' : 'Charge'} ${cf[platzKey]}` : `Nr. ${m.number}`,
-      extra: [platzKey ? `Nr. ${m.number}` : '', where].filter(Boolean).join(' · '),
-      // Kurzer Code = großer, gut scanbarer QR. Lange Barcodes (z. B. Name aus Lager im Griff) → Artikelnummer
-      code: m.barcode && m.barcode.length <= 20 ? m.barcode : String(m.number),
-    });
-  });
+  on(root, 'label', () => openLabel(m));
   root.querySelectorAll('[data-img]').forEach((el) => (el.onclick = () => openImage(m, m.images[+el.dataset.img], reload)));
 
   if (tab === 'infos') {
@@ -1086,12 +1093,7 @@ async function viewMaterial(id, q) {
       if (!n || !(+n > 0)) return;
       try { await db.addToCart('commission', id, +n, name); invalidate('cart'); toast(`Zu Kommission „${name}“ hinzugefügt`); } catch (e) { errToast(e); }
     });
-    on(root, 'cart', async () => {
-      const sug = Math.max(1, (+m.max_stock || 0) - m.total) || 1;
-      const n = await prompt({ title: 'In den Warenkorb', message: m.name, value: sug, type: 'number', okText: 'Hinzufügen' });
-      if (!n || !(+n > 0)) return;
-      try { await db.addToCart('cart', id, +n); invalidate('cart'); toast('Im Warenkorb'); } catch (e) { errToast(e); }
-    });
+    on(root, 'cart', () => addToCartFlow(m));
     // Aufgaben
     const tasksOpen = localStorage.getItem('wl-tasks-open') !== '0';
     on(root, 'tasks-toggle', () => { localStorage.setItem('wl-tasks-open', tasksOpen ? '0' : '1'); reload(); });
@@ -1209,6 +1211,62 @@ function openImage(m, img, reload) {
       try { await db.deleteFile(img); close(); reload(); } catch (e) { errToast(e); }
     };
   } });
+}
+
+// ---------- Gemeinsame Material-Aktionen (Detailseite + Kontextmenü) ----------
+function openLabel(m) {
+  // 2. Zeile: Chargennummer/Platz (eigenes Feld), sonst Artikelnummer
+  const cf = m.custom_fields || {};
+  const platzKey = Object.keys(cf).find((k) => /charge|platz|fach/i.test(k) && String(cf[k]).trim());
+  const where = (m.locations.find((l) => l.location_id === m.default_location_id) || m.locations[0])?.name || '';
+  showLabel({
+    title: m.name,
+    sub: platzKey ? `${/platz|fach/i.test(platzKey) ? 'Platz' : 'Charge'} ${cf[platzKey]}` : `Nr. ${m.number}`,
+    extra: [platzKey ? `Nr. ${m.number}` : '', where].filter(Boolean).join(' · '),
+    // Kurzer Code = großer, gut scanbarer QR. Lange Barcodes (z. B. Name aus Lager im Griff) → Artikelnummer
+    code: m.barcode && m.barcode.length <= 20 ? m.barcode : String(m.number),
+  });
+}
+async function addToCartFlow(m) {
+  const sug = Math.max(1, (+m.max_stock || 0) - m.total) || 1;
+  const n = await prompt({ title: 'In den Warenkorb', message: m.name, value: sug, type: 'number', okText: 'Hinzufügen' });
+  if (!n || !(+n > 0)) return;
+  try { await db.addToCart('cart', m.id, +n); invalidate('cart'); successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`); } catch (e) { errToast(e); }
+}
+
+/** Haptic Touch: langes Drücken auf einen Eintrag → Kontextmenü mit den wichtigsten Aktionen */
+async function materialContextMenu(el, refresh) {
+  const m = (await getMats()).find((x) => x.id === el.dataset.id);
+  if (!m) return;
+  const hasStock = m.locations.some((l) => l.qty > 0);
+  const v = await contextMenu(el, {
+    title: `${m.number}: ${m.name}`,
+    sub: `Bestand <b class="${isLow(m) ? 'red' : ''}">${fmtQty(m.total)}</b>${+m.min_stock ? ` · Meb ${fmtQty(m.min_stock)}` : ''}`,
+    items: [
+      ...(hasStock ? [{ label: 'Entnehmen', value: 'out', icon: 'minus' }] : []),
+      { label: 'Dazu buchen', value: 'in', icon: 'plus' },
+      ...(hasStock && m.locations.length > 1 ? [{ label: 'Umbuchen', value: 'transfer', icon: 'swap' }] : []),
+      '-',
+      { label: 'Etikett drucken', value: 'label', icon: 'print' },
+      { label: 'In den Warenkorb', value: 'cart', icon: 'cart' },
+      { label: 'Bestandsänderungen', value: 'history', icon: 'history' },
+      { label: 'Nummer kopieren', value: 'copy', icon: 'copy' },
+      '-',
+      { label: 'Bearbeiten', value: 'edit', icon: 'edit' },
+      { label: 'Löschen', value: 'delete', icon: 'trash', danger: true },
+    ],
+  });
+  if (!v) return;
+  if (['out', 'in', 'transfer'].includes(v)) return openBooking(m, v, refresh);
+  if (v === 'label') return openLabel(m);
+  if (v === 'cart') return addToCartFlow(m);
+  if (v === 'history') return go(`/m/${m.id}/history`);
+  if (v === 'copy') return copyText(String(m.number));
+  if (v === 'edit') return go(`/edit/${m.id}`);
+  if (v === 'delete') {
+    if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
+    try { await db.deleteMaterial(m.id); invalidate(); successHUD('Gelöscht'); refresh(); } catch (e) { errToast(e); }
+  }
 }
 
 async function infosTab(m) {
