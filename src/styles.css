@@ -1111,3 +1111,51 @@ html.vt-back::view-transition-new(root) { animation: vt-root-in-back .38s cubic-
 @keyframes vt-root-in { from { opacity: 0; transform: scale(1.03); } }
 @keyframes vt-root-out-back { to { opacity: 0; transform: scale(1.03); } }
 @keyframes vt-root-in-back { from { opacity: 0; transform: scale(.96); } }
+
+/* =====================================================================
+   Spotlight-Suche (Pull-Down auf der Übersicht)
+   ===================================================================== */
+.pts { position: relative; height: 0; z-index: 4; pointer-events: none; }
+.pts-pill {
+  position: absolute; left: 50%; top: 10px; display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--text-2);
+  background: color-mix(in srgb, var(--surface) 75%, transparent); box-shadow: var(--card-shadow);
+  opacity: 0; transform: translate3d(-50%, 0, 0) scale(.7);
+}
+.pts-pill.armed { color: var(--primary); }
+
+html.spot-open, html.spot-open body { overflow: hidden; }
+.spotlight { position: fixed; inset: 0; z-index: 400; }
+.sp-backdrop {
+  position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--bg-grouped) 55%, transparent);
+  backdrop-filter: blur(25px) saturate(170%); -webkit-backdrop-filter: blur(25px) saturate(170%);
+  opacity: 0; transition: opacity .32s ease;
+}
+.spotlight.show .sp-backdrop { opacity: 1; }
+.spotlight.hide .sp-backdrop { opacity: 0; transition-duration: .25s; }
+.sp-panel {
+  position: absolute; inset: 0; display: flex; flex-direction: column; pointer-events: none;
+  padding: calc(10px + var(--safe-t)) 14px 0;
+  opacity: 0; transform: translate3d(0, -24px, 0) scale(.98);
+  transition: opacity .25s ease, transform .45s var(--ease-out-soft);
+}
+.spotlight.show .sp-panel { opacity: 1; transform: none; }
+.spotlight.hide .sp-panel { opacity: 0; transform: translate3d(0, -16px, 0); transition-duration: .22s; }
+.sp-panel > * { pointer-events: auto; }
+.sp-top { display: flex; align-items: center; gap: 6px; max-width: 760px; width: 100%; margin: 0 auto; }
+.sp-field { flex: 1; min-width: 0; height: 50px; border-radius: 15px; background: color-mix(in srgb, var(--surface) 80%, transparent); box-shadow: var(--card-shadow); }
+.sp-field input { font-size: 18px; }
+.sp-cancel { font-size: 17px; flex-shrink: 0; }
+.sp-results {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  max-width: 760px; width: 100%; margin: 0 auto; padding: 6px 0 calc(24px + var(--safe-b));
+}
+.sp-results:empty { pointer-events: none; }
+.sp-label { margin: 16px 6px 8px; font-size: 13px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.sp-card { background: color-mix(in srgb, var(--surface) 82%, transparent); border-radius: var(--r); overflow: hidden; box-shadow: var(--card-shadow); }
+.sp-card .mrow:last-child { border-bottom: 0; }
+.sp-all { width: 100%; margin-top: 12px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; gap: 4px;
+  color: var(--primary); font-weight: 600; background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.sp-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 60px 20px; color: var(--text-2); text-align: center; }
+.sp-field input { min-width: 0; width: 100%; }

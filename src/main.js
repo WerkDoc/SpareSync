@@ -12,7 +12,7 @@ import {
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
-import { setupPullToRefresh } from './ptr.js';
+import { setupPullToRefresh, setupPullToSearch } from './ptr.js';
 
 const app = document.getElementById('app');
 const BRAND_S = `${import.meta.env.BASE_URL}brand-s.png`;     // farbiges „S“ (transparent)
@@ -22,7 +22,25 @@ const brandLogo = (cls = '') => `<span class="brand ${cls}" role="img" aria-labe
 
 // ============================== Cache ================================
 const cache = { materials: null, groups: null, locations: null, cart: null, fields: null };
-const getMats = async () => (cache.materials ??= await db.listMaterials());
+const getMats = async () => {
+  if (!cache.materials) { cache.materials = await db.listMaterials(); updateBadge(cache.materials); }
+  return cache.materials;
+};
+
+// ================= App-Symbol-Zähler (Badging API) =================
+// Roter Punkt am Home-Bildschirm-Symbol = Anzahl Teile unter Meldebestand.
+// iPhone: nur als Home-Bildschirm-App ab iOS 16.4 UND mit erlaubten Mitteilungen.
+const BADGE_KEY = 'ss-badge';
+const badgeEnabled = () => { try { return localStorage.getItem(BADGE_KEY) !== '0'; } catch { return true; } };
+const badgeSupported = () => 'setAppBadge' in navigator;
+function updateBadge(mats = cache.materials) {
+  if (!badgeSupported() || !mats) return;
+  const n = badgeEnabled() ? mats.filter(isLow).length : 0;
+  try {
+    const p = n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge();
+    p?.catch?.(() => {});            // nicht erlaubt / nicht unterstützt → still ignorieren
+  } catch { /* alter Browser */ }
+}
 const getGroups = async () => (cache.groups ??= await db.listGroups());
 const getLocs = async () => (cache.locations ??= await db.listLocations());
 const getCart = async () => (cache.cart ??= await db.listCart());
@@ -62,9 +80,32 @@ const isLow = (m) => m.kind === 'part' && +m.min_stock > 0 && m.total <= +m.min_
 function applyTheme() {
   const t = localStorage.getItem('wl-theme') || '';
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
-  const dark = t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+  syncThemeColor();
 }
+// ---------- Dynamische Statusleisten-Farbe (theme-color) ----------
+// Folgt Hell/Dunkel, ganz oben vs. gescrollt (Milchglas-Leiste) und abgedunkelten Overlays.
+const THEME_COLORS = {
+  light: { base: '#f2f2f7', bar: '#f9f9fb', dim: '#919194', spot: '#e4e4ea' },
+  dark: { base: '#000000', bar: '#161618', dim: '#000000', spot: '#0d0d0f' },
+};
+let lastThemeColor = '';
+function syncThemeColor() {
+  const t = document.documentElement.dataset.theme;
+  const c = THEME_COLORS[t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'];
+  const scr = document.querySelector('#app > .screen:last-child');
+  let col = c.base;
+  if (document.querySelector('.spotlight.show')) col = c.spot;
+  else if (document.querySelector('.layer.bsheet-layer, .layer.alert-layer, .layer.ctx-layer, .layer.show') || scr?.classList.contains('search-focus')) col = c.dim;
+  else if (scr && !scr.classList.contains('at-top') && !scr.classList.contains('auth-screen')) col = c.bar;
+  if (col === lastThemeColor) return;
+  lastThemeColor = col;
+  let meta = document.querySelector('meta[name=theme-color]');
+  if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+  meta.setAttribute('content', col);
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
+// Overlays (Sheets, Dialoge, Kontextmenü) kommen und gehen → Farbe nachziehen
+new MutationObserver(() => requestAnimationFrame(syncThemeColor)).observe(document.body, { childList: true });
 function toggleTheme() {
   const dark = document.documentElement.dataset.theme === 'dark'
     || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -556,6 +597,7 @@ function updateScrolled() {
   const scr = app.querySelector('.screen:last-child');
   if (!scr || scr.classList.contains('screen-anim')) return;
   scr.classList.toggle('at-top', window.scrollY < 4);   // ganz oben: Leiste durchsichtig, beim Scrollen Milchglas
+  syncThemeColor();
   const lt = scr.querySelector('.lt-collapse');
   if (!lt) return;
   // umschalten, sobald der große Titel unter der Leiste verschwindet (mit kleiner Hysterese gegen Flackern)
@@ -568,6 +610,88 @@ function updateScrolled() {
   else if (on && mid > barBottom + 6) scr.classList.remove('scrolled');
 }
 window.addEventListener('scroll', () => { if (!scrollRaf) scrollRaf = requestAnimationFrame(updateScrolled); }, { passive: true });
+
+// ---------- Spotlight-Suche ----------
+// Nur eine Oberfläche: nutzt die bestehende Suche (filterMats), die bestehenden Listenzeilen (materialRow)
+// und den bestehenden Such-State der Teile-Liste (listState.q).
+function openSpotlight() {
+  if (document.querySelector('.spotlight')) return;
+  const el = document.createElement('div');
+  el.className = 'spotlight';
+  el.innerHTML = `
+    <div class="sp-backdrop"></div>
+    <div class="sp-panel">
+      <div class="sp-top">
+        <label class="search-field sp-field">${icon('search', 20)}<input type="search" placeholder="Teile, Nummer, Barcode, Platz…" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false"></label>
+        <button class="text-btn sp-cancel" type="button">Abbrechen</button>
+      </div>
+      <div class="sp-results"></div>
+    </div>`;
+  document.body.appendChild(el);
+  const input = el.querySelector('input');
+  input.value = listState.q || '';
+  input.focus();                                   // muss synchron im Tipp/Wisch passieren (iOS)
+  enhanceSearch(el);
+  document.documentElement.classList.add('spot-open');
+  requestAnimationFrame(() => { el.classList.add('show'); syncThemeColor(); });
+  haptic('light');
+
+  const results = el.querySelector('.sp-results');
+  let hits = [];
+  const showAll = () => {
+    const q = input.value.trim();
+    // Treffer an die echte Teile-Liste übergeben (gleicher State wie das Suchfeld dort)
+    listState.q = q;
+    if (hits.length && hits.every((m) => m.kind === 'tool')) listState.tab = 'tool';
+    else if (listState.tab === 'cart' || !hits.some((m) => m.kind === listState.tab)) listState.tab = 'part';
+    saveListState();
+    close(); go('/list', false, 'tabF');
+  };
+  const render = async () => {
+    const mats = await getMats();
+    const q = input.value.trim();
+    if (!q) {
+      const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 5);
+      hits = [];
+      results.innerHTML = recent.length ? `<p class="sp-label">Zuletzt bewegt</p><div class="sp-card mlist">${recent.map((m) => materialRow(m)).join('')}</div>` : '';
+      return;
+    }
+    hits = filterMats(mats, { q });
+    const top = hits.slice(0, 12);
+    results.innerHTML = hits.length
+      ? `<p class="sp-label">${hits.length} ${hits.length === 1 ? 'Treffer' : 'Treffer'}</p>
+         <div class="sp-card mlist">${top.map((m) => materialRow(m)).join('')}</div>
+         ${hits.length > top.length ? `<button class="sp-all" type="button">Alle ${hits.length} Treffer in „Teile“ anzeigen ${icon('chevR', 16)}</button>` : ''}`
+      : `<div class="sp-empty">${icon('search', 38, 1.5)}<p>Nichts gefunden für „${esc(q)}“</p></div>`;
+    results.querySelector('.sp-all')?.addEventListener('click', showAll);
+  };
+  let closed = false;
+  function close() {
+    if (closed) return; closed = true;
+    input.blur();
+    el.classList.remove('show'); el.classList.add('hide');
+    document.documentElement.classList.remove('spot-open');
+    setTimeout(() => { el.remove(); syncThemeColor(); }, 320);
+    syncThemeColor();
+    document.removeEventListener('keydown', onKey);
+  }
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  input.addEventListener('input', render);
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (hits.length === 1) { close(); go(`/m/${hits[0].id}`); } else if (input.value.trim()) showAll();
+  });
+  el.querySelector('.sp-cancel').onclick = close;
+  el.querySelector('.sp-backdrop').onclick = close;
+  results.addEventListener('click', (e) => { if (e.target.closest('a.mrow')) close(); });   // Navigation macht der Router
+  // Nach oben wischen schließt
+  let sy = 0;
+  el.addEventListener('touchstart', (e) => { sy = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', (e) => { if (sy - e.changedTouches[0].clientY > 70 && !results.scrollTop) close(); }, { passive: true });
+  render();
+}
 
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
@@ -656,7 +780,8 @@ async function viewFav() {
   attachGyro(root);
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
-  setupPullToRefresh(root, refreshAll, () => viewFav());
+  // Herunterziehen öffnet die Spotlight-Suche (Aktualisieren: Menü → Neu laden, oder in „Teile“ herunterziehen)
+  setupPullToSearch(root, openSpotlight);
   on(root, 'scan', async () => {
     const code = await scan(); if (!code) return;
     const m = await db.findByCode(code);
@@ -796,9 +921,10 @@ async function viewList(q) {
     const on = document.activeElement === qi && !qi.value;
     if (on) dim.style.top = `${Math.round(root.querySelector('.list-head').getBoundingClientRect().bottom)}px`;
     root.classList.toggle('search-focus', on);
+    syncThemeColor();
   };
   qi.addEventListener('focus', setDim);
-  qi.addEventListener('blur', () => root.classList.remove('search-focus'));
+  qi.addEventListener('blur', () => { root.classList.remove('search-focus'); syncThemeColor(); });
   qi.addEventListener('input', setDim);
   dim.addEventListener('pointerdown', (e) => { e.preventDefault(); qi.blur(); });
   qi.oninput = () => { listState.q = qi.value; saveListState(); if (listState.tab === 'cart') { listState.tab = 'part'; viewList({}); } else renderRows(); };
@@ -1905,6 +2031,8 @@ async function viewSettings() {
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
+        ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
+          <input type="checkbox" class="switch" data-act-badge ${badgeEnabled() ? 'checked' : ''}></label>` : ''}
       </div>
       <div class="set-group">
         ${db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
@@ -1914,6 +2042,16 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-badge]')?.addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    try { localStorage.setItem(BADGE_KEY, on ? '1' : '0'); } catch {}
+    // iPhone: der Zähler erscheint nur mit erlaubten Mitteilungen
+    if (on && 'Notification' in window && Notification.permission === 'default') {
+      try { await Notification.requestPermission(); } catch {}
+    }
+    if (on && 'Notification' in window && Notification.permission === 'denied') toast('Mitteilungen sind für SpareSync aus – in den iPhone-Einstellungen erlauben', 'err');
+    updateBadge(await getMats());
+  });
   root.querySelector('[data-act-gyro]').onchange = async (e) => {
     const on = e.target.checked;
     setGyroEnabled(on);
