@@ -181,7 +181,7 @@ code { font-size: 13px; background: var(--fill); padding: 1px 5px; border-radius
 .glass-btn:active { transform: scale(.94); }
 .dash-head { padding: 4px 4px 14px; }
 .dash-date { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
-.dash-title { margin: 2px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.dash-title { margin: 6px 0 0; font-size: 34px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
 .dash-sec { margin: 26px 4px 10px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
 
 .tone-primary { background: var(--primary-soft); color: var(--primary); }
@@ -965,15 +965,17 @@ html.modal-open, html.modal-open body { overscroll-behavior: none; }
 /* ---------- Collapsing Header: großer Titel → kleiner Titel in der Leiste ---------- */
 .dash-nav { transition: box-shadow .25s ease; box-shadow: 0 .5px 0 transparent; }
 .scrolled .dash-nav { box-shadow: 0 .5px 0 var(--sep); }
+.dash-nav .brand { flex: none; }
+/* kleiner Titel sitzt genau mittig zwischen Logo und den Knöpfen rechts */
 .dash-nav-title {
-  position: absolute; left: 50%; top: calc(8px + var(--safe-t)); height: 40px; line-height: 40px;
+  flex: 1; min-width: 0; text-align: center; height: 40px; line-height: 40px; overflow: hidden; text-overflow: ellipsis;
   font-size: 17px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; pointer-events: none;
-  opacity: 0; transform: translate3d(-50%, 8px, 0) scale(.9);
+  opacity: 0; transform: translate3d(0, 8px, 0) scale(.9);
   transition: opacity .22s ease, transform .38s var(--ease-out-soft);
 }
-.scrolled .dash-nav-title { opacity: 1; transform: translate3d(-50%, 0, 0) scale(1); }
-.large-title { transform-origin: left center; transition: transform .38s var(--ease-out-soft), opacity .22s ease; will-change: transform; }
-.scrolled .large-title { opacity: 0; transform: translate3d(0, -6px, 0) scale(.82); }
+.scrolled .dash-nav-title { opacity: 1; transform: none; }
+.lt-collapse { transform-origin: left center; transition: transform .38s var(--ease-out-soft), opacity .22s ease; will-change: transform; }
+.scrolled .lt-collapse { opacity: 0; transform: translate3d(0, -6px, 0) scale(.82); }
 @media (max-width: 360px) {           /* schmale Handys: Schriftzug weicht dem Titel */
   .dash-nav .wordmark { transition: opacity .2s; }
   .scrolled .dash-nav .wordmark { opacity: 0; }

@@ -456,7 +456,7 @@ const dashHeader = () => `<header class="dash-nav">
       </header>`;
 const dashHead = () => `<div class="dash-head">
         <p class="dash-date">${esc(new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
-        <h1 class="dash-title large-title">Übersicht</h1>
+        <h1 class="dash-title lt-collapse">Übersicht</h1>
       </div>`;
 const skelRows = (n) => Array.from({ length: n }, (_, i) => `<div class="mrow skel-row">
       ${skel('skel-thumb')}
@@ -502,7 +502,7 @@ function updateScrolled() {
   scrollRaf = 0;
   const scr = app.querySelector('.screen:last-child');
   if (!scr || scr.classList.contains('screen-anim')) return;
-  const lt = scr.querySelector('.large-title');
+  const lt = scr.querySelector('.lt-collapse');
   if (!lt) return;
   // umschalten, sobald der große Titel unter der Leiste verschwindet (mit kleiner Hysterese gegen Flackern)
   const bar = scr.querySelector('.dash-nav, .navbar');
@@ -592,8 +592,8 @@ async function viewFav() {
   });
   root.querySelectorAll('[data-count]').forEach((el) => {
     const k = el.dataset.count; const from = dashShown[k] ?? 0;
-    countUp(el, nums[k], { from });
-    if (dashShown[k] != null && dashShown[k] !== nums[k]) setTimeout(() => el.closest('.w-val, .w-sub')?.classList.add('num-pop'), 780);
+    countUp(el, nums[k], { from, dur: 4500 });
+    if (dashShown[k] != null && dashShown[k] !== nums[k]) setTimeout(() => el.closest('.w-val, .w-sub')?.classList.add('num-pop'), 4480);
     dashShown[k] = nums[k];
   });
   popChanged(root);
@@ -1761,7 +1761,7 @@ async function viewSettings() {
     header: navbar({ left: backBtn(), title: 'Menü', cls: 'lt-nav' }),
     cls: 'settings-screen',
     body: `
-      <h1 class="large-title page-lt">Menü</h1>
+      <h1 class="lt-collapse page-lt">Menü</h1>
       <div class="set-group">
         <div class="set-row static"><i class="tone-${db.isDemo ? 'orange' : 'green'}">${icon('database', 19)}</i><span>${db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
       </div>
