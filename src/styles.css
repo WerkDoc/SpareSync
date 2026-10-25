@@ -885,3 +885,5 @@ html.modal-open, html.modal-open body { overscroll-behavior: none; }
 }
 .offline-badge i { width: 7px; height: 7px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 0 2px rgba(255,59,48,.25); }
 @keyframes offIn { from { transform: translate(-50%, -6px) scale(.9); opacity: 0; } }
+/* Etikettengröße: Maße nicht spiegeln („mm 29 × 62“) */
+.frow select[data-f="size"] { direction: ltr; text-align: right; text-align-last: right; }
