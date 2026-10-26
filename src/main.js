@@ -2343,6 +2343,15 @@ function viewLogin(_m, _id, startPanel = 'login') {
 }
 
 // ============================== Start ================================
+// Vollbild-Test nur wirklich anwenden, wenn iOS die App auch unter die Statusleiste legt
+// (sonst würde die Island-Pille über der Kopfzeile kleben). Erkennbar am oberen Safe-Area-Abstand.
+if (document.documentElement.classList.contains('fullbleed')) {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none';
+  document.body.appendChild(probe);
+  if (probe.offsetHeight < 20) document.documentElement.classList.remove('fullbleed');
+  probe.remove();
+}
 installHaptics();
 // iOS: ohne touchstart-Listener zeigt Safari den :active-Zustand (Hineindrücken) nicht an
 document.addEventListener('touchstart', () => {}, { passive: true });
