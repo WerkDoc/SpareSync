@@ -1163,21 +1163,21 @@ html.spot-open, html.spot-open body { overflow: hidden; }
    Frosted Glass – Dashboard-Kacheln als Milchglas
    ===================================================================== */
 .dash-screen {
-  --glass-card: rgba(255, 255, 255, .7);
-  --glass-edge: rgba(255, 255, 255, .5);
-  --glass-alert: rgba(255, 59, 48, .1);
+  --glass-card: rgba(255, 255, 255, .9);
+  --glass-edge: rgba(255, 255, 255, .6);
+  --glass-alert: rgba(255, 59, 48, .07);
   --glass-alert-edge: rgba(255, 59, 48, .3);
   --glass-blur: blur(25px) saturate(160%);
   position: relative; isolation: isolate;
 }
 :root[data-theme="dark"] .dash-screen {
-  --glass-card: rgba(28, 28, 30, .62); --glass-edge: rgba(255, 255, 255, .09);
-  --glass-alert: rgba(255, 69, 58, .14); --glass-alert-edge: rgba(255, 69, 58, .38);
+  --glass-card: rgba(28, 28, 30, .9); --glass-edge: rgba(255, 255, 255, .08);
+  --glass-alert: rgba(255, 69, 58, .12); --glass-alert-edge: rgba(255, 69, 58, .38);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dash-screen {
-    --glass-card: rgba(28, 28, 30, .62); --glass-edge: rgba(255, 255, 255, .09);
-    --glass-alert: rgba(255, 69, 58, .14); --glass-alert-edge: rgba(255, 69, 58, .38);
+    --glass-card: rgba(28, 28, 30, .9); --glass-edge: rgba(255, 255, 255, .08);
+    --glass-alert: rgba(255, 69, 58, .12); --glass-alert-edge: rgba(255, 69, 58, .38);
   }
 }
 /* Sanftes Farblicht hinter den Kacheln – erst dadurch wird das Milchglas sichtbar
@@ -1185,10 +1185,9 @@ html.spot-open, html.spot-open body { overflow: hidden; }
 .dash-screen::before {
   content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background:
-    radial-gradient(40% 32% at 12% 18%, color-mix(in srgb, var(--brand-blue) 22%, transparent), transparent 70%),
-    radial-gradient(38% 30% at 92% 34%, color-mix(in srgb, var(--teal) 18%, transparent), transparent 70%),
-    radial-gradient(45% 30% at 30% 78%, color-mix(in srgb, var(--indigo) 14%, transparent), transparent 70%),
-    radial-gradient(35% 26% at 85% 88%, color-mix(in srgb, var(--red) 9%, transparent), transparent 70%);
+    radial-gradient(40% 32% at 12% 18%, color-mix(in srgb, var(--brand-blue) 12%, transparent), transparent 70%),
+    radial-gradient(38% 30% at 92% 34%, color-mix(in srgb, var(--teal) 9%, transparent), transparent 70%),
+    radial-gradient(45% 30% at 30% 78%, color-mix(in srgb, var(--indigo) 7%, transparent), transparent 70%);
 }
 .dash-screen .widget, .dash-screen .quick, .dash-screen .ios-list, .dash-screen .demo-banner {
   background-color: var(--glass-card);
@@ -1197,7 +1196,8 @@ html.spot-open, html.spot-open body { overflow: hidden; }
   background-clip: padding-box;
 }
 .dash-screen .widget.is-alert {
-  background-color: var(--glass-alert);
+  background-color: var(--glass-card);
+  background-image: linear-gradient(var(--glass-alert), var(--glass-alert));
   border-color: var(--glass-alert-edge);
   box-shadow: var(--card-shadow);
 }
