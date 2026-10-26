@@ -301,38 +301,35 @@ const btn = (name, action, label = '', extra = '') => `<button class="icon-btn" 
 const backBtn = (style = 'chev') => `<button class="icon-btn" data-act="back" aria-label="Zurück">${icon(style === 'arrow' ? 'arrowLeft' : 'back', 28)}</button>`;
 
 function tabbar(active) {
+  // Der Indikator sitzt IM aktiven Tab (mittig per CSS) → stimmt bei jeder Bildschirmgröße und Drehung automatisch
+  const ind = '<span class="tab-ind" aria-hidden="true"></span>';
   return `
   <nav class="tabbar">
-    <span class="tab-ind" aria-hidden="true"></span>
-    <a href="#/fav" data-tablink class="tab ${active === 'fav' ? 'on' : ''}">${icon('home', 26)}<span>Übersicht</span></a>
-    <a href="#/list" data-tablink class="tab ${active === 'list' ? 'on' : ''}">${icon('list', 26)}<span>Teile</span></a>
+    <a href="#/fav" data-tablink class="tab ${active === 'fav' ? 'on' : ''}">${active === 'fav' ? ind : ''}${icon('home', 26)}<span>Übersicht</span></a>
+    <a href="#/list" data-tablink class="tab ${active === 'list' ? 'on' : ''}">${active === 'list' ? ind : ''}${icon('list', 26)}<span>Teile</span></a>
   </nav>`;
 }
 // ---------- Liquid Tab Bar ----------
-// Der Indikator startet an der Position des zuletzt aktiven Tabs und gleitet zum neuen –
-// unterwegs dehnt er sich in Bewegungsrichtung (wie ein Tropfen) und federt am Ziel nach.
-let lastTabX = null;
+// Beim Wechsel steht die alte Seite (mit altem Indikator) noch im DOM: beide Positionen werden im selben
+// Moment gemessen, der neue Indikator startet am alten Platz und gleitet – gedehnt wie ein Tropfen – an seinen.
 function placeTabIndicator(root) {
-  // Indikator der alten Seite blendet aus, während der neue (gleicher Startpunkt) einblendet → wirkt wie EIN Indikator
-  document.querySelectorAll('.tab-ind').forEach((el) => { if (!root.contains(el)) { el.style.transition = 'opacity .28s ease'; el.style.opacity = '0'; } });
-  const ind = root.querySelector('.tab-ind');
-  const on = root.querySelector('.tabbar .tab.on');
-  if (!ind) return;
-  if (!on) { lastTabX = null; return; }
-  const x = on.offsetLeft + on.offsetWidth / 2 - ind.offsetWidth / 2;
-  ind.style.setProperty('--ind-x', `${x}px`);
-  const from = lastTabX; lastTabX = x;
-  ind.classList.add('ready');
-  if (from == null || Math.abs(from - x) < 1 || reduceMotion.matches || !ind.animate) return;
-  const dir = Math.sign(x - from); const mid = from + (x - from) * 0.55;
+  const ind = root.querySelector('.tab.on .tab-ind');
+  const old = [...document.querySelectorAll('.tab.on .tab-ind')].find((el) => !root.contains(el));
+  if (old) { old.style.transition = 'opacity .28s ease'; old.style.opacity = '0'; }
+  if (!ind || !old || reduceMotion.matches || !ind.animate) return;
+  const a = old.getBoundingClientRect(); const b = ind.getBoundingClientRect();
+  const dx = (a.left + a.width / 2) - (b.left + b.width / 2);
+  if (Math.abs(dx) < 1) return;
+  const dir = Math.sign(-dx);
+  const T = (x, sx, sy) => `translate3d(calc(-50% + ${x}px), 0, 0) scale(${sx}, ${sy})`;
   ind.animate([
-    { transform: `translate3d(${from}px,0,0) scale(1, 1)`, offset: 0 },
+    { transform: T(dx, 1, 1), offset: 0 },
     // in Bewegungsrichtung lang gezogen, etwas flacher – der „flüssige“ Moment
-    { transform: `translate3d(${mid}px,0,0) scale(1.65, .82)`, offset: 0.45, easing: 'cubic-bezier(.3, 0, .2, 1)' },
+    { transform: T(dx * 0.45, 1.65, 0.82), offset: 0.45, easing: 'cubic-bezier(.3, 0, .2, 1)' },
     // kurz über das Ziel hinaus gestaucht …
-    { transform: `translate3d(${x + dir * 4}px,0,0) scale(.9, 1.06)`, offset: 0.78, easing: 'cubic-bezier(.2, .8, .3, 1)' },
+    { transform: T(dir * 4, 0.9, 1.06), offset: 0.78, easing: 'cubic-bezier(.2, .8, .3, 1)' },
     // … und weich einrasten
-    { transform: `translate3d(${x}px,0,0) scale(1, 1)`, offset: 1 },
+    { transform: T(0, 1, 1), offset: 1 },
   ], { duration: 560, easing: 'cubic-bezier(.5, 0, .3, 1)' });
 }
 

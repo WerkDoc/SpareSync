@@ -1211,9 +1211,10 @@ html.spot-open, html.spot-open body { overflow: hidden; }
 .tab .ic { transition: color .3s ease, transform .35s cubic-bezier(.34, 1.56, .64, 1); }
 .tab.on .ic { transform: translateY(-1px) scale(1.06); }
 .tab-ind {
-  position: absolute; z-index: 0; left: 0; top: 4px; width: 92px; height: 50px; border-radius: 18px;
-  background: var(--primary-soft); pointer-events: none; opacity: 0;
-  transform: translate3d(var(--ind-x, 0px), 0, 0);
-  transform-origin: center; will-change: transform;
+  position: absolute; z-index: -1; left: 50%; top: -4px; width: 92px; height: 50px; border-radius: 18px;
+  background: var(--primary-soft); pointer-events: none;
+  transform: translate3d(-50%, 0, 0); will-change: transform;
 }
-.tab-ind.ready { opacity: 1; transition: opacity .2s ease; }
+/* Tabs nicht über die ganze Breite verteilen: auf PC/Querformat mittig und nah beieinander */
+.tabbar { justify-content: center; }
+.tabbar .tab { flex: 0 1 230px; min-width: 0; }
