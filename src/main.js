@@ -2059,6 +2059,8 @@ async function viewSettings() {
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
+        <label class="set-row"><i class="tone-gray">${icon('corners', 19)}</i><span>Test: Vollbild unter Statusleiste<small>Danach App ganz schließen &amp; neu öffnen</small></span>
+          <input type="checkbox" class="switch" data-act-fullbleed ${localStorage.getItem('ss-fullbleed') === '1' ? 'checked' : ''}></label>
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
           <input type="checkbox" class="switch" data-act-badge ${badgeEnabled() ? 'checked' : ''}></label>` : ''}
       </div>
@@ -2080,6 +2082,11 @@ async function viewSettings() {
     if (on && 'Notification' in window && Notification.permission === 'denied') toast('Mitteilungen sind für SpareSync aus – in den iPhone-Einstellungen erlauben', 'err');
     updateBadge(await getMats());
   });
+  root.querySelector('[data-act-fullbleed]').onchange = (e) => {
+    try { localStorage.setItem('ss-fullbleed', e.target.checked ? '1' : '0'); } catch {}
+    infoBox({ title: e.target.checked ? 'Vollbild-Test aktiviert' : 'Vollbild-Test aus',
+      html: '<p>iOS liest diese Einstellung nur beim Start der App.</p><p>Bitte die App <b>ganz schließen</b> (vom unteren Rand hochwischen und SpareSync wegwischen) und vom Home-Bildschirm neu öffnen.</p>' });
+  };
   root.querySelector('[data-act-gyro]').onchange = async (e) => {
     const on = e.target.checked;
     setGyroEnabled(on);

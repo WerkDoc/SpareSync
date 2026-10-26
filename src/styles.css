@@ -1235,3 +1235,16 @@ html.spot-open, html.spot-open body { overflow: hidden; }
 /* Tabs nicht über die ganze Breite verteilen: auf PC/Querformat mittig und nah beieinander */
 .tabbar { justify-content: center; }
 .tabbar .tab { flex: 0 1 230px; min-width: 0; }
+
+/* =====================================================================
+   TEST Vollbild (black-translucent): App liegt unter der Statusleiste.
+   Kopfzeilen haben bereits Abstand über env(safe-area-inset-top).
+   Die Island-Pille startet hier exakt auf der Dynamic Island (schwarz auf schwarz = unsichtbar)
+   und wächst aus ihr heraus.
+   ===================================================================== */
+html.fullbleed .toast { top: 11px; opacity: 1; transform: translate3d(-50%, 0, 0) scale(.34, .8); box-shadow: none; }
+html.fullbleed .toast.show { transform: translate3d(-50%, 0, 0) scale(1, 1); box-shadow: 0 12px 34px rgba(0, 0, 0, .3); }
+html.fullbleed .toast.hide {
+  opacity: 1; transform: translate3d(-50%, 0, 0) scale(.34, .8); box-shadow: none;
+  transition: transform .42s cubic-bezier(.5, 0, .3, 1) .08s, box-shadow .2s;
+}
