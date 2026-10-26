@@ -398,9 +398,14 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .dark-btn:active { opacity: .8; }
 .switch-field { display: flex; justify-content: space-between; align-items: center; font-size: 22px; padding-left: 32px; }
 .switch { appearance: none; -webkit-appearance: none; width: 70px !important; height: 40px; border-radius: 20px; background: var(--fill); position: relative; transition: .2s; flex-shrink: 0; border: 1px solid var(--sep); cursor: pointer; padding: 0 !important; }
-.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 34px; height: 34px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.25); transition: .2s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 34px; height: 34px; border-radius: 17px; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.25);
+  /* Feder: Knopf schießt minimal über das Ziel hinaus und federt zurück */
+  transition: transform .3s cubic-bezier(0.175, 0.885, 0.32, 1.275), width .2s ease; }
 .switch:checked { background: var(--primary); border-color: var(--primary); }
-.switch:checked::after { left: 32px; }
+.switch:checked::after { transform: translateX(30px); }
+/* iOS-Detail: beim Festhalten wird der Knopf etwas breiter (zur Mitte hin) */
+.switch:active::after { width: 40px; }
+.switch:checked:active::after { transform: translateX(24px); }
 .more-fields .sec-title { padding: 0 10px 0 32px; }
 .cf-row { display: flex; align-items: center; gap: 8px; }
 .cf-row label { flex: 1; }
@@ -1248,3 +1253,27 @@ html.fullbleed .toast.hide {
   opacity: 1; transform: translate3d(-50%, 0, 0) scale(.34, .8); box-shadow: none;
   transition: transform .42s cubic-bezier(.5, 0, .3, 1) .08s, box-shadow .2s;
 }
+
+/* =====================================================================
+   Breathing Glow: Meldebestand-Kachel atmet sanft – nur im Dunkelmodus
+   ===================================================================== */
+@keyframes breathing-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0), 0 0 12px 0 rgba(255, 99, 58, .10), inset 0 0 0 1.5px rgba(255, 69, 58, .35); }
+  50%      { box-shadow: 0 0 0 1px rgba(255, 69, 58, .18), 0 0 26px 4px rgba(255, 99, 58, .28), inset 0 0 0 1.5px rgba(255, 69, 58, .55); }
+}
+:root[data-theme="dark"] .widget.is-alert { animation: breathing-glow 3.6s ease-in-out infinite; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .widget.is-alert { animation: breathing-glow 3.6s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) { .widget.is-alert { animation: none !important; } }
+
+/* =====================================================================
+   „Neu bewegt“-Highlight für den obersten Eintrag in „Zuletzt bewegt“
+   ===================================================================== */
+.highlight-new { animation: fade-highlight 2s ease-out .35s both; }
+@keyframes fade-highlight {
+  0%, 25% { background-color: var(--hl-new, rgba(10, 132, 255, .12)); }
+  100%    { background-color: transparent; }
+}
+:root[data-theme="dark"] .highlight-new { --hl-new: rgba(255, 255, 255, .12); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .highlight-new { --hl-new: rgba(255, 255, 255, .12); } }

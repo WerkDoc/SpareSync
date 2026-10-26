@@ -720,6 +720,17 @@ function openSpotlight() {
   render();
 }
 
+// Oberster Eintrag in „Zuletzt bewegt“ beim letzten Anzeigen – ändert er sich (Buchung), wird er hervorgehoben
+let lastRecentTop = null;
+/** Klasse anhängen und nach Ende der Animation wieder entfernen (damit sie beim nächsten Mal erneut startet) */
+function flashNew(el) {
+  if (!el) return;
+  el.classList.remove('highlight-new');
+  void el.offsetWidth;                                   // Reflow → Animation startet sicher neu
+  el.classList.add('highlight-new');
+  el.addEventListener('animationend', (e) => { if (e.animationName === 'fade-highlight') el.classList.remove('highlight-new'); }, { once: true });
+}
+
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
 
@@ -805,6 +816,9 @@ async function viewFav() {
   updateScrolled();
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
+  const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
+  if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('.ios-row.recent'));
+  lastRecentTop = top;
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
   // Herunterziehen öffnet die Spotlight-Suche (Aktualisieren: Menü → Neu laden, oder in „Teile“ herunterziehen)
