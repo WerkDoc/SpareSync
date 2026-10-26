@@ -119,16 +119,31 @@ export function enhanceSearch(root) {
 }
 
 // ---------- Toast ----------
-let toastTimer;
-export function toast(msg, type = 'ok') {
-  document.querySelector('.toast')?.remove();
+// ---------- „Dynamic Island“-Benachrichtigung ----------
+// Schwarze Pille, die aus der Notch herauswächst, kurz stehen bleibt und wieder darin verschwindet.
+let toastTimer; let toastHide;
+/**
+ * @param {string} msg   Haupttext
+ * @param {'ok'|'err'|'info'} [type]
+ * @param {{ sub?: string, icon?: string, duration?: number }} [opt]
+ */
+export function toast(msg, type = 'ok', opt = {}) {
+  const prev = document.querySelector('.toast');
+  if (prev) { prev.remove(); clearTimeout(toastTimer); clearTimeout(toastHide); }
   const t = document.createElement('div');
   t.className = `toast ${type}`;
-  t.innerHTML = `${icon(type === 'err' ? 'alert' : 'check', 18, 2.4)}<span>${esc(msg)}</span>`;
+  t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite');
+  const ic = opt.icon || (type === 'err' ? 'alert' : type === 'info' ? 'info' : 'check');
+  t.innerHTML = `<span class="di-ic">${icon(ic, 17, 2.6)}</span><span class="di-text"><b>${esc(msg)}</b>${opt.sub ? `<small>${esc(opt.sub)}</small>` : ''}</span>`;
   document.body.appendChild(t);
-  requestAnimationFrame(() => t.classList.add('show'));
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 450); }, type === 'err' ? 3500 : 2600);
+  void t.offsetWidth;                                     // Startzustand (klein in der Notch) übernehmen
+  t.classList.add('show');
+  const dur = opt.duration ?? (type === 'err' ? 3500 : 2400);
+  toastTimer = setTimeout(() => {
+    t.classList.remove('show'); t.classList.add('hide');  // erst Inhalt aus, dann Pille zurück in die Notch
+    toastHide = setTimeout(() => t.remove(), 600);
+  }, dur);
+  t.onclick = () => { clearTimeout(toastTimer); t.classList.remove('show'); t.classList.add('hide'); toastHide = setTimeout(() => t.remove(), 600); };
 }
 export const errToast = (e) => {
   console.error(e);

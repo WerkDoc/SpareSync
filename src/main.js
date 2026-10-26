@@ -1209,8 +1209,9 @@ async function openBooking(m, type, onDone, preset = {}) {
         try {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
           close(); invalidate('materials', 'locations');
-          successHUD('Bestand aktualisiert', `${conf.title}: ${fmtQty(qty.value)} · Gesamt ${fmtQty(total)}`);
-          if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') setTimeout(() => toast(`Meldebestand erreicht (${fmtQty(total)} / ${fmtQty(m.min_stock)})`, 'err'), 1900);
+          haptic('success');
+          toast('Erfolgreich gebucht', 'ok', { sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}` });
+          if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') setTimeout(() => toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }), 3050);
           await onDone?.(total);
         } catch (err) { errToast(err); b.disabled = false; }
       };
