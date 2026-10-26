@@ -303,10 +303,39 @@ const backBtn = (style = 'chev') => `<button class="icon-btn" data-act="back" ar
 function tabbar(active) {
   return `
   <nav class="tabbar">
+    <span class="tab-ind" aria-hidden="true"></span>
     <a href="#/fav" data-tablink class="tab ${active === 'fav' ? 'on' : ''}">${icon('home', 26)}<span>Übersicht</span></a>
     <a href="#/list" data-tablink class="tab ${active === 'list' ? 'on' : ''}">${icon('list', 26)}<span>Teile</span></a>
   </nav>`;
 }
+// ---------- Liquid Tab Bar ----------
+// Der Indikator startet an der Position des zuletzt aktiven Tabs und gleitet zum neuen –
+// unterwegs dehnt er sich in Bewegungsrichtung (wie ein Tropfen) und federt am Ziel nach.
+let lastTabX = null;
+function placeTabIndicator(root) {
+  // Indikator der alten Seite blendet aus, während der neue (gleicher Startpunkt) einblendet → wirkt wie EIN Indikator
+  document.querySelectorAll('.tab-ind').forEach((el) => { if (!root.contains(el)) { el.style.transition = 'opacity .28s ease'; el.style.opacity = '0'; } });
+  const ind = root.querySelector('.tab-ind');
+  const on = root.querySelector('.tabbar .tab.on');
+  if (!ind) return;
+  if (!on) { lastTabX = null; return; }
+  const x = on.offsetLeft + on.offsetWidth / 2 - ind.offsetWidth / 2;
+  ind.style.setProperty('--ind-x', `${x}px`);
+  const from = lastTabX; lastTabX = x;
+  ind.classList.add('ready');
+  if (from == null || Math.abs(from - x) < 1 || reduceMotion.matches || !ind.animate) return;
+  const dir = Math.sign(x - from); const mid = from + (x - from) * 0.55;
+  ind.animate([
+    { transform: `translate3d(${from}px,0,0) scale(1, 1)`, offset: 0 },
+    // in Bewegungsrichtung lang gezogen, etwas flacher – der „flüssige“ Moment
+    { transform: `translate3d(${mid}px,0,0) scale(1.65, .82)`, offset: 0.45, easing: 'cubic-bezier(.3, 0, .2, 1)' },
+    // kurz über das Ziel hinaus gestaucht …
+    { transform: `translate3d(${x + dir * 4}px,0,0) scale(.9, 1.06)`, offset: 0.78, easing: 'cubic-bezier(.2, .8, .3, 1)' },
+    // … und weich einrasten
+    { transform: `translate3d(${x}px,0,0) scale(1, 1)`, offset: 1 },
+  ], { duration: 560, easing: 'cubic-bezier(.5, 0, .3, 1)' });
+}
+
 // ======================= iOS-Seitenübergänge ========================
 // push: neue Seite gleitet von rechts herein, alte weicht leicht nach links (Parallaxe)
 // pop:  aktuelle Seite gleitet nach rechts hinaus, vorherige kommt von links zurück
@@ -477,6 +506,7 @@ function screen({ header, body, tab = null, cls = '', footer = '' }) {
   enhanceSearch(root);
   root.querySelectorAll('[data-act=back]').forEach((b) => (b.onclick = () => back()));
   requestAnimationFrame(updateScrolled);
+  placeTabIndicator(root);
   return root;
 }
 const on = (root, act, fn) => root.querySelectorAll(`[data-act="${act}"]`).forEach((el) => (el.onclick = (e) => { e.preventDefault(); fn(el, e); }));
