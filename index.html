@@ -16,6 +16,12 @@
     <script>
       // Gespeichertes Erscheinungsbild sofort setzen (vor dem ersten Bild)
       try { var t = localStorage.getItem('wl-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+      // Statusleisten-Farbe sofort passend setzen (iOS liest sie beim Start der Home-Bildschirm-App)
+      try {
+        var dk = t === 'dark' || (!t && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+        var tc = document.querySelector('meta[name=theme-color]');
+        if (tc) tc.setAttribute('content', dk ? '#000000' : '#f2f2f7');
+      } catch (e) {}
       // TEST „Vollbild“: App legt sich unter die Statusleiste (wird beim Start der Home-Bildschirm-App gelesen)
       try {
         if (localStorage.getItem('ss-fullbleed') === '1') {
@@ -62,6 +68,15 @@
         var sp = document.getElementById('splash');
         var v = document.getElementById('splash-video');
         if (!sp || !v) return;
+        // Neuladen nach Hell/Dunkel-Wechsel: Splash überspringen
+        var skipNow = false;
+        try { skipNow = sessionStorage.getItem('ss-skip-splash') === '1'; sessionStorage.removeItem('ss-skip-splash'); } catch (e) {}
+        if (skipNow) {
+          try { v.pause(); v.removeAttribute('src'); } catch (e) {}
+          sp.parentNode.removeChild(sp);
+          window.__splashVideoDone = true; window.hideSplash = function () {}; window.__splashFinish = function () {};
+          return;
+        }
         document.documentElement.classList.add('splash-on');
         var videoDone = false;
         var SPEED = 1.5; // Wiedergabe-Tempo: 1 = normal, 1.5 = 50 % schneller
