@@ -99,9 +99,22 @@ function syncThemeColor() {
   else if (scr && !scr.classList.contains('at-top') && !scr.classList.contains('auth-screen')) col = c.bar;
   if (col === lastThemeColor) return;
   lastThemeColor = col;
-  let meta = document.querySelector('meta[name=theme-color]');
-  if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
-  meta.setAttribute('content', col);
+  // iOS übernimmt eine geänderte Farbe zuverlässiger, wenn das Meta-Tag komplett neu eingesetzt wird
+  document.querySelectorAll('meta[name=theme-color]').forEach((m) => m.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'theme-color'; meta.content = col;
+  document.head.appendChild(meta);
+}
+// Home-Bildschirm-App (iPhone): iOS färbt die Statusleiste nur beim Start der App.
+// Nach einem Hell/Dunkel-Wechsel lädt die App deshalb kurz neu (ohne Splash-Video, gleiche Seite).
+const isStandalone = () => window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+function afterThemeChange() {
+  if (isStandalone()) {
+    try { sessionStorage.setItem('ss-skip-splash', '1'); } catch {}
+    location.reload();
+    return true;
+  }
+  return false;
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
 // Overlays (Sheets, Dialoge, Kontextmenü) kommen und gehen → Farbe nachziehen
@@ -109,7 +122,7 @@ new MutationObserver(() => requestAnimationFrame(syncThemeColor)).observe(docume
 function toggleTheme() {
   const dark = document.documentElement.dataset.theme === 'dark'
     || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-  localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); route();
+  localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); if (!afterThemeChange()) route();
 }
 applyTheme();
 
@@ -2083,7 +2096,7 @@ async function viewSettings() {
       <div class="menu-footer">${brandLogo('sm')}<span>Version 1.2</span></div>`,
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
-  root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); afterThemeChange(); };
   root.querySelector('[data-act-badge]')?.addEventListener('change', async (e) => {
     const on = e.target.checked;
     try { localStorage.setItem(BADGE_KEY, on ? '1' : '0'); } catch {}
