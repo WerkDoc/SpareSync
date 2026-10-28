@@ -1277,3 +1277,21 @@ html.fullbleed .toast.hide {
 }
 :root[data-theme="dark"] .highlight-new { --hl-new: rgba(255, 255, 255, .12); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .highlight-new { --hl-new: rgba(255, 255, 255, .12); } }
+
+/* ---------- Segmented Control im Darkmode: ruhiger, besser lesbar ----------
+   Statt kräftigem Blau auf Grau: Aktiv = helle Schrift auf etwas hellerer Pille (wie iOS),
+   Inaktiv = gedämpftes Grau. Lightmode bleibt unverändert. */
+:root[data-theme="dark"] { --seg-on: #5a5a5f; }
+:root[data-theme="dark"] .segment { background: rgba(118, 118, 128, .24); }
+:root[data-theme="dark"] .segment > button { color: var(--text-2); }
+:root[data-theme="dark"] .segment > button.on,
+:root[data-theme="dark"] .segment.seg-icons > button.on { color: #ffffff; font-weight: 600; }
+:root[data-theme="dark"] .seg-ind { box-shadow: 0 3px 8px rgba(0, 0, 0, .35), inset 0 .5px 0 rgba(255, 255, 255, .08); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --seg-on: #5a5a5f; }
+  :root:not([data-theme="light"]) .segment { background: rgba(118, 118, 128, .24); }
+  :root:not([data-theme="light"]) .segment > button { color: var(--text-2); }
+  :root:not([data-theme="light"]) .segment > button.on,
+  :root:not([data-theme="light"]) .segment.seg-icons > button.on { color: #ffffff; font-weight: 600; }
+  :root:not([data-theme="light"]) .seg-ind { box-shadow: 0 3px 8px rgba(0, 0, 0, .35), inset 0 .5px 0 rgba(255, 255, 255, .08); }
+}
