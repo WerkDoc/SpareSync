@@ -532,12 +532,20 @@ function materialRow(m, href = `#/m/${m.id}`, idx = -1) {
 }
 const empty = (ic, text, extra = '') => `<div class="empty">${icon(ic, 46, 1.4)}<p>${text}</p>${extra}</div>`;
 
-function filterMats(mats, { q = '', group = '', low = false, loc = '' } = {}) {
+// Chargennummer / Platz / Fach steckt in einem eigenen Feld (z. B. „Chargennummer Platz“)
+const CHARGE_RE = /charge|platz|fach/i;
+const chargeKey = (m) => Object.keys(m.custom_fields || {}).find((k) => CHARGE_RE.test(k) && String(m.custom_fields[k] ?? '').trim());
+const chargeOf = (m) => { const k = chargeKey(m); return k ? String(m.custom_fields[k]).trim() : ''; };
+const natCmp = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
+
+function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '' } = {}) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const ch = String(charge || '').trim().toLowerCase();
   return mats.filter((m) => {
     if (group && m.group_id !== group) return false;
     if (low && !isLow(m)) return false;
     if (loc && !m.locations.some((l) => l.location_id === loc)) return false;
+    if (ch && chargeOf(m).toLowerCase() !== ch) return false;
     if (!words.length) return true;
     const hay = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${Object.values(m.custom_fields || {}).join(' ')}`.toLowerCase();
     return words.every((w) => hay.includes(w));
@@ -834,7 +842,7 @@ async function viewFav() {
 // =====================================================================
 //  LISTEN (Material / Werkzeug / Warenkorb)
 // =====================================================================
-const listState = JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}');
+const listState = { charge: '', ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
 const saveListState = () => sessionStorage.setItem('wl-list', JSON.stringify(listState));
 
 async function viewList(q) {
@@ -849,7 +857,7 @@ async function viewList(q) {
   if (!res.ok) return;
   const [mats, cart] = res.data;
   const parts = mats.filter((m) => m.kind === 'part'); const tools = mats.filter((m) => m.kind === 'tool');
-  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0);
+  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0);
   const tab = listState.tab;
 
   const root = screen({
@@ -868,6 +876,7 @@ async function viewList(q) {
       ${activeFilters ? `<div class="chips">
         ${listState.group ? `<button class="chip" data-clear="group">${esc((await getGroups()).find((g) => g.id === listState.group)?.name || 'Gruppe')} ${icon('x', 14)}</button>` : ''}
         ${listState.loc ? `<button class="chip" data-clear="loc">${esc((await getLocs()).find((l) => l.id === listState.loc)?.name || 'Lagerort')} ${icon('x', 14)}</button>` : ''}
+        ${listState.charge ? `<button class="chip" data-clear="charge">Platz ${esc(listState.charge)} ${icon('x', 14)}</button>` : ''}
         ${listState.low ? `<button class="chip red" data-clear="low">Unter Meldebestand ${icon('x', 14)}</button>` : ''}
       </div>` : ''}</div>`,
     body: `<div id="rows"></div>`,
@@ -900,6 +909,7 @@ async function viewList(q) {
     if (s === 'name') f.sort((a, b) => a.name.localeCompare(b.name, 'de'));
     else if (s === 'stock') f.sort((a, b) => a.total - b.total);
     else if (s === 'updated') f.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+    else if (s === 'charge') f.sort((a, b) => { const x = chargeOf(a); const y = chargeOf(b); return (!x) - (!y) || natCmp(x, y) || a.number - b.number; });
     else f.sort((a, b) => a.number - b.number);
     visible = f;
     rows.innerHTML = f.length ? `
@@ -1000,15 +1010,23 @@ async function viewList(q) {
 }
 
 async function openFilter() {
-  const [groups, locs] = await Promise.all([getGroups(), getLocs()]);
+  const [groups, locs, mats] = await Promise.all([getGroups(), getLocs(), getMats()]);
+  // alle vorhandenen Chargennummern/Plätze mit Anzahl, natürlich sortiert (2 vor 10)
+  const pool = mats.filter((m) => m.kind === (listState.tab === 'tool' ? 'tool' : 'part'));
+  const counts = new Map();
+  pool.forEach((m) => { const c = chargeOf(m); if (c) counts.set(c, (counts.get(c) || 0) + 1); });
+  const charges = [...counts.keys()].sort(natCmp);
+  const fieldName = pool.map(chargeKey).find(Boolean) || 'Chargennummer';
   sheet(`
     <div class="form-group">
       <label class="frow"><span>Gruppe</span>
         <select data-f="group"><option value="">Alle Gruppen</option>${groups.map((g) => `<option value="${g.id}" ${g.id === listState.group ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
       <label class="frow"><span>Lagerort</span>
         <select data-f="loc"><option value="">Alle Lagerorte</option>${locs.map((l) => `<option value="${l.id}" ${l.id === listState.loc ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
+      ${charges.length ? `<label class="frow"><span>${esc(fieldName)}</span>
+        <select data-f="charge"><option value="">Alle</option>${charges.map((c) => `<option value="${esc(c)}" ${c.toLowerCase() === String(listState.charge).toLowerCase() ? 'selected' : ''}>${esc(c)} (${counts.get(c)})</option>`).join('')}</select></label>` : ''}
       <label class="frow"><span>Sortierung</span>
-        <select data-f="sort">${[['number', 'Artikelnummer'], ['name', 'Name A–Z'], ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert']]
+        <select data-f="sort">${[['number', 'Artikelnummer'], ['name', 'Name A–Z'], ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert'], ...(charges.length ? [['charge', `${fieldName} (aufsteigend)`]] : [])]
           .map(([v, l]) => `<option value="${v}" ${v === listState.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="frow switch-row"><span>Nur unter Meldebestand</span><input type="checkbox" class="switch" data-f="low" ${listState.low ? 'checked' : ''}></label>
     </div>
@@ -1018,12 +1036,12 @@ async function openFilter() {
     onMount: (root, close) => {
       const val = (k) => root.querySelector(`[data-f=${k}]`);
       root.querySelector('[data-a=apply]').onclick = () => {
-        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked });
+        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, charge: val('charge')?.value || '' });
         if (listState.tab === 'cart') listState.tab = 'part';
         saveListState(); close(); viewList({});
       };
       root.querySelector('[data-a=reset]').onclick = () => {
-        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false }); saveListState(); close(); viewList({});
+        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false, charge: '' }); saveListState(); close(); viewList({});
       };
     },
   });
