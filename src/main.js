@@ -525,7 +525,7 @@ function materialRow(m, href = `#/m/${m.id}`, idx = -1) {
   return `<a class="mrow" href="${href}" data-id="${m.id}"${st}>
       ${thumb(m)}
       <div class="mrow-main">
-        <div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div>
+        <div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}${m.is_favorite ? `<span class="fav-mark" aria-label="Favorit">${icon('starFill', 14)}</span>` : ''}</div>
         <div class="mrow-meta"><b>${locLabel(m)}</b><b class="stock">${stockLabel(m)}</b></div>
       </div>
     </a>`;
@@ -538,12 +538,13 @@ const chargeKey = (m) => Object.keys(m.custom_fields || {}).find((k) => CHARGE_R
 const chargeOf = (m) => { const k = chargeKey(m); return k ? String(m.custom_fields[k]).trim() : ''; };
 const natCmp = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
-function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '' } = {}) {
+function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const ch = String(charge || '').trim().toLowerCase();
   return mats.filter((m) => {
     if (group && m.group_id !== group) return false;
     if (low && !isLow(m)) return false;
+    if (fav && !m.is_favorite) return false;
     if (loc && !m.locations.some((l) => l.location_id === loc)) return false;
     if (ch && chargeOf(m).toLowerCase() !== ch) return false;
     if (!words.length) return true;
@@ -755,6 +756,8 @@ async function viewFav() {
   const cartN = cart.filter((c) => c.list === 'cart').length;
   const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 3);
   const counts = { locs: locs.length, groups: groups.length };
+  const FAV_MAX = 6;
+  const favs = mats.filter((m) => m.is_favorite).sort((a, b) => a.number - b.number);
   const nums = { parts: parts.length, units, low: low.length, cart: cartN };
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
@@ -804,8 +807,17 @@ async function viewFav() {
           </a>`).join('')}
       </section>
 
+      ${favs.length ? `<h2 class="dash-sec">Favoriten${favs.length > FAV_MAX ? ` <a class="sec-link" href="#/list?fav=1">Alle ${favs.length}</a>` : ''}</h2>
+      <section class="ios-list" data-sec="favs">
+        ${favs.slice(0, FAV_MAX).map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
+            ${thumb(m, 'sm')}
+            <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
+            <span class="r-qty ${isLow(m) ? 'red' : ''}" data-pop="fav:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span>
+          </a>`).join('')}
+      </section>` : ''}
+
       ${recent.length ? `<h2 class="dash-sec">Zuletzt bewegt</h2>
-      <section class="ios-list">
+      <section class="ios-list" data-sec="recent">
         ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
             ${thumb(m, 'sm')}
             <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
@@ -825,7 +837,7 @@ async function viewFav() {
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
   const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
-  if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('.ios-row.recent'));
+  if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('[data-sec=recent] .ios-row.recent'));
   lastRecentTop = top;
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
@@ -842,12 +854,13 @@ async function viewFav() {
 // =====================================================================
 //  LISTEN (Material / Werkzeug / Warenkorb)
 // =====================================================================
-const listState = { charge: '', ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
+const listState = { charge: '', fav: false, ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
 const saveListState = () => sessionStorage.setItem('wl-list', JSON.stringify(listState));
 
 async function viewList(q) {
   if (q.tab) listState.tab = q.tab;
   if ('low' in q) listState.low = q.low === '1';
+  if ('fav' in q) listState.fav = q.fav === '1';
   if ('group' in q) listState.group = q.group;
   if ('loc' in q) listState.loc = q.loc;
   saveListState();
@@ -857,7 +870,7 @@ async function viewList(q) {
   if (!res.ok) return;
   const [mats, cart] = res.data;
   const parts = mats.filter((m) => m.kind === 'part'); const tools = mats.filter((m) => m.kind === 'tool');
-  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0);
+  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0) + (listState.fav ? 1 : 0);
   const tab = listState.tab;
 
   const root = screen({
@@ -877,6 +890,7 @@ async function viewList(q) {
         ${listState.group ? `<button class="chip" data-clear="group">${esc((await getGroups()).find((g) => g.id === listState.group)?.name || 'Gruppe')} ${icon('x', 14)}</button>` : ''}
         ${listState.loc ? `<button class="chip" data-clear="loc">${esc((await getLocs()).find((l) => l.id === listState.loc)?.name || 'Lagerort')} ${icon('x', 14)}</button>` : ''}
         ${listState.charge ? `<button class="chip" data-clear="charge">Platz ${esc(listState.charge)} ${icon('x', 14)}</button>` : ''}
+        ${listState.fav ? `<button class="chip" data-clear="fav">Favoriten ${icon('x', 14)}</button>` : ''}
         ${listState.low ? `<button class="chip red" data-clear="low">Unter Meldebestand ${icon('x', 14)}</button>` : ''}
       </div>` : ''}</div>`,
     body: `<div id="rows"></div>`,
@@ -1051,6 +1065,7 @@ async function openFilter() {
       <label class="frow"><span>Sortierung</span>
         <select data-f="sort">${[['number', 'Artikelnummer'], ['name', 'Name A–Z'], ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert'], ...(charges.length ? [['charge', `${fieldName} (aufsteigend)`]] : [])]
           .map(([v, l]) => `<option value="${v}" ${v === listState.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="frow switch-row"><span>Nur Favoriten</span><input type="checkbox" class="switch" data-f="fav" ${listState.fav ? 'checked' : ''}></label>
       <label class="frow switch-row"><span>Nur unter Meldebestand</span><input type="checkbox" class="switch" data-f="low" ${listState.low ? 'checked' : ''}></label>
     </div>
     <div class="btn-row mt"><button class="btn-gray" data-a="reset">Zurücksetzen</button><button class="btn-filled" data-a="apply">Anwenden</button></div>`,
@@ -1059,12 +1074,12 @@ async function openFilter() {
     onMount: (root, close) => {
       const val = (k) => root.querySelector(`[data-f=${k}]`);
       root.querySelector('[data-a=apply]').onclick = () => {
-        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, charge: val('charge')?.value || '' });
+        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, fav: val('fav').checked, charge: val('charge')?.value || '' });
         if (listState.tab === 'cart') listState.tab = 'part';
         saveListState(); close(); viewList({});
       };
       root.querySelector('[data-a=reset]').onclick = () => {
-        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false, charge: '' }); saveListState(); close(); viewList({});
+        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false, fav: false, charge: '' }); saveListState(); close(); viewList({});
       };
     },
   });
@@ -1292,12 +1307,16 @@ async function viewMaterial(id, q) {
   if (tab === 'details') body = detailsTab(m, defs);
 
   const root = screen({
-    header: navbar({ left: backBtn('arrow'), title: `<div class="two-line">${m.number}: ${esc(m.name)}</div>`, cls: 'detail-nav' }),
+    header: navbar({
+      left: backBtn('arrow'), title: `<div class="two-line">${m.number}: ${esc(m.name)}</div>`, cls: 'detail-nav',
+      right: `<button class="icon-btn fav-btn ${m.is_favorite ? 'on' : ''}" data-act="fav" aria-label="${m.is_favorite ? 'Favorit entfernen' : 'Als Favorit anheften'}" aria-pressed="${!!m.is_favorite}">${icon(m.is_favorite ? 'starFill' : 'star', 25)}</button>`,
+    }),
     body: `<div class="segment"><button data-t="infos" class="${tab === 'infos' ? 'on' : ''}">Infos</button><button data-t="buchung" class="${tab === 'buchung' ? 'on' : ''}">Buchung</button><button data-t="details" class="${tab === 'details' ? 'on' : ''}">Details</button></div>${body}`,
     tab: 'none',
   });
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
+  on(root, 'fav', () => toggleFavorite(m, () => viewMaterial(id, { tab })));
 
   // ----- gemeinsame Aktionen -----
   on(root, 'book-out', () => openBooking(m, 'out', reload));
@@ -1511,6 +1530,7 @@ async function materialContextMenu(el, refresh) {
       { label: 'Etikett drucken', value: 'label', icon: 'print' },
       { label: 'In den Warenkorb', value: 'cart', icon: 'cart' },
       { label: 'Bestandsänderungen', value: 'history', icon: 'history' },
+      { label: m.is_favorite ? 'Favorit entfernen' : 'Als Favorit anheften', value: 'fav', icon: m.is_favorite ? 'starFill' : 'star' },
       { label: 'Nummer kopieren', value: 'copy', icon: 'copy' },
       '-',
       { label: 'Bearbeiten', value: 'edit', icon: 'edit' },
@@ -1524,7 +1544,20 @@ async function materialContextMenu(el, refresh) {
   if (v === 'history') return go(`/m/${m.id}/history`);
   if (v === 'copy') return copyText(String(m.number));
   if (v === 'edit') return go(`/edit/${m.id}`);
+  if (v === 'fav') return toggleFavorite(m, refresh);
   if (v === 'delete') return deleteMaterialFlow(m, refresh);
+}
+/** Favoriten-Stern umschalten (Detailseite + Kontextmenü) */
+async function toggleFavorite(m, refresh) {
+  const on = !m.is_favorite;
+  try {
+    await db.setFavorite(m.id, on);
+    m.is_favorite = on;
+    invalidate('materials');
+    haptic('light');
+    toast(on ? 'Als Favorit angeheftet' : 'Favorit entfernt', 'ok', { icon: on ? 'starFill' : 'star' });
+    refresh?.();
+  } catch (e) { errToast(e); }
 }
 /** Löschen mit Sicherheitsabfrage (Kontextmenü + Wisch-Aktion) */
 async function deleteMaterialFlow(m, refresh) {

@@ -50,6 +50,7 @@ create table if not exists public.lager_materials (
   notes               text,
   custom_fields       jsonb not null default '{}'::jsonb,  -- Eigene Felder
   created_at          timestamptz not null default now(),
+  is_favorite         boolean not null default false,
   updated_at          timestamptz not null default now(),
   unique (owner_id, number)
 );
@@ -63,7 +64,13 @@ begin
     select coalesce(max(number), 0) + 1 into new.number
       from public.lager_materials where owner_id = new.owner_id;
   end if;
-  new.updated_at := now();
+  -- nur der Favoriten-Stern geändert → „zuletzt geändert“ bleibt (siehe migration-favoriten.sql)
+  if tg_op = 'UPDATE'
+     and (to_jsonb(new) - 'is_favorite' - 'updated_at') = (to_jsonb(old) - 'is_favorite' - 'updated_at') then
+    new.updated_at := old.updated_at;
+  else
+    new.updated_at := now();
+  end if;
   return new;
 end $$;
 

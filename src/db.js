@@ -263,6 +263,15 @@ export async function getMaterial(id) {
   const { data, error } = await sb.from(T.mat).select(MAT_SELECT).eq('id', id).maybeSingle(); fail(error);
   return data ? sbNorm(data) : null;
 }
+/** Favoriten-Stern setzen/entfernen (ändert „zuletzt geändert“ nicht) */
+export async function setFavorite(id, on) {
+  if (isDemo) { const s = load(); const m = s.materials.find((x) => x.id === id); if (m) m.is_favorite = !!on; save(s); return; }
+  const { error } = await sb.from(T.mat).update({ is_favorite: !!on }).eq('id', id);
+  if (error && /is_favorite/.test(error.message || '')) {
+    throw new Error('Für Favoriten fehlt noch ein Datenbank-Update: bitte supabase/migration-favoriten.sql im Supabase-SQL-Editor ausführen.');
+  }
+  fail(error);
+}
 /** Sucht per Barcode, exakter Artikelnummer oder exaktem Namen */
 export async function findByCode(code) {
   code = String(code).trim(); if (!code) return null;

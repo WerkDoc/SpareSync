@@ -1325,3 +1325,11 @@ html.fullbleed .toast.hide {
 .swipe-under.full > .swipe-btn:not(.main) { flex-grow: 0; opacity: 0; }
 .swipe-under.full > .swipe-btn.main { flex-grow: 1; }
 @media (prefers-reduced-motion: reduce) { .swipe-under, .swipe-btn { transition: none; } }
+
+/* =====================================================================
+   Favoriten
+   ===================================================================== */
+.fav-btn { color: var(--text-3); transition: color .2s ease, transform .35s cubic-bezier(.34, 1.56, .64, 1); }
+.fav-btn.on { color: #f5a400; transform: scale(1.08); }
+.fav-mark { display: inline-flex; vertical-align: -1px; margin-left: 6px; color: #f5a400; }
+.dash-sec .sec-link { float: right; font-size: 15px; font-weight: 600; color: var(--blue); letter-spacing: 0; text-transform: none; }
