@@ -572,8 +572,11 @@ function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = 
     if (loc && !m.locations.some((l) => l.location_id === loc)) return false;
     if (ch && chargeOf(m).toLowerCase() !== ch) return false;
     if (!words.length) return true;
-    const hay = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${Object.values(m.custom_fields || {}).join(' ')}`.toLowerCase();
-    return words.every((w) => hay.includes(w));
+    const hay = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${(m.fits || []).join(' ')} ${Object.values(m.custom_fields || {}).join(' ')}`.toLowerCase();
+    if (words.every((w) => hay.includes(w))) return true;
+    // „iphone13“ findet auch „iPhone 13“ (und umgekehrt): ohne Leerzeichen/Bindestriche vergleichen
+    const compact = (x) => x.replace(/[\s\-_/]+/g, '');
+    return hay.includes(compact(q.toLowerCase())) || compact(hay).includes(compact(q.toLowerCase()));
   });
 }
 
@@ -1021,6 +1024,14 @@ async function refreshKeptList(k) {
   changed.forEach(patchListRow);
   popChanged(k.el);
   k.mats = mats; k.cart = cart;
+  // Suche/Filter der Liste arbeiten mit ihrem eigenen Datenstand → kurz danach (unsichtbar) neu aufbauen,
+  // damit z. B. eine Suche auch neue Angaben findet. Scroll-Position bleibt.
+  if (changed.length) {
+    setTimeout(async () => {
+      await whenIdle();
+      if (listKeep === k && k.el.isConnected && rid === renderId && !k.el.querySelector('#q:focus')) viewList({});
+    }, 350);
+  }
 }
 /** Eine einzelne Zeile der aufgehobenen Liste aktualisieren (z. B. nach frischem Stand auf der Detailseite) */
 function patchListRow(m) {
@@ -1041,6 +1052,7 @@ async function viewList(q) {
   if (q.tab) listState.tab = q.tab;
   if ('low' in q) listState.low = q.low === '1';
   if ('fav' in q) listState.fav = q.fav === '1';
+  if ('q' in q) { listState.q = q.q; if (listState.tab === 'cart') listState.tab = 'part'; }   // z. B. Tipp auf „Passt für“-Chip
   if ('group' in q) listState.group = q.group;
   if ('loc' in q) listState.loc = q.loc;
   saveListState();
@@ -1913,6 +1925,7 @@ function infosTab(m, tasks) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${stockRing(m)}
+    ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
@@ -2157,6 +2170,41 @@ async function viewStats() {
 // =====================================================================
 //  FORMULAR: Ersatzteil / Werkzeug anlegen & bearbeiten
 // =====================================================================
+/** Eingabe „Passt für“: Geräte als Chips, Vorschläge aus allen bisher verwendeten Geräten */
+function setupFitsInput(root, st) {
+  const box = root.querySelector('[data-fits]'); const sugBox = root.querySelector('[data-fit-sugs]');
+  if (!box) return;
+  const known = () => {
+    const all = new Map();
+    (cache.materials || []).forEach((m) => (m.fits || []).forEach((f) => all.set(f.toLowerCase(), f)));
+    return [...all.values()].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+  };
+  const has = (f) => st.fits.some((x) => x.toLowerCase() === f.toLowerCase());
+  const add = (f) => { f = f.trim().replace(/\s+/g, ' '); if (f && !has(f)) { st.fits.push(f); haptic('light'); } render(true); };
+  const render = (focus = false) => {
+    box.innerHTML = `${st.fits.map((f, i) => `<span class="chip fit">${esc(f)}<button type="button" data-rm="${i}" aria-label="${esc(f)} entfernen">${icon('x', 13, 2.6)}</button></span>`).join('')}
+      <input data-fit-in placeholder="${st.fits.length ? 'weiteres Gerät' : 'z. B. iPhone 13'}" enterkeyhint="done" autocomplete="off" autocapitalize="words">`;
+    const inp = box.querySelector('input');
+    box.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => { st.fits.splice(+b.dataset.rm, 1); render(true); }));
+    const sugs = () => {
+      const t = inp.value.trim().toLowerCase();
+      const list = known().filter((f) => !has(f) && (!t || f.toLowerCase().includes(t))).slice(0, t ? 6 : 8);
+      sugBox.innerHTML = list.map((f) => `<button type="button" class="chip" data-sug="${esc(f)}">${icon('plus', 12, 2.6)} ${esc(f)}</button>`).join('');
+      sugBox.querySelectorAll('[data-sug]').forEach((b) => (b.onclick = () => add(b.dataset.sug)));
+    };
+    inp.addEventListener('input', () => { if (/[,;]/.test(inp.value)) { inp.value.split(/[,;]/).forEach((x, i, arr) => { if (i < arr.length - 1) add(x); }); } else sugs(); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); if (inp.value.trim()) add(inp.value); }
+      else if (e.key === 'Backspace' && !inp.value && st.fits.length) { st.fits.pop(); render(true); }
+    });
+    inp.addEventListener('blur', () => { if (inp.value.trim()) setTimeout(() => { if (document.activeElement?.closest?.('[data-fit-sugs]')) return; if (inp.isConnected && inp.value.trim()) add(inp.value); }, 150); });
+    sugs();
+    if (focus) inp.focus();
+  };
+  box.addEventListener('click', (e) => { if (e.target === box) box.querySelector('input')?.focus(); });
+  render();
+}
+
 async function viewForm(id, q) {
   const m = id ? await db.getMaterial(id) : null;
   const kind = m?.kind || q.kind || 'part';
@@ -2169,6 +2217,7 @@ async function viewForm(id, q) {
     defs: fieldsFor(allDefs, kind),
     defVals: {},
     custom: [],
+    fits: [...(m?.fits || []), ...(q.fit ? [q.fit] : [])],
   };
   if (st.location_id && !locs.some((l) => l.id === st.location_id)) st.location_id = null;
   {
@@ -2195,6 +2244,10 @@ async function viewForm(id, q) {
       ${id ? '' : `<label class="field"><small>Aktueller Bestand</small><input name="qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Aktueller Bestand"></label>`}
       <label class="field no-line"><small>Meldebestand</small><input name="min_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Meldebestand" value="${m && +m.min_stock ? v('min_stock') : ''}"></label>
       <label class="field"><small>Maximalbestand</small><input name="max_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Maximalbestand" value="${v('max_stock')}"></label>
+      <div class="field fits-field"><small>Passt für</small>
+        <div class="fits-box" data-fits></div>
+        <div class="fit-sugs" data-fit-sugs></div>
+      </div>
       <div id="deff"></div>
       <label class="field switch-field"><span>Alle Felder anzeigen</span><input type="checkbox" class="switch" data-f="all" ${showAll ? 'checked' : ''}></label>
       </div>
@@ -2244,6 +2297,7 @@ async function viewForm(id, q) {
     });
   };
   renderDefs();
+  setupFitsInput(root, st);
   const renderCF = () => {
     root.querySelector('#cf').innerHTML = st.custom.map(([k, val], i) => `
       <div class="field cf-row"><label><small>${esc(k)}</small><input data-cf="${i}" value="${esc(val)}" placeholder="${esc(k)}"></label>
@@ -2310,6 +2364,7 @@ async function viewForm(id, q) {
       min_stock: num(fd.min_stock), max_stock: num(fd.max_stock),
       unit: fd.unit || 'Stück', booking_type: fd.booking_type || 'Einheit',
       sale_price: num(fd.sale_price), purchase_price: num(fd.purchase_price), supplier: fd.supplier ?? '', notes: fd.notes ?? '',
+      fits: [...st.fits, ...(root.querySelector('[data-fits] input')?.value.trim() ? [root.querySelector('[data-fits] input').value.trim()] : [])],
       custom_fields: (() => {
         const out = {};
         st.defs.forEach((d) => {
@@ -2326,7 +2381,7 @@ async function viewForm(id, q) {
     if (fd.number) data.number = fd.number;
     saving = true; root.querySelectorAll('[data-act=save], [type=submit]').forEach((b) => (b.disabled = true));
     try {
-      const nid = await db.saveMaterial(id, data, { images: st.images, initial: id ? null : { location_id: st.location_id, qty: num(fd.qty) } });
+      const nid = await db.saveMaterial(id, data, { images: st.images, initial: id ? null : { location_id: st.location_id, qty: num(fd.qty) }, onWarning: (w) => setTimeout(() => toast(w, 'err', { duration: 6000 }), 1700) });
       if (st.location_id) localStorage.setItem('wl-last-loc', st.location_id);
       invalidate(); successHUD(id ? 'Gespeichert' : `${kind === 'tool' ? 'Werkzeug' : 'Ersatzteil'} angelegt`);
       sessionStorage.setItem('wl-mtab', 'infos');

@@ -1588,3 +1588,21 @@ svg.gi-sun .gi-rays { animation: gi-spin 2.4s cubic-bezier(.4, 0, .2, 1) .2s bac
 .task { animation: detail-fade .3s ease both; }
 @keyframes detail-fade { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) { .tasks-loading, .mov-list.fade-in, .task { animation: none; } }
+
+/* =====================================================================
+   „Passt für“: Geräte als Chips (Formular + Detailseite)
+   ===================================================================== */
+.fits-field { display: block; }
+.fits-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 0 4px; min-height: 40px; cursor: text; }
+.fits-box input { flex: 1 1 140px; min-width: 120px; border: 0; background: transparent; padding: 6px 2px; font-size: 17px; outline: none; color: var(--text); }
+.chip.fit { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px 5px 11px; border-radius: 999px;
+  background: var(--primary-soft); color: var(--primary); font-size: 14.5px; font-weight: 600; animation: fit-in .3s cubic-bezier(.34, 1.56, .64, 1) both; }
+.chip.fit button { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: inherit; background: color-mix(in srgb, var(--primary) 14%, transparent); }
+.fit-sugs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.fit-sugs:empty { display: none; }
+.fit-sugs .chip { font-size: 13.5px; padding: 4px 10px; }
+@keyframes fit-in { from { transform: scale(.6); opacity: 0; } }
+.fits-view { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 2px 4px; }
+.fits-label { display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+a.chip.fit { padding: 5px 11px; text-decoration: none; }
+@media (prefers-reduced-motion: reduce) { .chip.fit { animation: none; } }
