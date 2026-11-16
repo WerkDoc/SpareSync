@@ -2126,6 +2126,64 @@ function computeStats(mats, movs, days, firstEver = null, nowMs = Date.now()) {
   return { outQty, inQty, outValue, outCount: outs.length, top, slow, suggest, byNote, weeks, spanDays, firstMs, short: spanDays < days - 1 };
 }
 
+// ---------- Verbrauchs-Kalender (wie bei GitHub): ein Kästchen pro Tag, je dunkler desto mehr entnommen ----------
+const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function heatmap(movs, days) {
+  const perDay = new Map();
+  movs.forEach((x) => { if (x.type !== 'out') return; const k = dayKey(new Date(x.created_at)); perDay.set(k, (perDay.get(k) || 0) + Math.abs(+x.qty)); });
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - (days - 1));
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));        // auf Montag zurück
+  const vals = [...perDay.values()].sort((a, b) => a - b);
+  const q = (p) => vals[Math.min(vals.length - 1, Math.floor(p * vals.length))] || 1;
+  const steps = [q(0.25), q(0.5), q(0.75)];
+  const level = (v) => (!v ? 0 : v <= steps[0] ? 1 : v <= steps[1] ? 2 : v <= steps[2] ? 3 : 4);
+  const weeks = []; const months = [];
+  for (let d = new Date(start), w = 0; d <= today; w++) {
+    const col = [];
+    for (let i = 0; i < 7; i++, d.setDate(d.getDate() + 1)) {
+      if (d > today) { col.push('<span class="hm-cell out"></span>'); continue; }
+      if (d.getDate() === 1 || (w === 0 && i === 0)) months.push({ w, label: d.toLocaleDateString('de-DE', { month: 'short' }) });
+      const k = dayKey(d); const v = perDay.get(k) || 0;
+      col.push(`<span class="hm-cell l${level(v)}" data-day="${k}" data-v="${v}" style="--w:${w}" title="${d.toLocaleDateString('de-DE')}: ${fmtQty(v)}"></span>`);
+    }
+    weeks.push(`<div class="hm-col">${col.join('')}</div>`);
+  }
+  const lbl = months.filter((m, i) => i === 0 || m.w - months[i - 1].w >= 3);
+  return `<div class="hm-card">
+      <div class="hm-scroll"><div class="hm-inner" style="--weeks:${weeks.length}">
+        <div class="hm-months">${lbl.map((m) => `<span style="--w:${m.w}">${esc(m.label)}</span>`).join('')}</div>
+        <div class="hm-grid"><div class="hm-days"><span>Mo</span><span></span><span>Mi</span><span></span><span>Fr</span><span></span><span></span></div>${weeks.join('')}</div>
+      </div></div>
+      <div class="hm-foot"><span class="hm-info" data-hm-info>Tippe auf einen Tag</span>
+        <span class="hm-scale">weniger <i class="hm-cell l0"></i><i class="hm-cell l1"></i><i class="hm-cell l2"></i><i class="hm-cell l3"></i><i class="hm-cell l4"></i> mehr</span></div>
+    </div>`;
+}
+function setupHeatmap(root, movs, mats) {
+  const box = root.querySelector('.hm-card'); if (!box) return;
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const info = box.querySelector('[data-hm-info]');
+  const sc = box.querySelector('.hm-scroll'); const inner = box.querySelector('.hm-inner');
+  // Kurze Zeiträume füllen die Breite (größere Kästchen), lange scrollen seitlich
+  const fit = () => {
+    const weeks = +inner.style.getPropertyValue('--weeks') || 1;
+    const c = Math.max(13, Math.min(30, Math.floor((sc.clientWidth - 22) / weeks) - 3));
+    inner.style.setProperty('--c', `${c}px`); sc.scrollLeft = sc.scrollWidth;            // neueste Woche sichtbar
+  };
+  fit(); new ResizeObserver(fit).observe(sc);
+  box.querySelectorAll('[data-day]').forEach((c) => (c.onclick = () => {
+    box.querySelector('.hm-cell.sel')?.classList.remove('sel'); c.classList.add('sel'); haptic('light');
+    const k = c.dataset.day; const v = +c.dataset.v;
+    const d = new Date(`${k}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (!v) { info.innerHTML = `<b>${d}</b> · nichts entnommen`; return; }
+    const per = new Map();
+    movs.forEach((x) => { if (x.type === 'out' && dayKey(new Date(x.created_at)) === k) per.set(x.material_id, (per.get(x.material_id) || 0) + Math.abs(+x.qty)); });
+    const top = [...per.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, q]) => `${esc(byId.get(id)?.name || 'gelöschtes Teil')} (${fmtQty(q)})`);
+    info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
+    info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
+  }));
+}
+
 async function viewStats() {
   let days = +sessionStorage.getItem('ss-stats-days') || 30;
   if (!STATS_RANGES.some(([d]) => d === days)) days = 30;
@@ -2149,6 +2207,9 @@ async function viewStats() {
         <div class="stats-kpi"><span class="k-val green-text">${fmtQty(st.inQty)}</span><span class="k-label">Dazu gebucht</span><span class="k-sub">ohne Anfangsbestand</span></div>
         <div class="stats-kpi"><span class="k-val">${st.outValue ? fmtEUR(st.outValue) : '–'}</span><span class="k-label">Wert</span><span class="k-sub">der Entnahmen (Einkaufspreis)</span></div>
       </section>
+
+      <h2 class="dash-sec">Verbrauchs-Kalender</h2>
+      ${heatmap(movs, days, mats)}
 
       <h2 class="dash-sec">Meistverbraucht</h2>
       ${st.top.length ? `<section class="ios-list">
@@ -2188,6 +2249,7 @@ async function viewStats() {
       </section>${more(st.byNote, 10)}` : ''}`,
   });
   root.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('ss-stats-days', b.dataset.days); viewStats(); }));
+  setupHeatmap(root, movs, mats);
   root.querySelectorAll('[data-apply]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;
     try {

@@ -1686,3 +1686,32 @@ a.chip.fit { padding: 5px 11px; text-decoration: none; }
 @keyframes shelf-grow { from { transform: scaleX(0); } }
 @keyframes sb-pop { from { opacity: 0; transform: scale(0); } }
 @media (prefers-reduced-motion: reduce) { .shelf-card, .shelf-bar i, .sb { animation: none; } }
+
+/* =====================================================================
+   Verbrauchs-Kalender (Auswertung)
+   ===================================================================== */
+.hm-card { padding: 12px 12px 10px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); }
+.hm-scroll { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.hm-scroll::-webkit-scrollbar { display: none; }
+.hm-inner { --c: 13px; --g: 3px; width: max-content; min-width: 100%; }
+.hm-months { position: relative; height: 15px; margin-left: 22px; font-size: 11px; color: var(--text-2); }
+.hm-months span { position: absolute; left: calc(var(--w) * (var(--c) + var(--g))); white-space: nowrap; }
+.hm-grid { display: flex; gap: var(--g); }
+.hm-days { display: grid; grid-template-rows: repeat(7, var(--c)); gap: var(--g); width: 19px; flex-shrink: 0; font-size: 9.5px; color: var(--text-3); line-height: var(--c); }
+.hm-col { display: grid; grid-template-rows: repeat(7, var(--c)); gap: var(--g); }
+.hm-cell { display: block; width: var(--c, 11px); height: var(--c, 11px); border-radius: 3px; background: var(--fill); }
+.hm-cell.l1 { background: color-mix(in srgb, var(--primary) 28%, var(--fill)); }
+.hm-cell.l2 { background: color-mix(in srgb, var(--primary) 52%, var(--fill)); }
+.hm-cell.l3 { background: color-mix(in srgb, var(--primary) 76%, var(--fill)); }
+.hm-cell.l4 { background: var(--primary); }
+.hm-cell.out { background: transparent; }
+.hm-col .hm-cell[data-day] { cursor: pointer; animation: hm-in .4s cubic-bezier(.34, 1.4, .64, 1) both; animation-delay: calc(var(--w) * 22ms); }
+.hm-cell.sel { outline: 2px solid var(--text); outline-offset: 1px; }
+.hm-foot { display: flex; flex-direction: column-reverse; gap: 6px; margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
+.hm-info { flex: 1; min-width: 0; line-height: 1.35; }
+.hm-info b { color: var(--text); }
+.hm-info.pop { animation: detail-fade .25s ease both; }
+.hm-scale { align-self: flex-end; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; }
+.hm-scale .hm-cell { --c: 10px; }
+@keyframes hm-in { from { opacity: 0; transform: scale(.3); } }
+@media (prefers-reduced-motion: reduce) { .hm-col .hm-cell[data-day], .hm-info.pop { animation: none; } }
