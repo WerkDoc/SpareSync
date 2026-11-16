@@ -1947,3 +1947,54 @@ span.pv-btn { background: none; }
 @media (prefers-color-scheme: dark) {
   :root[data-style="neu"]:not([data-theme="light"]) .dash-screen .ios-row .thumb img { background: #fff; mix-blend-mode: normal; }
 }
+
+/* ---- 9. Plastisch überall: alle weißen Karten/Listen bekommen die Fläche des Hintergrunds und heben sich plastisch ab ---- */
+:root[data-style="neu"] {
+  --surface: var(--neu);
+  --card-shadow: var(--raise);
+  --card-shadow-press: var(--raise-s);
+  --sep: color-mix(in srgb, var(--neu-sh) 75%, transparent);
+}
+/* Rundungen etwas weicher, passend zu den Tasten */
+:root[data-style="neu"] .ios-list, :root[data-style="neu"] .set-group, :root[data-style="neu"] .plain-list,
+:root[data-style="neu"] .group-card, :root[data-style="neu"] .dlist, :root[data-style="neu"] .form-card,
+:root[data-style="neu"] .mov-list, :root[data-style="neu"] .tasks, :root[data-style="neu"] .card-btn,
+:root[data-style="neu"] .list-screen .mlist, :root[data-style="neu"] .content > .mlist,
+:root[data-style="neu"] .shelf-card, :root[data-style="neu"] .hm-card, :root[data-style="neu"] .stats-kpi,
+:root[data-style="neu"] .gal-empty, :root[data-style="neu"] .scan-hero { border-radius: 22px; }
+
+/* Trennlinien wie eingeritzt */
+:root[data-style="neu"] .mrow, :root[data-style="neu"] .set-row { border-bottom-color: var(--sep); box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 70%, transparent); }
+:root[data-style="neu"] .set-row:last-child, :root[data-style="neu"] .mrow:last-child { box-shadow: none; }
+:root[data-style="neu"] .ios-row + .ios-row::before {
+  border-top: 1px solid var(--sep);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 80%, transparent);
+}
+
+/* Angetippte Zeilen sinken ein, statt grau zu werden */
+:root[data-style="neu"] .mrow:active, :root[data-style="neu"] .set-row:not(.static):active,
+:root[data-style="neu"] .ios-row:active, :root[data-style="neu"] .plain-row:active,
+:root[data-style="neu"] .loc-row:active, :root[data-style="neu"] .drow:not(:disabled):active, :root[data-style="neu"] .file-row:active {
+  background: transparent; box-shadow: var(--press-s); border-radius: 16px;
+}
+
+/* Symbole in Menü und Listen: kleine runde erhabene Tasten */
+:root[data-style="neu"] .set-row > i, :root[data-style="neu"] .r-ic {
+  background: var(--neu); border-radius: 50%; box-shadow: 3px 3px 6px var(--neu-sh), -3px -3px 6px var(--neu-hi);
+}
+:root[data-style="neu"] .card-btn i { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); transition: box-shadow .2s var(--neu-ease); }
+:root[data-style="neu"] .card-btn:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .card-btn:active i { box-shadow: var(--press-s); }
+
+/* Vorschaubilder überall in einer kleinen Mulde; hell: weißer Foto-Hintergrund verschmilzt mit der Fläche */
+:root[data-style="neu"] .thumb { background: var(--neu); box-shadow: var(--press-s); border-radius: 12px; }
+:root[data-style="neu"] .thumb img { border-radius: 12px; }
+:root[data-style="neu"] .gal-main img { border-radius: 16px; }
+:root[data-style="neu"]:not([data-theme="dark"]) .thumb img,
+:root[data-style="neu"]:not([data-theme="dark"]) .gal-main img { background: transparent; mix-blend-mode: multiply; }
+@media (prefers-color-scheme: dark) {
+  :root[data-style="neu"]:not([data-theme="light"]) .thumb img,
+  :root[data-style="neu"]:not([data-theme="light"]) .gal-main img { background: #fff; mix-blend-mode: normal; }
+}
+/* Das Detailbild liegt in einer eigenen Ebene (Scroll-Effekt) → dort muss die Fläche mitgemalt werden, sonst greift „multiply“ nicht */
+:root[data-style="neu"] .gal-slide { background: var(--neu); border-radius: 16px; }
