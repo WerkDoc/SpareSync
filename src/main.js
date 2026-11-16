@@ -91,7 +91,7 @@ function designStyle() { try { return localStorage.getItem('ss-style') === 'clas
 const THEME_COLORS = {
   light: { base: '#f2f2f7', bar: '#f9f9fb', dim: '#919194', spot: '#e4e4ea' },
   dark: { base: '#000000', bar: '#161618', dim: '#000000', spot: '#0d0d0f' },
-  neuLight: { base: '#e6eaf0', bar: '#eef1f5', dim: '#8b8d91', spot: '#dbe0e7' },
+  neuLight: { base: '#e6eaf0', bar: '#e8ebf1', dim: '#8b8d91', spot: '#dbe0e7' },
   neuDark: { base: '#17191e', bar: '#1c1e23', dim: '#000000', spot: '#101115' },
 };
 let lastThemeColor = '';
