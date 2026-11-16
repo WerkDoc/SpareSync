@@ -2640,14 +2640,54 @@ async function viewGroups() {
   }));
 }
 
+// Regal-Ansicht: jeder Lagerort als Fach mit Füllstand und einem Kästchen pro Teil (grün/orange/rot/leer)
+const SHELF_MAX_BOXES = 48;
+function shelfStats(loc, mats) {
+  const items = [];
+  mats.forEach((m) => {
+    const l = m.locations.find((x) => x.location_id === loc.id);
+    if (!l) return;
+    const min = +m.min_stock || 0;
+    const state = l.qty <= 0 ? 'empty' : isLow(m) ? 'low' : (min && m.total <= min * 1.5) ? 'warn' : 'ok';
+    items.push({ m, qty: l.qty, state });
+  });
+  const order = { low: 0, warn: 1, ok: 2, empty: 3 };
+  items.sort((a, b) => order[a.state] - order[b.state] || a.m.number - b.m.number);
+  const n = (st) => items.filter((x) => x.state === st).length;
+  const units = items.reduce((a, x) => a + Math.max(0, x.qty), 0);
+  const value = items.reduce((a, x) => a + Math.max(0, x.qty) * (+x.m.purchase_price || 0), 0);
+  return { items, units, value, ok: n('ok'), warn: n('warn'), low: n('low'), empty: n('empty') };
+}
+function shelfCard(l, st, i) {
+  const total = st.items.length || 1;
+  const pct = (k) => ((st[k] / total) * 100).toFixed(1);
+  const boxes = st.items.slice(0, SHELF_MAX_BOXES);
+  return `<button class="shelf-card" data-l="${l.id}" style="--i:${i}">
+      <div class="shelf-head">
+        <span class="shelf-ic">${icon('shelf', 22, 2)}</span>
+        <span class="shelf-title"><b>${esc(l.name)}</b><small>${st.items.length} Teile · ${fmtQty(st.units)} Stück${st.value ? ` · ${fmtEUR(st.value)}` : ''}${l.barcode ? ` · ${esc(l.barcode)}` : ''}</small></span>
+        ${st.low ? `<span class="shelf-alert">${st.low}</span>` : ''}
+        ${icon('chevR', 18)}
+      </div>
+      ${st.items.length ? `
+      <div class="shelf-bar" aria-label="${st.ok} genug, ${st.warn} bald, ${st.low} nachbestellen, ${st.empty} leer">
+        <i class="s-ok" style="--w:${pct('ok')}%"></i><i class="s-warn" style="--w:${pct('warn')}%"></i><i class="s-low" style="--w:${pct('low')}%"></i><i class="s-empty" style="--w:${pct('empty')}%"></i>
+      </div>
+      <div class="shelf-boxes">${boxes.map((x, k) => `<span class="sb s-${x.state}" style="--k:${k}" title="${esc(`${x.m.number}: ${x.m.name} (${fmtQty(x.qty)})`)}"></span>`).join('')}${st.items.length > boxes.length ? `<span class="sb-more">+${st.items.length - boxes.length}</span>` : ''}</div>`
+        : '<div class="shelf-empty">Leeres Fach</div>'}
+    </button>`;
+}
+
 async function viewLocations() {
-  const locs = await getLocs();
+  const [locs, mats] = await Promise.all([getLocs(), getMats()]);
+  const stats = new Map(locs.map((l) => [l.id, shelfStats(l, mats)]));
   const root = screen({
     header: navbar({ left: backBtn(), right: btn('refresh', 'refresh', 'Aktualisieren') }),
-    cls: 'large-title-screen',
+    cls: 'large-title-screen shelf-screen',
     body: `<h1 class="large-title">Lagerorte</h1>
-      <div class="plain-list">${locs.map((l) => `<button class="plain-row" data-l="${l.id}"><span>${icon('shelf', 22)} ${esc(l.name)}${l.barcode ? ` <small class="muted">· ${esc(l.barcode)}</small>` : ''}</span><small class="muted">${l.count} Teile</small></button>`).join('')
-        || empty('shelf', 'Noch keine Lagerorte')}</div>`,
+      ${locs.length ? `<div class="shelf-legend"><span class="s-ok">genug</span><span class="s-warn">bald nachbestellen</span><span class="s-low">nachbestellen</span><span class="s-empty">leer</span></div>
+      <div class="shelf-list">${locs.map((l, i) => shelfCard(l, stats.get(l.id), i)).join('')}</div>`
+        : empty('shelf', 'Noch keine Lagerorte')}`,
     footer: `<footer class="bottom-bar"><button class="icon-btn blue" data-act="add" aria-label="Neuer Lagerort">${icon('plusCircle', 34, 1.8)}</button></footer>`,
   });
   on(root, 'refresh', () => { invalidate('locations'); viewLocations(); });

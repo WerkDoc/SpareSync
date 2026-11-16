@@ -1651,3 +1651,38 @@ a.chip.fit { padding: 5px 11px; text-decoration: none; }
 .flash-row { animation: flash-row 1.6s ease .3s both; }
 @keyframes flash-row { 0%, 100% { background-color: transparent; } 25%, 60% { background-color: color-mix(in srgb, var(--primary) 16%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .backup-hint, .bh-ic, .flash-row { animation: none; } }
+
+/* =====================================================================
+   Regal-Ansicht der Lagerorte
+   ===================================================================== */
+.shelf-screen { --sh-ok: var(--green); --sh-warn: #f0a020; --sh-low: var(--red); --sh-empty: var(--fill); }
+.shelf-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 4px 12px; font-size: 12.5px; color: var(--text-2); }
+.shelf-legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; vertical-align: -1px; background: var(--sh-ok); }
+.shelf-legend .s-warn::before { background: var(--sh-warn); } .shelf-legend .s-low::before { background: var(--sh-low); }
+.shelf-legend .s-empty::before { background: transparent; border: 1.5px dashed var(--text-3); }
+.shelf-list { display: flex; flex-direction: column; gap: 12px; }
+.shelf-card { display: block; width: 100%; text-align: left; padding: 12px 14px 14px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow);
+  animation: shelf-in .45s cubic-bezier(.22, 1, .36, 1) both; animation-delay: calc(var(--i) * 60ms); transition: transform .2s; }
+.shelf-card:active { transform: scale(.985); }
+.shelf-head { display: flex; align-items: center; gap: 10px; }
+.shelf-head > .ic:last-child { color: var(--text-3); flex-shrink: 0; }
+.shelf-ic { flex-shrink: 0; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: var(--teal-soft); color: var(--teal); }
+.shelf-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.shelf-title b { font-size: 16.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shelf-title small { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shelf-alert { flex-shrink: 0; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--sh-low); color: #fff; font-size: 12.5px; font-weight: 700; display: grid; place-items: center; }
+/* Füllstand: Abschnitte wachsen nacheinander von links */
+.shelf-bar { display: flex; height: 8px; margin: 12px 0 10px; border-radius: 4px; overflow: hidden; background: var(--fill); }
+.shelf-bar i { display: block; height: 100%; width: var(--w); transform-origin: left; animation: shelf-grow .8s cubic-bezier(.22, 1, .36, 1) both; animation-delay: calc(var(--i) * 60ms + 150ms); }
+.shelf-bar .s-ok { background: var(--sh-ok); } .shelf-bar .s-warn { background: var(--sh-warn); } .shelf-bar .s-low { background: var(--sh-low); } .shelf-bar .s-empty { background: transparent; }
+/* Ein Kästchen pro Teil – ploppen nacheinander auf */
+.shelf-boxes { display: flex; flex-wrap: wrap; gap: 4px; }
+.sb { width: 14px; height: 14px; border-radius: 4px; background: var(--sh-ok); animation: sb-pop .35s cubic-bezier(.34, 1.56, .64, 1) both; animation-delay: calc(var(--i) * 60ms + 250ms + var(--k) * 12ms); }
+.sb.s-warn { background: var(--sh-warn); } .sb.s-low { background: var(--sh-low); }
+.sb.s-empty { background: transparent; border: 1.5px dashed var(--text-3); }
+.sb-more { font-size: 12px; font-weight: 600; color: var(--text-2); align-self: center; margin-left: 2px; }
+.shelf-empty { margin-top: 10px; padding: 10px; border: 1.5px dashed var(--sep); border-radius: 10px; text-align: center; font-size: 13px; color: var(--text-3); }
+@keyframes shelf-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes shelf-grow { from { transform: scaleX(0); } }
+@keyframes sb-pop { from { opacity: 0; transform: scale(0); } }
+@media (prefers-reduced-motion: reduce) { .shelf-card, .shelf-bar i, .sb { animation: none; } }
