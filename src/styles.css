@@ -1525,3 +1525,27 @@ html.vt-theme::view-transition-new(root) {
 
 /* Konfetti-Ebene: liegt über allem, fängt keine Tipps ab */
 .confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9998; pointer-events: none; }
+
+/* =====================================================================
+   Etikett „druckt aus“: schiebt sich aus einem Druckerschlitz nach unten
+   ===================================================================== */
+.lbl-preview { position: relative; overflow: hidden; }
+.lbl-slot {
+  position: absolute; left: 50%; top: 12px; width: min(78%, 330px); height: 8px; transform: translateX(-50%);
+  border-radius: 6px; background: #2b2f36; box-shadow: inset 0 2px 3px rgba(0, 0, 0, .6), 0 1px 0 rgba(255, 255, 255, .15);
+  z-index: 2;
+  opacity: 0; transition: opacity .2s;
+}
+.lbl-preview.printing .lbl-slot { opacity: 1; }
+.lbl-preview.printing .lbl-scale { animation: lbl-out .85s cubic-bezier(.25, .8, .3, 1) both; }
+/* erst im Schlitz verschwinden, dann ruckelnd (wie ein Thermodrucker) wieder herauskommen */
+@keyframes lbl-out {
+  0%   { transform: translateY(0); clip-path: inset(0 0 0 0); }
+  18%  { transform: translateY(-115%); clip-path: inset(100% 0 0 0); }
+  30%  { transform: translateY(-115%); clip-path: inset(100% 0 0 0); }
+  48%  { transform: translateY(-70%); clip-path: inset(62% 0 0 0); }
+  56%  { transform: translateY(-62%); clip-path: inset(55% 0 0 0); }
+  72%  { transform: translateY(-25%); clip-path: inset(22% 0 0 0); }
+  80%  { transform: translateY(-18%); clip-path: inset(16% 0 0 0); }
+  100% { transform: translateY(0); clip-path: inset(0 0 0 0); }
+}

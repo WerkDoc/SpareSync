@@ -617,7 +617,7 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
   const size = () => LABEL_SIZES.find((x) => x.id === sizeId) || LABEL_SIZES[0];
   const data = { name: title, line2: sub, line3: extra, svg };
   sheet(`
-    <div class="lbl-preview"><div class="lbl-scale"></div></div>
+    <div class="lbl-preview"><span class="lbl-slot" aria-hidden="true"></span><div class="lbl-scale"></div></div>
     <p class="muted small center"><span data-f="hint"></span> · QR-Inhalt: <b class="selectable">${esc(code)}</b></p>
     <div class="form-group">
       <label class="frow"><span>Etikettengröße</span>
@@ -648,7 +648,15 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
           });
           return;
         }
-        printLabel(labelHTML(data, size()), size(), copies);
+        // Etikett „kommt aus dem Drucker“: schiebt sich aus dem Schlitz heraus, dann erst der Druckdialog.
+        // Safari blockiert print() nach einer Verzögerung → dort sofort drucken (ohne Vorab-Animation).
+        const safari = /^((?!chrome|android|crios|edg).)*safari/i.test(navigator.userAgent);
+        const prev = root.querySelector('.lbl-preview');
+        const go = () => printLabel(labelHTML(data, size()), size(), copies);
+        if (safari || matchMedia('(prefers-reduced-motion: reduce)').matches) { go(); return; }
+        prev.classList.remove('printing'); void prev.offsetWidth; prev.classList.add('printing');
+        haptic('light');
+        setTimeout(() => { go(); prev.classList.remove('printing'); }, 900);
       };
     },
   });
