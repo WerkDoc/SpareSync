@@ -243,6 +243,7 @@ async function route() {
     [/^\/new$/, () => viewForm(null, q)],
     [/^\/edit\/([^/]+)$/, (m) => viewForm(m[1], q)],
     [/^\/groups$/, () => viewGroups()],
+    [/^\/stats$/, () => viewStats()],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -525,7 +526,7 @@ function materialRow(m, href = `#/m/${m.id}`, idx = -1) {
   return `<a class="mrow" href="${href}" data-id="${m.id}"${st}>
       ${thumb(m)}
       <div class="mrow-main">
-        <div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div>
+        <div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}${m.is_favorite ? `<span class="fav-mark" aria-label="Favorit">${icon('starFill', 14)}</span>` : ''}</div>
         <div class="mrow-meta"><b>${locLabel(m)}</b><b class="stock">${stockLabel(m)}</b></div>
       </div>
     </a>`;
@@ -538,12 +539,13 @@ const chargeKey = (m) => Object.keys(m.custom_fields || {}).find((k) => CHARGE_R
 const chargeOf = (m) => { const k = chargeKey(m); return k ? String(m.custom_fields[k]).trim() : ''; };
 const natCmp = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
-function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '' } = {}) {
+function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const ch = String(charge || '').trim().toLowerCase();
   return mats.filter((m) => {
     if (group && m.group_id !== group) return false;
     if (low && !isLow(m)) return false;
+    if (fav && !m.is_favorite) return false;
     if (loc && !m.locations.some((l) => l.location_id === loc)) return false;
     if (ch && chargeOf(m).toLowerCase() !== ch) return false;
     if (!words.length) return true;
@@ -565,6 +567,7 @@ const QUICK = [
 const MANAGE = [
   { label: 'Teil per Scan finden', icon: 'scan', tone: 'blue', href: '/pick?mode=info&scan=1' },
   { label: 'Werkzeug hinzufügen', icon: 'wrench', tone: 'indigo', href: '/new?kind=tool' },
+  { label: 'Auswertung', icon: 'chart', tone: 'green', href: '/stats' },
   { label: 'Lagerorte', icon: 'shelf', tone: 'teal', href: '/locations', count: 'locs' },
   { label: 'Material-Gruppen', icon: 'boxes', tone: 'orange', href: '/groups', count: 'groups' },
 ];
@@ -755,6 +758,8 @@ async function viewFav() {
   const cartN = cart.filter((c) => c.list === 'cart').length;
   const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 3);
   const counts = { locs: locs.length, groups: groups.length };
+  const FAV_MAX = 6;
+  const favs = mats.filter((m) => m.is_favorite).sort((a, b) => a.number - b.number);
   const nums = { parts: parts.length, units, low: low.length, cart: cartN };
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
@@ -804,8 +809,17 @@ async function viewFav() {
           </a>`).join('')}
       </section>
 
+      ${favs.length ? `<h2 class="dash-sec">Favoriten${favs.length > FAV_MAX ? ` <a class="sec-link" href="#/list?fav=1">Alle ${favs.length}</a>` : ''}</h2>
+      <section class="ios-list" data-sec="favs">
+        ${favs.slice(0, FAV_MAX).map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
+            ${thumb(m, 'sm')}
+            <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
+            <span class="r-qty ${isLow(m) ? 'red' : ''}" data-pop="fav:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span>
+          </a>`).join('')}
+      </section>` : ''}
+
       ${recent.length ? `<h2 class="dash-sec">Zuletzt bewegt</h2>
-      <section class="ios-list">
+      <section class="ios-list" data-sec="recent">
         ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
             ${thumb(m, 'sm')}
             <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
@@ -825,7 +839,7 @@ async function viewFav() {
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
   const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
-  if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('.ios-row.recent'));
+  if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('[data-sec=recent] .ios-row.recent'));
   lastRecentTop = top;
   on(root, 'menu', () => openMenu('R'));
   on(root, 'theme', toggleTheme);
@@ -842,12 +856,13 @@ async function viewFav() {
 // =====================================================================
 //  LISTEN (Material / Werkzeug / Warenkorb)
 // =====================================================================
-const listState = { charge: '', ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
+const listState = { charge: '', fav: false, ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
 const saveListState = () => sessionStorage.setItem('wl-list', JSON.stringify(listState));
 
 async function viewList(q) {
   if (q.tab) listState.tab = q.tab;
   if ('low' in q) listState.low = q.low === '1';
+  if ('fav' in q) listState.fav = q.fav === '1';
   if ('group' in q) listState.group = q.group;
   if ('loc' in q) listState.loc = q.loc;
   saveListState();
@@ -857,7 +872,7 @@ async function viewList(q) {
   if (!res.ok) return;
   const [mats, cart] = res.data;
   const parts = mats.filter((m) => m.kind === 'part'); const tools = mats.filter((m) => m.kind === 'tool');
-  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0);
+  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0) + (listState.fav ? 1 : 0);
   const tab = listState.tab;
 
   const root = screen({
@@ -877,6 +892,7 @@ async function viewList(q) {
         ${listState.group ? `<button class="chip" data-clear="group">${esc((await getGroups()).find((g) => g.id === listState.group)?.name || 'Gruppe')} ${icon('x', 14)}</button>` : ''}
         ${listState.loc ? `<button class="chip" data-clear="loc">${esc((await getLocs()).find((l) => l.id === listState.loc)?.name || 'Lagerort')} ${icon('x', 14)}</button>` : ''}
         ${listState.charge ? `<button class="chip" data-clear="charge">Platz ${esc(listState.charge)} ${icon('x', 14)}</button>` : ''}
+        ${listState.fav ? `<button class="chip" data-clear="fav">Favoriten ${icon('x', 14)}</button>` : ''}
         ${listState.low ? `<button class="chip red" data-clear="low">Unter Meldebestand ${icon('x', 14)}</button>` : ''}
       </div>` : ''}</div>`,
     body: `<div id="rows"></div>`,
@@ -962,13 +978,16 @@ async function viewList(q) {
   };
 
   onLongPress(rows, '.mrow', (el) => materialContextMenu(el, () => viewList({})), { enabled: () => !sel.on && listState.tab !== 'cart' });
-  // Wisch-Aktionen: nach links Bearbeiten/Löschen, nach rechts Dazu buchen
+  // Wisch-Aktionen: nach links Bearbeiten/Löschen, nach rechts Dazu buchen/Entnehmen
   enableSwipeActions(rows, '.mrow', {
     left: [
       { key: 'edit', label: 'Bearbeiten', icon: 'edit', tone: 'gray' },
       { key: 'delete', label: 'Löschen', icon: 'trash', tone: 'red' },
     ],
-    right: [{ key: 'in', label: 'Dazu buchen', icon: 'plus', tone: 'green', width: 104 }],
+    right: [
+      { key: 'in', label: 'Dazu buchen', icon: 'plus', tone: 'green', width: 100 },
+      { key: 'out', label: 'Entnehmen', icon: 'minus', tone: 'orange', width: 92 },
+    ],
     enabled: () => !sel.on && listState.tab !== 'cart',
     onAction: async (key, el) => {
       const m = (await getMats()).find((x) => x.id === el.dataset.id);
@@ -976,6 +995,10 @@ async function viewList(q) {
       if (key === 'edit') return go(`/edit/${m.id}`);
       if (key === 'delete') return deleteMaterialFlow(m, () => viewList({}));
       if (key === 'in') return openBooking(m, 'in', () => viewList({}));
+      if (key === 'out') {
+        if (!m.locations.some((l) => l.qty > 0)) return toast('Kein Bestand zum Entnehmen', 'err');
+        return openBooking(m, 'out', () => viewList({}));
+      }
     },
   });
 
@@ -1044,6 +1067,7 @@ async function openFilter() {
       <label class="frow"><span>Sortierung</span>
         <select data-f="sort">${[['number', 'Artikelnummer'], ['name', 'Name A–Z'], ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert'], ...(charges.length ? [['charge', `${fieldName} (aufsteigend)`]] : [])]
           .map(([v, l]) => `<option value="${v}" ${v === listState.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="frow switch-row"><span>Nur Favoriten</span><input type="checkbox" class="switch" data-f="fav" ${listState.fav ? 'checked' : ''}></label>
       <label class="frow switch-row"><span>Nur unter Meldebestand</span><input type="checkbox" class="switch" data-f="low" ${listState.low ? 'checked' : ''}></label>
     </div>
     <div class="btn-row mt"><button class="btn-gray" data-a="reset">Zurücksetzen</button><button class="btn-filled" data-a="apply">Anwenden</button></div>`,
@@ -1052,12 +1076,12 @@ async function openFilter() {
     onMount: (root, close) => {
       const val = (k) => root.querySelector(`[data-f=${k}]`);
       root.querySelector('[data-a=apply]').onclick = () => {
-        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, charge: val('charge')?.value || '' });
+        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, fav: val('fav').checked, charge: val('charge')?.value || '' });
         if (listState.tab === 'cart') listState.tab = 'part';
         saveListState(); close(); viewList({});
       };
       root.querySelector('[data-a=reset]').onclick = () => {
-        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false, charge: '' }); saveListState(); close(); viewList({});
+        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false, fav: false, charge: '' }); saveListState(); close(); viewList({});
       };
     },
   });
@@ -1232,7 +1256,8 @@ async function openBooking(m, type, onDone, preset = {}) {
       <input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty">
       <button data-s="1" aria-label="Mehr">${icon('plus', 28, 2.6)}</button>
     </div>
-    <div class="form-group"><label class="frow col"><span>Notiz (optional)</span><input data-f="note" placeholder="z.B. Auftrag 2410-17, Kunde Müller" value="${esc(preset.note || '')}"></label></div>
+    <div class="form-group"><label class="frow col"><span>${type === 'out' ? 'Wofür? (Notiz, optional)' : 'Notiz (optional)'}</span><input data-f="note" placeholder="${type === 'out' ? 'z.B. Kunde Müller, Auftrag 2410-17' : 'z.B. Lieferung, Lieferant'}" value="${esc(preset.note || '')}" autocomplete="off" enterkeyhint="done"></label></div>
+    ${recentNotes(type).length ? `<div class="note-chips" aria-label="Zuletzt verwendete Notizen">${recentNotes(type).map((n) => `<button type="button" class="chip" data-note="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
     <button class="btn-action ${conf.cls} full" data-a="ok">${icon(conf.icon, 22, 2.6)} ${conf.title}</button>`,
   {
     title: conf.title,
@@ -1252,10 +1277,12 @@ async function openBooking(m, type, onDone, preset = {}) {
       f('from').onchange = async () => { await handleNew(f('from'), prevFrom); prevFrom = f('from').value; f('here').textContent = fmtQty(qtyAt(prevFrom)); };
       if (f('to')) f('to').onchange = async () => { await handleNew(f('to'), prevTo); prevTo = f('to').value; };
       root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { qty.value = Math.max(0, (+qty.value || 0) + +b.dataset.s); haptic(); }));
+      root.querySelectorAll('[data-note]').forEach((b) => (b.onclick = () => { f('note').value = b.dataset.note; haptic(); }));
       root.querySelector('[data-a=ok]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true;
         try {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
+          rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
           haptic('success');
           toast('Erfolgreich gebucht', 'ok', { sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}` });
@@ -1285,12 +1312,16 @@ async function viewMaterial(id, q) {
   if (tab === 'details') body = detailsTab(m, defs);
 
   const root = screen({
-    header: navbar({ left: backBtn('arrow'), title: `<div class="two-line">${m.number}: ${esc(m.name)}</div>`, cls: 'detail-nav' }),
+    header: navbar({
+      left: backBtn('arrow'), title: `<div class="two-line">${m.number}: ${esc(m.name)}</div>`, cls: 'detail-nav',
+      right: `<button class="icon-btn fav-btn ${m.is_favorite ? 'on' : ''}" data-act="fav" aria-label="${m.is_favorite ? 'Favorit entfernen' : 'Als Favorit anheften'}" aria-pressed="${!!m.is_favorite}">${icon(m.is_favorite ? 'starFill' : 'star', 25)}</button>`,
+    }),
     body: `<div class="segment"><button data-t="infos" class="${tab === 'infos' ? 'on' : ''}">Infos</button><button data-t="buchung" class="${tab === 'buchung' ? 'on' : ''}">Buchung</button><button data-t="details" class="${tab === 'details' ? 'on' : ''}">Details</button></div>${body}`,
     tab: 'none',
   });
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
+  on(root, 'fav', () => toggleFavorite(m, () => viewMaterial(id, { tab })));
 
   // ----- gemeinsame Aktionen -----
   on(root, 'book-out', () => openBooking(m, 'out', reload));
@@ -1504,6 +1535,7 @@ async function materialContextMenu(el, refresh) {
       { label: 'Etikett drucken', value: 'label', icon: 'print' },
       { label: 'In den Warenkorb', value: 'cart', icon: 'cart' },
       { label: 'Bestandsänderungen', value: 'history', icon: 'history' },
+      { label: m.is_favorite ? 'Favorit entfernen' : 'Als Favorit anheften', value: 'fav', icon: m.is_favorite ? 'starFill' : 'star' },
       { label: 'Nummer kopieren', value: 'copy', icon: 'copy' },
       '-',
       { label: 'Bearbeiten', value: 'edit', icon: 'edit' },
@@ -1517,7 +1549,20 @@ async function materialContextMenu(el, refresh) {
   if (v === 'history') return go(`/m/${m.id}/history`);
   if (v === 'copy') return copyText(String(m.number));
   if (v === 'edit') return go(`/edit/${m.id}`);
+  if (v === 'fav') return toggleFavorite(m, refresh);
   if (v === 'delete') return deleteMaterialFlow(m, refresh);
+}
+/** Favoriten-Stern umschalten (Detailseite + Kontextmenü) */
+async function toggleFavorite(m, refresh) {
+  const on = !m.is_favorite;
+  try {
+    await db.setFavorite(m.id, on);
+    m.is_favorite = on;
+    invalidate('materials');
+    haptic('light');
+    toast(on ? 'Als Favorit angeheftet' : 'Favorit entfernt', 'ok', { icon: on ? 'starFill' : 'star' });
+    refresh?.();
+  } catch (e) { errToast(e); }
 }
 /** Löschen mit Sicherheitsabfrage (Kontextmenü + Wisch-Aktion) */
 async function deleteMaterialFlow(m, refresh) {
@@ -1552,6 +1597,23 @@ async function infosTab(m) {
     <button class="link-row" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>`;
 }
 
+// Zuletzt verwendete Buchungs-Notizen (pro Gerät gemerkt) → als Vorschläge zum Antippen
+const NOTES_KEY = 'ss-notes';
+const NOTES_MAX = 6;
+function recentNotes(type) {
+  try { return (JSON.parse(localStorage.getItem(NOTES_KEY) || '{}')[type === 'out' ? 'out' : 'in'] || []).slice(0, NOTES_MAX); } catch { return []; }
+}
+function rememberNote(type, note) {
+  note = String(note || '').trim();
+  if (!note || type === 'transfer') return;
+  try {
+    const all = JSON.parse(localStorage.getItem(NOTES_KEY) || '{}');
+    const k = type === 'out' ? 'out' : 'in';
+    all[k] = [note, ...(all[k] || []).filter((n) => n.toLowerCase() !== note.toLowerCase())].slice(0, NOTES_MAX);
+    localStorage.setItem(NOTES_KEY, JSON.stringify(all));
+  } catch { /* Speicher nicht verfügbar */ }
+}
+
 const typeInfo = {
   in: { label: 'Dazu gebucht', cls: 'green', ic: 'plus' }, out: { label: 'Entnommen', cls: 'red', ic: 'minus' },
   transfer: { label: 'Umgebucht', cls: 'blue', ic: 'swap' }, inventory: { label: 'Inventur', cls: 'gray', ic: 'tally' },
@@ -1562,7 +1624,8 @@ const movementRow = (x, showAfter = false) => {
   const sign = x.type === 'transfer' ? '' : x.qty > 0 ? '+' : '';
   return `<div class="mov">
     <div class="mov-ic ${t.cls}">${icon(t.ic, 18, 2.6)}</div>
-    <div class="mov-main"><b>${t.label}</b><div class="small muted">${where}${x.note ? ` · ${esc(x.note)}` : ''}</div>
+    <div class="mov-main"><b>${t.label}</b><div class="small muted">${where}</div>
+      ${x.note ? `<div class="mov-note">${icon('tag', 13, 2.2)}<span>${esc(x.note)}</span></div>` : ''}
       ${showAfter && x.stock_after != null ? `<div class="small muted">Gesamtbestand danach: ${fmtQty(x.stock_after)}</div>` : ''}</div>
     <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div></div>
   </div>`;
@@ -1629,6 +1692,124 @@ async function viewHistory(id) {
     body: mov.length ? `<div class="mov-list">${mov.map((x) => movementRow(x, true)).join('')}</div>`
       : empty('history', 'Noch keine Bestandsänderungen'),
   });
+}
+
+// =====================================================================
+//  AUSWERTUNG: Verbrauch, Ladenhüter, Meldebestand-Vorschläge
+// =====================================================================
+const STATS_RANGES = [[30, '30 Tage'], [90, '90 Tage'], [365, '1 Jahr']];
+const REACH_WEEKS = 2;            // Meldebestand-Vorschlag = Verbrauch von so vielen Wochen
+/** Reine Rechnung (ohne Anzeige) – so lässt sie sich leicht prüfen */
+function computeStats(mats, movs, days, firstEver = null, nowMs = Date.now()) {
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const sinceMs = nowMs - days * 864e5;
+  const isStart = (x) => /^anfangsbestand/i.test(x.note || '') || /csv-import/i.test(x.note || '');
+  const outs = movs.filter((x) => x.type === 'out' && byId.has(x.material_id));
+  const ins = movs.filter((x) => x.type === 'in' && !isStart(x) && byId.has(x.material_id));
+  // Gibt es überhaupt erst seit kurzem Buchungen (App neu im Einsatz), zählt für den Wochenschnitt nur diese Zeitspanne
+  const firstMs = firstEver ? Date.parse(firstEver) : sinceMs;
+  const spanDays = Math.max(7, Math.min(days, (nowMs - Math.max(sinceMs, firstMs)) / 864e5));
+  const weeks = spanDays / 7;
+
+  const used = new Map();           // material_id → { qty, count }
+  outs.forEach((x) => { const u = used.get(x.material_id) || { qty: 0, count: 0 }; u.qty += Math.abs(+x.qty); u.count += 1; used.set(x.material_id, u); });
+  const top = [...used.entries()].map(([id, u]) => ({ m: byId.get(id), ...u, perWeek: u.qty / weeks }))
+    .sort((a, b) => b.qty - a.qty || a.m.number - b.m.number);
+
+  const outQty = outs.reduce((s, x) => s + Math.abs(+x.qty), 0);
+  const inQty = ins.reduce((s, x) => s + Math.abs(+x.qty), 0);
+  const outValue = outs.reduce((s, x) => s + Math.abs(+x.qty) * (+byId.get(x.material_id).purchase_price || 0), 0);
+
+  // Ladenhüter: Bestand vorhanden, im Zeitraum nichts entnommen, und das Teil ist älter als der Zeitraum
+  const slow = mats.filter((m) => m.kind === 'part' && m.total > 0 && !used.has(m.id) && Date.parse(m.created_at || 0) < sinceMs)
+    .map((m) => ({ m, value: m.total * (+m.purchase_price || 0) }))
+    .sort((a, b) => b.value - a.value || b.m.total - a.m.total);
+
+  // Meldebestand-Vorschlag: Verbrauch von REACH_WEEKS Wochen, nur bei mindestens 2 Entnahmen
+  const suggest = top.filter((t) => t.m.kind === 'part' && t.count >= 2)
+    .map((t) => ({ ...t, cur: +t.m.min_stock || 0, sug: Math.max(1, Math.ceil(t.perWeek * REACH_WEEKS)) }))
+    .filter((t) => t.sug > t.cur)
+    .sort((a, b) => (b.sug - b.cur) - (a.sug - a.cur));
+
+  // Verbrauch nach Notiz (z. B. Kunde / Auftrag)
+  const notes = new Map();
+  outs.forEach((x) => { const n = (x.note || '').trim(); if (!n) return; const e = notes.get(n) || { note: n, qty: 0, count: 0, last: '' }; e.qty += Math.abs(+x.qty); e.count += 1; if (x.created_at > e.last) e.last = x.created_at; notes.set(n, e); });
+  const byNote = [...notes.values()].sort((a, b) => b.last.localeCompare(a.last));
+
+  return { outQty, inQty, outValue, outCount: outs.length, top, slow, suggest, byNote, weeks, spanDays, firstMs, short: spanDays < days - 1 };
+}
+
+async function viewStats() {
+  let days = +sessionStorage.getItem('ss-stats-days') || 30;
+  if (!STATS_RANGES.some(([d]) => d === days)) days = 30;
+  let mats = []; let movs = []; let first = null;
+  try { [mats, movs, first] = await Promise.all([getMats(), db.listMovementsSince(days), db.firstMovementDate()]); } catch (e) { errToast(e); }
+  const st = computeStats(mats, movs, days, first);
+  const maxTop = st.top[0]?.qty || 1;
+  const perWeek = (v) => (v >= 10 ? fmtQty(Math.round(v)) : fmtQty(Math.round(v * 10) / 10));
+  const more = (list, n) => (list.length > n ? `<p class="muted small center stats-more">… und ${list.length - n} weitere</p>` : '');
+  const matLine = (m) => `${thumb(m, 'sm')}<span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span>`;
+
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Auswertung' }),
+    cls: 'stats-screen',
+    body: `
+      <div class="segment">${STATS_RANGES.map(([d, l]) => `<button data-days="${d}" class="${d === days ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${st.short ? `<p class="stats-hint">${icon('info', 16)} Buchungen gibt es erst seit dem ${new Date(st.firstMs).toLocaleDateString('de-DE')}. Der Wochenschnitt rechnet nur mit dieser Zeit.</p>` : ''}
+
+      <section class="stats-kpis">
+        <div class="stats-kpi"><span class="k-val red-text">${fmtQty(st.outQty)}</span><span class="k-label">Entnommen</span><span class="k-sub">${st.outCount} Buchungen</span></div>
+        <div class="stats-kpi"><span class="k-val green-text">${fmtQty(st.inQty)}</span><span class="k-label">Dazu gebucht</span><span class="k-sub">ohne Anfangsbestand</span></div>
+        <div class="stats-kpi"><span class="k-val">${st.outValue ? fmtEUR(st.outValue) : '–'}</span><span class="k-label">Wert</span><span class="k-sub">der Entnahmen (Einkaufspreis)</span></div>
+      </section>
+
+      <h2 class="dash-sec">Meistverbraucht</h2>
+      ${st.top.length ? `<section class="ios-list">
+        ${st.top.slice(0, 10).map((t, i) => `<a class="ios-row recent stats-row" href="#/m/${t.m.id}" data-id="${t.m.id}">
+            <span class="stats-rank">${i + 1}</span>${matLine(t.m)}
+              <span class="stats-bar"><i style="width:${Math.max(4, Math.round((t.qty / maxTop) * 100))}%"></i></span>
+              <small>Ø ${perWeek(t.perWeek)} pro Woche · Bestand ${fmtQty(t.m.total)}</small></span>
+            <span class="r-qty">${fmtQty(t.qty)}</span>
+          </a>`).join('')}
+      </section>${more(st.top, 10)}` : `<p class="stats-empty">Im gewählten Zeitraum wurde nichts entnommen.</p>`}
+
+      ${st.suggest.length ? `<h2 class="dash-sec">Meldebestand-Vorschläge</h2>
+      <p class="stats-note">Vorschlag = Verbrauch von ${REACH_WEEKS} Wochen. So bleibt Zeit zum Nachbestellen.</p>
+      <section class="ios-list">
+        ${st.suggest.slice(0, 8).map((t) => `<div class="ios-row recent stats-row">
+            ${matLine(t.m)}<small>Ø ${perWeek(t.perWeek)} pro Woche · Meldebestand ${fmtQty(t.cur)} → <b>${fmtQty(t.sug)}</b></small></span>
+            <button class="chip" data-apply="${t.m.id}" data-sug="${t.sug}">Übernehmen</button>
+          </div>`).join('')}
+      </section>${more(st.suggest, 8)}` : ''}
+
+      <h2 class="dash-sec">Ladenhüter</h2>
+      ${st.slow.length ? `<p class="stats-note">Auf Lager, aber in diesem Zeitraum nie entnommen (${st.slow.length} Teile${st.slow.some((x) => x.value) ? `, gebundener Wert ${fmtEUR(st.slow.reduce((s, x) => s + x.value, 0))}` : ''}).</p>
+      <section class="ios-list">
+        ${st.slow.slice(0, 12).map((x) => `<a class="ios-row recent stats-row" href="#/m/${x.m.id}" data-id="${x.m.id}">
+            ${matLine(x.m)}<small>${locLabel(x.m)}${x.value ? ` · Wert ${fmtEUR(x.value)}` : ''}</small></span>
+            <span class="r-qty">${fmtQty(x.m.total)}</span>
+          </a>`).join('')}
+      </section>${more(st.slow, 12)}` : `<p class="stats-empty">${st.short ? 'Dafür reichen die Daten noch nicht: Ladenhüter zeigen sich erst, wenn Teile länger als der gewählte Zeitraum im Lager sind.' : 'Keine Ladenhüter in diesem Zeitraum.'}</p>`}
+
+      ${st.byNote.length ? `<h2 class="dash-sec">Entnahmen nach Notiz</h2>
+      <section class="ios-list">
+        ${st.byNote.slice(0, 10).map((n) => `<div class="ios-row stats-row">
+            <span class="r-ic tone-gray">${icon('tag', 18, 2.1)}</span>
+            <span class="r-label"><span class="r-title">${esc(n.note)}</span><small>${n.count} ${n.count === 1 ? 'Entnahme' : 'Entnahmen'} · zuletzt ${fmtDate(n.last)}</small></span>
+            <span class="r-qty">${fmtQty(n.qty)}</span>
+          </div>`).join('')}
+      </section>${more(st.byNote, 10)}` : ''}`,
+  });
+  root.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('ss-stats-days', b.dataset.days); viewStats(); }));
+  root.querySelectorAll('[data-apply]').forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try {
+      await db.saveMaterial(b.dataset.apply, { min_stock: +b.dataset.sug });
+      invalidate('materials');
+      successHUD('Meldebestand gesetzt', `auf ${fmtQty(b.dataset.sug)}`);
+      viewStats();
+    } catch (e) { b.disabled = false; errToast(e); }
+  }));
 }
 
 // =====================================================================

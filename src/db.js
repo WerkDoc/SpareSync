@@ -263,6 +263,15 @@ export async function getMaterial(id) {
   const { data, error } = await sb.from(T.mat).select(MAT_SELECT).eq('id', id).maybeSingle(); fail(error);
   return data ? sbNorm(data) : null;
 }
+/** Favoriten-Stern setzen/entfernen (ändert „zuletzt geändert“ nicht) */
+export async function setFavorite(id, on) {
+  if (isDemo) { const s = load(); const m = s.materials.find((x) => x.id === id); if (m) m.is_favorite = !!on; save(s); return; }
+  const { error } = await sb.from(T.mat).update({ is_favorite: !!on }).eq('id', id);
+  if (error && /is_favorite/.test(error.message || '')) {
+    throw new Error('Für Favoriten fehlt noch ein Datenbank-Update: bitte supabase/migration-favoriten.sql im Supabase-SQL-Editor ausführen.');
+  }
+  fail(error);
+}
 /** Sucht per Barcode, exakter Artikelnummer oder exaktem Namen */
 export async function findByCode(code) {
   code = String(code).trim(); if (!code) return null;
@@ -446,6 +455,29 @@ export async function listMovements(material_id, limit = 200) {
     .eq('material_id', material_id).order('created_at', { ascending: false }).limit(limit);
   fail(error);
   return data.map(({ from_loc, to_loc, ...x }) => ({ ...x, from_name: from_loc?.name || '', to_name: to_loc?.name || '' }));
+}
+
+/** Alle Buchungen der letzten `days` Tage (für die Auswertung), neueste zuerst */
+export async function listMovementsSince(days) {
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  if (isDemo) return load().movements.filter((x) => x.created_at >= since).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const out = []; const PAGE = 1000;
+  for (let from = 0; from < 20000; from += PAGE) {          // Supabase liefert höchstens 1000 Zeilen pro Abruf
+    const { data, error } = await sb.from(T.mov).select('id, material_id, type, qty, note, created_at')
+      .gte('created_at', since).order('created_at', { ascending: false }).range(from, from + PAGE - 1);
+    fail(error);
+    out.push(...data);
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/** Zeitpunkt der allerersten Buchung (ISO) oder null – damit die Auswertung weiß, seit wann es Daten gibt */
+export async function firstMovementDate() {
+  if (isDemo) { const all = load().movements.map((x) => x.created_at).sort(); return all[0] || null; }
+  const { data, error } = await sb.from(T.mov).select('created_at').order('created_at', { ascending: true }).limit(1);
+  fail(error);
+  return data[0]?.created_at || null;
 }
 
 // =====================================================================
@@ -762,5 +794,7 @@ listCart = withOffline('cart', listCart);
 listFieldDefs = withOffline('fields', listFieldDefs, () => []);
 listMovements = withOffline((id) => `mov:${id}`, listMovements, () => []);
 listTasks = withOffline((id) => `tasks:${id}`, listTasks, () => []);
+listMovementsSince = withOffline((days) => `movs:${days}`, listMovementsSince, () => []);
+firstMovementDate = withOffline('movs:first', firstMovementDate, () => null);
 getMaterial = withOffline((id) => `mat:${id}`, getMaterial,
   (id) => (cacheRead('materials')?.data || []).find((m) => m.id === id) ?? undefined);
