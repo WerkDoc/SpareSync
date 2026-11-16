@@ -1308,7 +1308,7 @@ async function openBooking(m, type, onDone, preset = {}) {
     </div>
     <div class="stepper big">
       <button data-s="-1" aria-label="Weniger">${icon('minus', 28, 2.6)}</button>
-      <input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty">
+      <span class="odo"><input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty"></span>
       <button data-s="1" aria-label="Mehr">${icon('plus', 28, 2.6)}</button>
     </div>
     <div class="form-group"><label class="frow col"><span>${type === 'out' ? 'Wofür? (Notiz, optional)' : 'Notiz (optional)'}</span><input data-f="note" placeholder="${type === 'out' ? 'z.B. Kunde Müller, Auftrag 2410-17' : 'z.B. Lieferung, Lieferant'}" value="${esc(preset.note || '')}" autocomplete="off" enterkeyhint="done"></label></div>
@@ -1331,7 +1331,12 @@ async function openBooking(m, type, onDone, preset = {}) {
       let prevFrom = f('from').value; let prevTo = f('to')?.value;
       f('from').onchange = async () => { await handleNew(f('from'), prevFrom); prevFrom = f('from').value; f('here').textContent = fmtQty(qtyAt(prevFrom)); };
       if (f('to')) f('to').onchange = async () => { await handleNew(f('to'), prevTo); prevTo = f('to').value; };
-      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { qty.value = Math.max(0, (+qty.value || 0) + +b.dataset.s); haptic(); }));
+      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => {
+        const old = qty.value; const next = Math.max(0, (+qty.value || 0) + +b.dataset.s);
+        if (String(next) === old) return;
+        qty.value = next; haptic();
+        odometer(qty, old, +b.dataset.s > 0 ? 1 : -1);
+      }));
       root.querySelectorAll('[data-note]').forEach((b) => (b.onclick = () => { f('note').value = b.dataset.note; haptic(); }));
       root.querySelector('[data-a=ok]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true;
@@ -1710,6 +1715,19 @@ async function infosTab(m) {
       ${open ? tasks.map((t) => `<div class="task" data-task="${t.id}"><label><input type="checkbox" ${t.done ? 'checked' : ''}><span>${esc(t.title)}</span></label><button class="icon-btn" data-del aria-label="Löschen">${icon('trash', 18)}</button></div>`).join('') : ''}
     </div>
     <button class="link-row" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>`;
+}
+
+/** Zahl rollt wie ein Kilometerzähler: alte Zahl gleitet raus, neue kommt von unten (+) bzw. oben (−) */
+function odometer(input, oldValue, dir) {
+  if (reduceMotion.matches || !input.animate) return;
+  const box = input.parentElement;
+  box.querySelector('.odo-ghost')?.remove();
+  const ghost = document.createElement('span');
+  ghost.className = 'odo-ghost'; ghost.textContent = oldValue; ghost.setAttribute('aria-hidden', 'true');
+  box.appendChild(ghost);
+  const opts = { duration: 260, easing: 'cubic-bezier(.22, 1, .36, 1)' };
+  ghost.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: `translateY(${-dir * 70}%)`, opacity: 0 }], opts).onfinish = () => ghost.remove();
+  input.animate([{ transform: `translateY(${dir * 70}%)`, opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], opts);
 }
 
 // Zuletzt verwendete Buchungs-Notizen (pro Gerät gemerkt) → als Vorschläge zum Antippen

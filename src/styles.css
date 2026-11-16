@@ -1459,3 +1459,15 @@ html.fullbleed .toast.hide {
 @keyframes spark-pop { from { transform: scale(0); } }
 @keyframes spark-in { from { opacity: 0; transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { .spark-card, .spark-line, .spark-area, .spark-dot { animation: none; } }
+
+/* =====================================================================
+   Tacho-Zahl im Buchungsfenster (+ / − rollt die Ziffer)
+   ===================================================================== */
+/* Rahmen und Hintergrund sitzen am Wrapper – so bewegt sich beim Rollen nur die Zahl, nicht das Feld */
+.stepper.big .odo { position: relative; overflow: hidden; width: 130px; height: 64px; border: 2px solid var(--sep); border-radius: 18px; background: var(--bg); }
+.stepper.big .odo:focus-within { border-color: var(--primary); }
+.stepper.big .odo input { width: 100%; height: 100%; border: 0; border-radius: 0; background: transparent; font-variant-numeric: tabular-nums; }
+.odo-ghost {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+  font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text);
+}
