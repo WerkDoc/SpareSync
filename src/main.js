@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
@@ -183,7 +183,7 @@ function heroOpen(a, path) {
   return runHero('fwd', async () => {
     th.style.viewTransitionName = '';
     await go(path, false, 'none');
-    const big = app.querySelector('.gal-main img');
+    const big = app.querySelector('.gal-main .cur img');
     if (big) { big.style.viewTransitionName = 'hero'; await settleImg(big); }
   });
 }
@@ -191,7 +191,7 @@ function heroOpen(a, path) {
 function heroBack() {
   const m = location.hash.match(/^#\/m\/([^/?]+)/);
   const prev = navStack[navStack.length - 2] || '';
-  const big = app.querySelector('.gal-main img');
+  const big = app.querySelector('.gal-main .cur img');
   if (!m || !big || !canVT() || !/^#\/(list|fav)/.test(prev)) return false;
   big.style.viewTransitionName = 'hero';
   return runHero('back', async () => {
@@ -1616,7 +1616,7 @@ async function viewMaterial(id, q) {
     try { toast('Bild wird hochgeladen…'); for (const f of files) await db.addFile(id, await compressImage(f), f.name, 'image'); toast('Bild gespeichert'); reload(); } catch (e) { errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
-  root.querySelectorAll('[data-img]').forEach((el) => (el.onclick = () => openImage(m, m.images[+el.dataset.img], reload)));
+  setupGallery(root, m, reload);
 
   if (tab === 'infos') {
     on(root, 'add-loc', async () => {
@@ -1759,8 +1759,10 @@ function gallery(m) {
   const imgs = m.images;
   return `<div class="gallery">
       <div class="gal-imgs">
-        ${imgs.length ? `<button class="gal-main" data-img="0"><img src="${esc(imgs[0].url)}" decoding="async" alt=""></button>
-          ${imgs.length > 1 ? `<div class="gal-thumbs">${imgs.slice(1, 5).map((im, i) => `<button data-img="${i + 1}"><img src="${esc(im.url)}" loading="lazy" decoding="async" alt=""></button>`).join('')}</div>` : ''}`
+        ${imgs.length ? `<div class="gal-main${imgs.length > 1 ? ' multi' : ''}">
+            <div class="gal-track">${imgs.map((im, i) => `<button class="gal-slide${i ? '' : ' cur'}" data-img="${i}"><img src="${esc(im.url)}" ${i ? 'loading="lazy" ' : ''}decoding="async" alt="" draggable="false"></button>`).join('')}</div>
+            ${imgs.length > 1 ? `<div class="gal-dots">${imgs.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div><span class="gal-count">1/${imgs.length}</span>` : ''}
+          </div>`
         : `<button class="gal-empty" data-act="add-image">${icon(m.kind === 'tool' ? 'wrench' : 'box', 54, 1.2)}<span>Noch kein Bild</span></button>`}
       </div>
       <div class="gal-side">
@@ -1805,15 +1807,31 @@ function setupHeroScroll(root) {
   root.addEventListener('touchend', release, { passive: true });
   root.addEventListener('touchcancel', release, { passive: true });
 }
-function openImage(m, img, reload) {
-  sheet(`<img class="viewer-img" src="${esc(img.url)}" alt="">
-    <button class="btn-gray full mt danger-text" data-a="del">${icon('trash', 18)} Bild löschen</button>`,
-  { title: m.name, onMount: (root, close) => {
-    root.querySelector('[data-a=del]').onclick = async () => {
+/** Bilder auf der Detailseite: seitlich wischen (Punkte zeigen die Position), Tipp öffnet die Vollbild-Ansicht */
+function setupGallery(root, m, reload) {
+  const main = root.querySelector('.gal-main'); if (!main) return;
+  const track = main.querySelector('.gal-track');
+  const slides = [...track.children];
+  const dots = [...main.querySelectorAll('.gal-dots i')];
+  const cnt = main.querySelector('.gal-count');
+  let cur = 0;
+  const show = (i, scroll) => {
+    if (scroll) track.scrollLeft = i * track.clientWidth;
+    if (i === cur) return;
+    slides[cur].classList.remove('cur'); slides[i].classList.add('cur');
+    dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    if (cnt) cnt.textContent = `${i + 1}/${slides.length}`;
+    cur = i; haptic('selection');
+  };
+  track.addEventListener('scroll', () => show(Math.max(0, Math.min(slides.length - 1, Math.round(track.scrollLeft / track.clientWidth))), false), { passive: true });
+  slides.forEach((b, i) => (b.onclick = () => photoViewer({
+    images: m.images, start: i, title: m.name,
+    onChange: (k) => show(k, true),                     // Detailseite folgt dem Blättern im Vollbild
+    onDelete: async (img, close) => {
       if (!await confirmBox({ title: 'Bild löschen?', okText: 'Löschen', danger: true })) return;
       try { await db.deleteFile(img); close(); reload(); } catch (e) { errToast(e); }
-    };
-  } });
+    },
+  })));
 }
 
 // ---------- Gemeinsame Material-Aktionen (Detailseite + Kontextmenü) ----------
