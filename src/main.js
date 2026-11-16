@@ -106,10 +106,21 @@ function syncThemeColor() {
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
 // Overlays (Sheets, Dialoge, Kontextmenü) kommen und gehen → Farbe nachziehen
 new MutationObserver(() => requestAnimationFrame(syncThemeColor)).observe(document.body, { childList: true });
-function toggleTheme() {
+function toggleTheme(btn) {
   const dark = document.documentElement.dataset.theme === 'dark'
     || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-  localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); route();
+  const apply = () => { localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); return route(); };
+  // Kreis-Übergang: das neue Design breitet sich als Kreis vom Mond-/Sonnen-Knopf über den Bildschirm aus
+  if (typeof document.startViewTransition !== 'function' || reduceMotion.matches || !btn?.getBoundingClientRect) { apply(); return; }
+  const r = btn.getBoundingClientRect();
+  const x = r.left + r.width / 2; const y = r.top + r.height / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const html = document.documentElement;
+  html.style.setProperty('--vt-x', `${x}px`); html.style.setProperty('--vt-y', `${y}px`); html.style.setProperty('--vt-r', `${radius}px`);
+  html.classList.add('vt-theme');
+  haptic('light');
+  const vt = document.startViewTransition(apply);
+  vt.finished.finally(() => html.classList.remove('vt-theme'));
 }
 applyTheme();
 

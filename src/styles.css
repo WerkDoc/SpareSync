@@ -1492,3 +1492,16 @@ html.fullbleed .toast.hide {
 .inv-row.just .inv-ok { animation: inv-ok-pop .45s cubic-bezier(.34, 1.56, .64, 1) both; }
 @keyframes inv-ok-pop { from { opacity: 0; transform: scale(0); } }
 @media (prefers-reduced-motion: reduce) { .ip-bar i { transition: none; } .inv-row.just .inv-ok { animation: none; } }
+
+/* =====================================================================
+   Hell/Dunkel: Kreis-Übergang vom Knopf aus (View Transitions API)
+   ===================================================================== */
+html.vt-theme::view-transition-old(root),
+html.vt-theme::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.vt-theme::view-transition-new(root) {
+  animation: theme-reveal .6s cubic-bezier(.4, 0, .2, 1) both;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); }
+  to   { clip-path: circle(var(--vt-r, 150vmax) at var(--vt-x, 50%) var(--vt-y, 0)); }
+}
