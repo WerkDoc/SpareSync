@@ -240,6 +240,7 @@ async function route() {
   const { path, q } = parseHash();
   if (!db.isDemo && path !== '/login' && path !== '/register') {
     const user = await db.getUser();
+    currentUser = user;
     if (!user) return go('/login', true);
     // nach Klick auf den Bestätigungslink: ersten Lagerort aus der Registrierung anlegen
     if (await db.ensureStarterLocation()) invalidate('locations');
@@ -595,10 +596,39 @@ const dashHeader = () => `<header class="dash-nav">
           <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
         </span>
       </header>`;
-const dashHead = () => `<div class="dash-head">
-        <p class="dash-date">${esc(new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
+// ---------- Begrüßung je nach Tageszeit (Sonne geht auf, abends Mond mit Sternen) ----------
+let currentUser = null;
+function greeting(now = new Date()) {
+  const h = now.getHours();
+  const first = String(currentUser?.user_metadata?.full_name || '').trim().split(/\s+/)[0];
+  const name = first ? `, ${first}` : '';
+  if (h >= 5 && h < 11) return { text: `Guten Morgen${name}`, kind: 'sunrise' };
+  if (h >= 11 && h < 17) return { text: `Guten Tag${name}`, kind: 'sun' };
+  if (h >= 17 && h < 22) return { text: `Guten Abend${name}`, kind: 'moon' };
+  return { text: `Noch fleißig${name}?`, kind: 'night' };
+}
+const greetIcon = (kind) => (kind === 'sunrise' || kind === 'sun')
+  ? `<svg class="gi gi-${kind}" viewBox="0 0 28 28" aria-hidden="true">
+       ${kind === 'sunrise' ? '<defs><clipPath id="gi-hz"><rect x="0" y="0" width="28" height="21"/></clipPath></defs>' : ''}
+       <g ${kind === 'sunrise' ? 'clip-path="url(#gi-hz)"' : ''}><g class="gi-sun">
+         <g class="gi-rays">${Array.from({ length: 8 }, (_, i) => `<line x1="14" y1="3" x2="14" y2="5.6" transform="rotate(${i * 45} 14 14)"/>`).join('')}</g>
+         <circle cx="14" cy="14" r="5.2"/></g></g>
+       ${kind === 'sunrise' ? '<line class="gi-horizon" x1="3" y1="21" x2="25" y2="21"/>' : ''}
+     </svg>`
+  : `<svg class="gi gi-${kind}" viewBox="0 0 28 28" aria-hidden="true">
+       <path class="gi-moon" d="M19.5 17.5A8 8 0 0 1 10.5 6.6a8 8 0 1 0 9 10.9z"/>
+       <path class="gi-star s1" d="M21 4l.7 1.6 1.6.7-1.6.7L21 8.6l-.7-1.6-1.6-.7 1.6-.7z"/>
+       <path class="gi-star s2" d="M24.5 11l.45 1 1 .45-1 .45-.45 1-.45-1-1-.45 1-.45z"/>
+     </svg>`;
+const dashHead = () => {
+  const g = greeting();
+  const date = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  return `<div class="dash-head">
+        <p class="dash-greet">${greetIcon(g.kind)}<span>${esc(g.text)}</span></p>
+        <p class="dash-date">${esc(date)}</p>
         <h1 class="dash-title lt-collapse">Übersicht</h1>
       </div>`;
+};
 const skelRows = (n) => Array.from({ length: n }, (_, i) => `<div class="mrow skel-row">
       ${skel('skel-thumb')}
       <div class="mrow-main">${skel('skel-line', `width:${[78, 64, 86, 58, 72][i % 5]}%`)}${skel('skel-line sm', `width:${[46, 38, 52, 30, 42][i % 5]}%`)}</div>

@@ -1549,3 +1549,29 @@ html.vt-theme::view-transition-new(root) {
   80%  { transform: translateY(-18%); clip-path: inset(16% 0 0 0); }
   100% { transform: translateY(0); clip-path: inset(0 0 0 0); }
 }
+
+/* =====================================================================
+   Begrüßung je nach Tageszeit
+   ===================================================================== */
+.dash-greet { display: flex; align-items: center; gap: 7px; margin: 0 0 3px; font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.dash-greet + .dash-date { font-size: 12px; }
+.gi { width: 26px; height: 26px; flex-shrink: 0; overflow: visible; }
+.gi-sun circle { fill: #ffb300; }
+.gi-rays line { stroke: #ffb300; stroke-width: 2; stroke-linecap: round; }
+.gi-horizon { stroke: var(--text-3); stroke-width: 1.6; stroke-linecap: round; }
+/* Morgens: Sonne steigt über den Horizont, Strahlen fahren aus */
+.gi-sunrise .gi-sun { animation: gi-rise 1.2s cubic-bezier(.22, 1, .36, 1) .2s backwards; }
+.gi-sunrise .gi-rays { transform-origin: 14px 14px; animation: gi-rays-in .6s cubic-bezier(.34, 1.56, .64, 1) 1s backwards; }
+/* Tagsüber: Strahlen drehen sich einmal gemächlich */
+.gi-rays { transform-origin: 14px 14px; }
+svg.gi-sun .gi-rays { animation: gi-spin 2.4s cubic-bezier(.4, 0, .2, 1) .2s backwards; }
+/* Abends/nachts: Mond schwingt ein, Sterne funkeln */
+.gi-moon { fill: #8fa7ff; transform-origin: 14px 14px; animation: gi-swing .9s cubic-bezier(.34, 1.56, .64, 1) .15s backwards; }
+.gi-star { fill: #ffd60a; transform-box: fill-box; transform-origin: center; animation: gi-twinkle 2.6s ease-in-out infinite; }
+.gi-star.s2 { animation-delay: 1.1s; }
+@keyframes gi-rise { from { transform: translateY(12px); } }
+@keyframes gi-rays-in { from { transform: scale(.4); opacity: 0; } }
+@keyframes gi-spin { from { transform: rotate(-90deg); opacity: .2; } }
+@keyframes gi-swing { from { transform: rotate(-40deg) scale(.6); opacity: 0; } }
+@keyframes gi-twinkle { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.55); opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .gi * { animation: none !important; } }
