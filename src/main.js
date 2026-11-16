@@ -2307,12 +2307,27 @@ async function viewInventory(q) {
 
   const root = screen({
     header: navbar({ left: backBtn(), title: `<div class="two-line">Inventur<br><small>${esc(loc.name)}</small></div>`, right: btn('scan', 'scan', 'Scannen') }),
-    body: `<label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
+    body: `<div class="inv-progress" aria-live="polite">
+        <div class="ip-head"><b data-ip="text">0 von 0 gezählt</b><span data-ip="pct">0 %</span></div>
+        <div class="ip-bar"><i data-ip="bar"></i></div>
+      </div>
+      <label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
       <div id="irows" class="inv-list mt"></div>
       <button class="btn-tinted full mt" data-act="add-mat">${icon('plus', 18)} Material zu diesem Lagerort hinzufügen</button>`,
     footer: `<footer class="bottom-bar wide"><button class="btn-filled full" data-act="commit">Inventur buchen</button></footer>`,
   });
   const box = root.querySelector('#irows');
+  let justCounted = null;                  // diese Zeile bekommt beim nächsten Aufbau das kurze Häkchen
+  const updateProgress = () => {
+    const done = rows.filter((m) => (counts.get(m.id) ?? '') !== '').length;
+    const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
+    const ip = (k) => root.querySelector(`[data-ip=${k}]`);
+    ip('text').textContent = `${done} von ${rows.length} gezählt`;
+    ip('pct').textContent = `${pct} %`;
+    ip('bar').style.width = `${pct}%`;
+    root.querySelector('.inv-progress').classList.toggle('complete', !!rows.length && done === rows.length);
+    root.querySelector('.inv-progress').hidden = !rows.length;
+  };
   const updateCommit = () => {
     const n = [...counts].filter(([mid, v]) => v !== '' && +v !== soll(rows.find((m) => m.id === mid) || { locations: [] })).length;
     const b = root.querySelector('[data-act=commit]'); b.textContent = n ? `Inventur buchen (${n} Änderung${n > 1 ? 'en' : ''})` : 'Keine Änderungen'; b.disabled = !n;
@@ -2321,15 +2336,23 @@ async function viewInventory(q) {
     const f = filterMats(rows, { q: term });
     box.innerHTML = f.map((m) => {
       const c = counts.get(m.id) ?? ''; const diff = c === '' ? null : +c - soll(m);
-      return `<div class="inv-row" data-m="${m.id}">${thumb(m, 'sm')}
+      return `<div class="inv-row ${c !== '' ? 'counted' : ''} ${justCounted === m.id ? 'just' : ''}" data-m="${m.id}"><span class="inv-thumb">${thumb(m, 'sm')}<span class="inv-ok">${icon('check', 12, 3.4)}</span></span>
         <div class="inv-main"><div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div><small class="muted">Soll: ${fmtQty(soll(m))}${diff ? ` · <b class="${diff > 0 ? 'green' : 'red'}-text">${diff > 0 ? '+' : ''}${fmtQty(diff)}</b>` : diff === 0 ? ' · <b class="green-text">✓</b>' : ''}</small></div>
         <input type="number" inputmode="decimal" min="0" step="any" placeholder="Ist" value="${esc(c)}"></div>`;
     }).join('') || '<p class="muted center pad">Keine Materialien an diesem Lagerort.</p>';
     box.querySelectorAll('.inv-row').forEach((r) => {
       const inp = r.querySelector('input');
-      inp.onchange = () => { counts.set(r.dataset.m, inp.value); persist(); render(root.querySelector('#iq').value); };
+      inp.onchange = () => {
+        const was = counts.get(r.dataset.m) ?? '';
+        counts.set(r.dataset.m, inp.value); persist();
+        justCounted = was === '' && inp.value !== '' ? r.dataset.m : null;
+        if (justCounted) haptic('light');
+        render(root.querySelector('#iq').value);
+        justCounted = null;
+      };
     });
     updateCommit();
+    updateProgress();
   };
   render();
   root.querySelector('#iq').oninput = (e) => render(e.target.value);

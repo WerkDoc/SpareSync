@@ -1471,3 +1471,24 @@ html.fullbleed .toast.hide {
   position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
   font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text);
 }
+
+/* =====================================================================
+   Inventur-Fortschritt: Balken wächst mit, gezählte Zeilen bekommen ein Häkchen
+   ===================================================================== */
+.inv-progress { margin-bottom: 12px; padding: 12px 14px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); }
+.ip-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 15px; }
+.ip-head span { font-size: 13px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ip-bar { height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.ip-bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--primary); transition: width .6s cubic-bezier(.22, 1, .36, 1), background-color .3s; }
+.inv-progress.complete .ip-bar i { background: var(--green); }
+.inv-progress.complete .ip-head b { color: var(--green); }
+.inv-thumb { position: relative; flex-shrink: 0; display: inline-flex; }
+.inv-ok {
+  position: absolute; right: -4px; bottom: -4px; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--green); color: #fff; border: 2px solid var(--surface);
+  opacity: 0; transform: scale(0);
+}
+.inv-row.counted .inv-ok { opacity: 1; transform: scale(1); }
+.inv-row.just .inv-ok { animation: inv-ok-pop .45s cubic-bezier(.34, 1.56, .64, 1) both; }
+@keyframes inv-ok-pop { from { opacity: 0; transform: scale(0); } }
+@media (prefers-reduced-motion: reduce) { .ip-bar i { transition: none; } .inv-row.just .inv-ok { animation: none; } }
