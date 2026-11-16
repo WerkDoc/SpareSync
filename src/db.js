@@ -103,10 +103,14 @@ function demoNorm(m) {
 //  SUPABASE-HILFEN
 // =====================================================================
 const pubUrl = (path) => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+// Kleines Vorschaubild liegt neben dem Foto: <pfad>.thumb.jpg (gleicher Ordner → gleiche Speicher-Regeln)
+const THUMB = '.thumb.jpg';
+export const thumbPathOf = (path) => path + THUMB;
 const MAT_SELECT = '*, lager_groups(name), lager_stock(qty, location_id, lager_locations(name)), lager_files(id, name, path, kind, created_at)';
 function sbNorm(r) {
   const locations = (r.lager_stock || []).map((x) => ({ location_id: x.location_id, name: x.lager_locations?.name || '?', qty: +x.qty })).sort(byName);
-  const files = (r.lager_files || []).map((f) => ({ ...f, url: pubUrl(f.path) })).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const files = (r.lager_files || []).map((f) => ({ ...f, url: pubUrl(f.path), ...(f.kind === 'image' ? { thumb: pubUrl(f.path + THUMB) } : {}) }))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
   const { lager_groups, lager_stock, lager_files, ...rest } = r;
   return {
     ...rest, group_name: lager_groups?.name || '', locations,
@@ -337,8 +341,8 @@ export async function deleteMaterial(id) {
     ['stock', 'movements', 'tasks', 'files', 'cart'].forEach((k) => { s[k] = s[k].filter((x) => x.material_id !== id); });
     save(); return;
   }
-  const { data: files } = await sb.from(T.file).select('path').eq('material_id', id);
-  if (files?.length) await sb.storage.from(BUCKET).remove(files.map((f) => f.path));
+  const { data: files } = await sb.from(T.file).select('path, kind').eq('material_id', id);
+  if (files?.length) await sb.storage.from(BUCKET).remove(files.flatMap((f) => (f.kind === 'image' ? [f.path, f.path + THUMB] : [f.path])));
   const { error } = await sb.from(T.mat).delete().eq('id', id); fail(error);
 }
 /** Mehrere Materialien auf einmal löschen (inkl. Bestand, Historie, Bilder). onProgress(fertig, gesamt) */
@@ -353,8 +357,8 @@ export async function deleteMaterials(ids, onProgress) {
   let done = 0;
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data: files } = await sb.from(T.file).select('path').in('material_id', chunk);
-    const paths = (files || []).map((f) => f.path);
+    const { data: files } = await sb.from(T.file).select('path, kind').in('material_id', chunk);
+    const paths = (files || []).flatMap((f) => (f.kind === 'image' ? [f.path, f.path + THUMB] : [f.path]));
     for (let j = 0; j < paths.length; j += 500) await sb.storage.from(BUCKET).remove(paths.slice(j, j + 500));
     const { error } = await sb.from(T.mat).delete().in('id', chunk); fail(error);
     done += chunk.length; onProgress?.(done, ids.length);
@@ -398,10 +402,63 @@ export async function addFile(material_id, blob, name, kind = 'file') {
   const path = `${await myId()}/${material_id}/${Date.now()}-${safe}`;
   const up = await sb.storage.from(BUCKET).upload(path, blob, { contentType: blob.type || undefined, upsert: false }); fail(up.error);
   const { error } = await sb.from(T.file).insert({ material_id, name, path, kind }); fail(error);
+  if (kind === 'image') { try { await uploadThumb(path, blob); } catch { /* wird später nachgeholt */ } }
+}
+
+// =====================================================================
+//  VORSCHAUBILDER (für Listen: ~240 px statt des vollen Fotos)
+// =====================================================================
+const THUMB_MAX = 240;
+async function makeThumb(blob) {
+  const bmp = await createImageBitmap(blob);
+  const scale = Math.min(1, THUMB_MAX / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * scale)); c.height = Math.max(1, Math.round(bmp.height * scale));
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);          // transparente PNGs → weißer Grund wie in der Liste
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close?.();
+  return new Promise((r, rej) => c.toBlob((b) => (b ? r(b) : rej(new Error('Vorschaubild fehlgeschlagen'))), 'image/jpeg', 0.8));
+}
+async function uploadThumb(path, blob) {
+  const t = await makeThumb(blob);
+  // ohne upsert: Überschreiben bräuchte zusätzliche Lese-Rechte im Speicher. Gibt es das Bild schon, ist das kein Fehler.
+  const { error } = await sb.storage.from(BUCKET).upload(path + THUMB, t, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' });
+  if (error && !/exist|duplicate|409/i.test(`${error.message} ${error.statusCode || ''}`)) fail(error);
+  return t.size;
+}
+/** Vorschaubild für ein vorhandenes Foto erzeugen (lädt das Foto, verkleinert, lädt hoch) */
+export async function ensureThumb(file) {
+  if (isDemo || !file?.path || file.kind !== 'image') return false;
+  const res = await fetch(pubUrl(file.path), { mode: 'cors', credentials: 'omit' });
+  if (!res.ok) throw new Error(`Foto nicht ladbar (${res.status})`);
+  await uploadThumb(file.path, await res.blob());
+  return true;
+}
+/** Gibt es das Vorschaubild schon? */
+export async function hasThumb(file) {
+  if (isDemo) return true;
+  try { const r = await fetch(pubUrl(file.path + THUMB), { method: 'HEAD', mode: 'cors', credentials: 'omit', cache: 'no-store' }); return r.ok; } catch { return false; }
+}
+/** Für alle Fotos fehlende Vorschaubilder erzeugen. onProgress(fertig, gesamt, erzeugt) */
+export async function generateMissingThumbs(mats, onProgress) {
+  const files = mats.flatMap((m) => m.images || []);
+  let done = 0; let made = 0; const errors = [];
+  const queue = [...files];
+  const worker = async () => {
+    while (queue.length) {
+      const f = queue.shift();
+      try { if (!(await hasThumb(f))) { await ensureThumb(f); made += 1; } } catch (e) { errors.push(`${f.name}: ${e.message}`); }
+      done += 1; onProgress?.(done, files.length, made);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);         // 3 gleichzeitig – schnell, ohne das Netz zu verstopfen
+  return { total: files.length, made, errors };
 }
 export async function deleteFile(file) {
   if (isDemo) { const s = load(); s.files = s.files.filter((f) => f.id !== file.id); save(); return; }
-  await sb.storage.from(BUCKET).remove([file.path]);
+  await sb.storage.from(BUCKET).remove([file.path, ...(file.kind === 'image' ? [file.path + THUMB] : [])]);
   const { error } = await sb.from(T.file).delete().eq('id', file.id); fail(error);
 }
 

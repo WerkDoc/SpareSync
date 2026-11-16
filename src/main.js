@@ -528,9 +528,13 @@ function screen({ header, body, tab = null, cls = '', footer = '' }) {
 }
 const on = (root, act, fn) => root.querySelectorAll(`[data-act="${act}"]`).forEach((el) => (el.onclick = (e) => { e.preventDefault(); fn(el, e); }));
 
+// Listen zeigen das kleine Vorschaubild (~240 px). Fehlt es noch (ältere Fotos), springt das Bild auf das
+// volle Foto um und das Vorschaubild wird im Hintergrund nachgeholt.
 const thumb = (m, size = 'md') => {
-  const img = m.images?.[0]?.url;
-  return `<div class="thumb ${size}">${img ? `<img src="${esc(img)}" loading="lazy" decoding="async" alt="">` : icon(m.kind === 'tool' ? 'wrench' : 'box', size === 'sm' ? 22 : 30, 1.6)}</div>`;
+  const im = m.images?.[0];
+  const src = im?.thumb || im?.url;
+  const fallback = im?.thumb ? ` data-full="${esc(im.url)}" data-fid="${esc(im.id)}" onerror="window.__thumbMiss(this)"` : '';
+  return `<div class="thumb ${size}">${im ? `<img src="${esc(src)}"${fallback} loading="lazy" decoding="async" alt="">` : icon(m.kind === 'tool' ? 'wrench' : 'box', size === 'sm' ? 22 : 30, 1.6)}</div>`;
 };
 const locLabel = (m) => {
   const withStock = m.locations.filter((l) => l.qty > 0);
@@ -965,6 +969,29 @@ const saveListState = () => {
   // Änderungen IN der sichtbaren Liste (Suche, Reiter …) gehören zu ihr; Änderungen von außen erzwingen Neuaufbau
   if (listKeep?.el.isConnected) listKeep.state = JSON.stringify(listState);
 };
+
+// ---------- Fehlende Vorschaubilder im Hintergrund nachholen ----------
+const thumbQueue = new Set(); let thumbBusy = false; const thumbFailed = new Set();
+window.__thumbMiss = (img) => {
+  img.onerror = null;                                    // kein Endlos-Kreislauf
+  img.removeAttribute('onerror');
+  if (img.dataset.full) img.src = img.dataset.full;       // sofort das volle Foto zeigen
+  const id = img.dataset.fid;
+  if (id && !thumbFailed.has(id) && !db.isDemo && navigator.onLine !== false) { thumbQueue.add(id); runThumbQueue(); }
+};
+async function runThumbQueue() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  try {
+    while (thumbQueue.size) {
+      const id = thumbQueue.values().next().value; thumbQueue.delete(id);
+      const f = (cache.materials || []).flatMap((m) => m.images || []).find((x) => x.id === id);
+      if (!f) continue;
+      try { await db.ensureThumb(f); } catch { thumbFailed.add(id); }
+      await new Promise((r) => setTimeout(r, 120));       // App bleibt dabei bedienbar
+    }
+  } finally { thumbBusy = false; }
+}
 
 // ---------- Teile-Liste beim Zurückkommen wiederverwenden ----------
 // Die Liste (285 Zeilen mit Bildern) neu aufzubauen kostet am Handy spürbar Zeit – genau während der
@@ -2615,6 +2642,7 @@ async function viewSettings() {
         ${item('boxes', 'Material Gruppen', 'go:/groups')}
         ${item('tag', 'Eigene Felder', 'go:/fields')}
         ${item('tally', 'Inventur', 'go:/inventory')}
+        ${db.isDemo ? '' : item('camera', 'Vorschaubilder erzeugen', 'thumbs', '', '', 'teal').replace('<span>Vorschaubilder erzeugen</span>', '<span>Vorschaubilder erzeugen<small>Kleine Bilder für schnellere Listen</small></span>')}
       </div>
       <div class="set-group">
         ${item('save', 'Backup erstellen', 'backup', '', '', 'green').replace('<span>Backup erstellen</span>', `<span>Backup erstellen<small>${backupAgeText()}</small></span>`)}
@@ -2712,6 +2740,19 @@ async function viewSettings() {
     b.disabled = false;
   };
   on(root, 'backup', (b) => runBackup(b, false));
+  on(root, 'thumbs', async () => {
+    if (!navigator.onLine) return toast('Dafür wird Internet gebraucht', 'err');
+    const pp = progressPanel({ title: 'Vorschaubilder erzeugen', icon: 'camera' });
+    try {
+      const mats = await getMats();
+      const r = await db.generateMissingThumbs(mats, (d, t, made) => pp.set(t ? d / t : 1, `${d} von ${t} Bildern geprüft · ${made} neu`));
+      pp.done({
+        title: r.made ? `${r.made} Vorschaubilder erzeugt` : 'Alles schon vorhanden',
+        message: `${r.total} Bilder geprüft.${r.errors.length ? ` ${r.errors.length} ließen sich nicht verarbeiten.` : ''} Die Listen laden jetzt die kleinen Bilder.`,
+        actions: [{ label: 'Fertig', onClick: () => { invalidate('materials'); listKeep = null; } }],
+      });
+    } catch (e) { pp.fail(e.message || String(e)); }
+  });
   on(root, 'backup-files', async (b) => {
     if (await confirmBox({ title: 'Backup inkl. Bilder', message: 'Alle Bilder werden mitgesichert. Die Datei wird dadurch deutlich größer und das Erstellen dauert etwas länger.', okText: 'Erstellen' })) runBackup(b, true);
   });
