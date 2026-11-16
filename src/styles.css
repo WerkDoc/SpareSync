@@ -1383,3 +1383,28 @@ html.fullbleed .toast.hide {
 }
 @keyframes di-countdown { to { stroke-dashoffset: 63; } }
 @media (prefers-reduced-motion: reduce) { .di-ring circle { animation: none; } }
+
+/* =====================================================================
+   Bestands-Ring auf der Detailseite (füllt sich beim Öffnen)
+   ===================================================================== */
+.stock-ring-card {
+  position: relative; display: flex; align-items: center; gap: 14px; margin: 12px 0 4px;
+  padding: 12px 14px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow);
+  --ring: var(--green);
+}
+.stock-ring-card.warn { --ring: #f08c00; }
+.stock-ring-card.low { --ring: var(--red); }
+.stock-ring { width: 64px; height: 64px; flex-shrink: 0; transform: rotate(-90deg); }
+.sr-track { fill: none; stroke: var(--fill); stroke-width: 7; }
+.sr-fill {
+  fill: none; stroke: var(--ring); stroke-width: 7; stroke-linecap: round;
+  stroke-dasharray: var(--c); stroke-dashoffset: var(--off);
+  animation: sr-grow 1s cubic-bezier(.22, 1, .36, 1) .15s backwards;
+}
+@keyframes sr-grow { from { stroke-dashoffset: var(--c); } }
+.sr-mark { stroke: var(--text-2); stroke-width: 2; stroke-linecap: round; }
+.sr-val { position: absolute; left: 14px; width: 64px; text-align: center; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sr-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sr-text b { font-size: 16px; color: var(--ring); }
+.sr-text small { font-size: 13px; color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) { .sr-fill { animation: none; } }

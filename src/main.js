@@ -1603,6 +1603,29 @@ async function undoBooking(b, title, onDone) {
   } catch (e) { errToast(e); }
 }
 
+/** Bestands-Ring: wie voll ist das Fach im Verhältnis zu Melde- und Maximalbestand? (nur wenn einer davon gesetzt ist) */
+function stockRing(m) {
+  const min = +m.min_stock || 0; const max = +m.max_stock || 0; const total = Math.max(0, +m.total || 0);
+  if (!min && !max) return '';
+  const full = max || Math.max(min * 2, total, 1);              // ohne Maximalbestand: doppelter Meldebestand = „voll“
+  const frac = Math.max(0, Math.min(1, total / full));
+  const state = isLow(m) ? 'low' : (min && total <= min * 1.5) ? 'warn' : 'ok';
+  const text = { low: 'Nachbestellen!', warn: 'Bald nachbestellen', ok: 'Genug auf Lager' }[state];
+  const R = 26; const C = +(2 * Math.PI * R).toFixed(2);
+  const minAngle = min && full ? Math.min(1, min / full) * 360 : null;   // Markierung für den Meldebestand
+  return `<div class="stock-ring-card ${state}">
+      <svg class="stock-ring" viewBox="0 0 64 64" aria-hidden="true" style="--c:${C};--off:${(C * (1 - frac)).toFixed(2)}">
+        <circle class="sr-track" cx="32" cy="32" r="${R}"/>
+        <circle class="sr-fill" cx="32" cy="32" r="${R}"/>
+        ${minAngle != null && minAngle < 360 ? `<line class="sr-mark" x1="32" y1="3" x2="32" y2="9" transform="rotate(${minAngle.toFixed(1)} 32 32)"/>` : ''}
+      </svg>
+      <span class="sr-val">${fmtQty(total)}</span>
+      <div class="sr-text"><b>${text}</b>
+        <small>Meldebestand ${fmtQty(min)}${max ? ` · Maximalbestand ${fmtQty(max)}` : ''}</small>
+        ${max && total < max ? `<small>Bis voll: ${fmtQty(max - total)}</small>` : ''}</div>
+    </div>`;
+}
+
 async function infosTab(m) {
   const tasks = await db.listTasks(m.id);
   const open = localStorage.getItem('wl-tasks-open') !== '0';
@@ -1617,7 +1640,7 @@ async function infosTab(m) {
     </div>
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
-    ${+m.min_stock || m.max_stock ? `<p class="muted small">Meldebestand ${fmtQty(m.min_stock)}${m.max_stock ? ` · Maximalbestand ${fmtQty(m.max_stock)}` : ''}${low ? ' · <b class="red">nachbestellen!</b>' : ''}</p>` : ''}
+    ${stockRing(m)}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
