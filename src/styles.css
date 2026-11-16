@@ -1522,3 +1522,6 @@ html.vt-theme::view-transition-new(root) {
 @keyframes ptr-s-armed { 50% { transform: scale(1.18); } }
 @keyframes ptr-s-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ptr-brand.spinning img { animation: ptr-s-pulse 1.2s ease-in-out infinite; } @keyframes ptr-s-pulse { 50% { opacity: .5; } } }
+
+/* Konfetti-Ebene: liegt über allem, fängt keine Tipps ab */
+.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9998; pointer-events: none; }

@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
@@ -1203,7 +1203,13 @@ function renderCart(rows, mats, cart) {
       try {
         if (v === 'del') { await db.deleteCart(c.id); await reload(); }
         if (v === 'qty') { const n = await prompt({ title: 'Menge', value: c.qty, type: 'number' }); if (n && +n > 0) { await db.updateCart(c.id, +n); await reload(); } }
-        if (v === 'in' || v === 'out') openBooking(m, v, async () => { await db.deleteCart(c.id); await reload(); }, { qty: c.qty });
+        if (v === 'in' || v === 'out') {
+          const lastInCart = c.list === 'cart' && order.length === 1;      // letzter offener Posten der Bestellliste
+          openBooking(m, v, async () => {
+            await db.deleteCart(c.id); await reload();
+            if (lastInCart && v === 'in') { confetti(); toast('Bestellung komplett eingebucht', 'ok', { sub: 'Der Warenkorb ist leer' }); }
+          }, { qty: c.qty });
+        }
       } catch (e) { errToast(e); }
     };
   });
@@ -1242,6 +1248,7 @@ function renderCart(rows, mats, cart) {
         }
         if (errors.length) toast(`Nicht alles gebucht – ${errors[0]}`, 'err'); else toast('Kommission entnommen');
         await reload();
+        if (!errors.length) confetti();
       }
     };
   });
@@ -2428,7 +2435,9 @@ async function viewInventory(q) {
     b.disabled = true;
     try {
       for (const [mid, v] of changes) await db.book({ material_id: mid, type: 'inventory', qty: +v, location_id: loc.id, note: 'Inventur' });
-      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); successHUD('Inventur gebucht'); go('/inventory', true);
+      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); successHUD('Inventur gebucht');
+      if (rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '')) confetti();   // ganzer Lagerort gezählt
+      go('/inventory', true);
     } catch (e) { errToast(e); b.disabled = false; }
   });
 }
