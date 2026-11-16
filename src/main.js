@@ -962,13 +962,16 @@ async function viewList(q) {
   };
 
   onLongPress(rows, '.mrow', (el) => materialContextMenu(el, () => viewList({})), { enabled: () => !sel.on && listState.tab !== 'cart' });
-  // Wisch-Aktionen: nach links Bearbeiten/Löschen, nach rechts Dazu buchen
+  // Wisch-Aktionen: nach links Bearbeiten/Löschen, nach rechts Dazu buchen/Entnehmen
   enableSwipeActions(rows, '.mrow', {
     left: [
       { key: 'edit', label: 'Bearbeiten', icon: 'edit', tone: 'gray' },
       { key: 'delete', label: 'Löschen', icon: 'trash', tone: 'red' },
     ],
-    right: [{ key: 'in', label: 'Dazu buchen', icon: 'plus', tone: 'green', width: 104 }],
+    right: [
+      { key: 'in', label: 'Dazu buchen', icon: 'plus', tone: 'green', width: 100 },
+      { key: 'out', label: 'Entnehmen', icon: 'minus', tone: 'orange', width: 92 },
+    ],
     enabled: () => !sel.on && listState.tab !== 'cart',
     onAction: async (key, el) => {
       const m = (await getMats()).find((x) => x.id === el.dataset.id);
@@ -976,6 +979,10 @@ async function viewList(q) {
       if (key === 'edit') return go(`/edit/${m.id}`);
       if (key === 'delete') return deleteMaterialFlow(m, () => viewList({}));
       if (key === 'in') return openBooking(m, 'in', () => viewList({}));
+      if (key === 'out') {
+        if (!m.locations.some((l) => l.qty > 0)) return toast('Kein Bestand zum Entnehmen', 'err');
+        return openBooking(m, 'out', () => viewList({}));
+      }
     },
   });
 

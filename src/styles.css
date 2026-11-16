@@ -1319,6 +1319,7 @@ html.fullbleed .toast.hide {
 .swipe-btn.tone-gray { background: #8e8e93; }
 .swipe-btn.tone-red { background: var(--red); }
 .swipe-btn.tone-green { background: var(--green); }
+.swipe-btn.tone-orange { background: #f08c00; }
 .swipe-btn.tone-blue { background: var(--primary); }
 /* weit gewischt: Hauptaktion füllt die ganze Fläche */
 .swipe-under.full > .swipe-btn:not(.main) { flex-grow: 0; opacity: 0; }
