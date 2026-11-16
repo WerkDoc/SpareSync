@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
@@ -962,6 +962,22 @@ async function viewList(q) {
   };
 
   onLongPress(rows, '.mrow', (el) => materialContextMenu(el, () => viewList({})), { enabled: () => !sel.on && listState.tab !== 'cart' });
+  // Wisch-Aktionen: nach links Bearbeiten/Löschen, nach rechts Dazu buchen
+  enableSwipeActions(rows, '.mrow', {
+    left: [
+      { key: 'edit', label: 'Bearbeiten', icon: 'edit', tone: 'gray' },
+      { key: 'delete', label: 'Löschen', icon: 'trash', tone: 'red' },
+    ],
+    right: [{ key: 'in', label: 'Dazu buchen', icon: 'plus', tone: 'green', width: 104 }],
+    enabled: () => !sel.on && listState.tab !== 'cart',
+    onAction: async (key, el) => {
+      const m = (await getMats()).find((x) => x.id === el.dataset.id);
+      if (!m) return;
+      if (key === 'edit') return go(`/edit/${m.id}`);
+      if (key === 'delete') return deleteMaterialFlow(m, () => viewList({}));
+      if (key === 'in') return openBooking(m, 'in', () => viewList({}));
+    },
+  });
 
   const qi = root.querySelector('#q');
   // Fokus-Modus: Suche angetippt → Inhalt darunter abdunkeln, bis getippt wird
@@ -1501,10 +1517,12 @@ async function materialContextMenu(el, refresh) {
   if (v === 'history') return go(`/m/${m.id}/history`);
   if (v === 'copy') return copyText(String(m.number));
   if (v === 'edit') return go(`/edit/${m.id}`);
-  if (v === 'delete') {
-    if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
-    try { await db.deleteMaterial(m.id); invalidate(); successHUD('Gelöscht'); refresh(); } catch (e) { errToast(e); }
-  }
+  if (v === 'delete') return deleteMaterialFlow(m, refresh);
+}
+/** Löschen mit Sicherheitsabfrage (Kontextmenü + Wisch-Aktion) */
+async function deleteMaterialFlow(m, refresh) {
+  if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
+  try { await db.deleteMaterial(m.id); invalidate(); successHUD('Gelöscht'); refresh(); } catch (e) { errToast(e); }
 }
 
 async function infosTab(m) {
