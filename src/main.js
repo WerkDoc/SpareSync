@@ -742,6 +742,59 @@ function flashNew(el) {
   el.addEventListener('animationend', (e) => { if (e.animationName === 'fade-highlight') el.classList.remove('highlight-new'); }, { once: true });
 }
 
+// ---------- Mini-Verlaufskurve „Verbrauch der letzten 14 Tage“ ----------
+// Wird NACH dem Aufbau der Übersicht nachgeladen (blockiert die Seite nicht) und 60 s zwischengespeichert.
+const SPARK_DAYS = 14;
+let sparkCache = null;                 // { at, days: [Menge pro Tag] }
+async function sparkData() {
+  if (sparkCache && Date.now() - sparkCache.at < 60000 && cache.materials) return sparkCache.days;
+  const movs = await db.listMovementsSince(SPARK_DAYS);
+  const days = Array(SPARK_DAYS).fill(0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  movs.forEach((x) => {
+    if (x.type !== 'out') return;
+    const d = new Date(x.created_at); d.setHours(0, 0, 0, 0);
+    const i = SPARK_DAYS - 1 - Math.round((today - d) / 864e5);
+    if (i >= 0 && i < SPARK_DAYS) days[i] += Math.abs(+x.qty);
+  });
+  sparkCache = { at: Date.now(), days };
+  return days;
+}
+async function fillSparkline(el) {
+  if (!el) return;
+  let days;
+  try { days = await sparkData(); } catch { return; }
+  if (!el.isConnected || !days.some((v) => v > 0)) return;          // ohne Entnahmen: Karte bleibt weg
+  const W = 300; const H = 54; const P = 4;
+  const max = Math.max(...days, 1);
+  const pts = days.map((v, i) => [P + (i * (W - 2 * P)) / (days.length - 1), H - P - (v / max) * (H - 2 * P - 6)]);
+  // weiche Kurve (Catmull-Rom → Bézier)
+  const d = pts.map((p, i) => {
+    if (!i) return `M${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+    const p0 = pts[i - 2] || pts[i - 1]; const p1 = pts[i - 1]; const p3 = pts[i + 1] || p;
+    const c1 = [p1[0] + (p[0] - p0[0]) / 6, p1[1] + (p[1] - p0[1]) / 6];
+    const c2 = [p[0] - (p3[0] - p1[0]) / 6, p[1] - (p3[1] - p1[1]) / 6];
+    return `C${c1[0].toFixed(1)},${Math.min(H - P, c1[1]).toFixed(1)} ${c2[0].toFixed(1)},${Math.min(H - P, c2[1]).toFixed(1)} ${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+  }).join(' ');
+  const last = pts[pts.length - 1];
+  const sum = days.reduce((a, b) => a + b, 0);
+  const week = days.slice(-7).reduce((a, b) => a + b, 0); const prev = days.slice(0, 7).reduce((a, b) => a + b, 0);
+  const trend = prev ? Math.round(((week - prev) / prev) * 100) : null;
+  el.innerHTML = `
+    <div class="spark-head">
+      <span><b>${fmtQty(sum)}</b> Teile entnommen</span>
+      <small>letzte ${SPARK_DAYS} Tage${trend != null ? ` · <i class="${trend > 0 ? 'up' : trend < 0 ? 'down' : ''}">${trend > 0 ? '+' : ''}${trend} %</i> zur Vorwoche` : ''}</small>
+    </div>
+    <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="spark-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity=".22"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient></defs>
+      <path class="spark-area" d="${d} L${last[0].toFixed(1)},${H} L${P},${H} Z" fill="url(#spark-g)"/>
+      <path class="spark-line" d="${d}" pathLength="1"/>
+      <circle class="spark-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5"/>
+    </svg>
+    ${icon('chevR', 18)}`;
+  el.hidden = false;
+}
+
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
 
@@ -792,6 +845,7 @@ async function viewFav() {
         </a>
       </section>
 
+      <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
       <h2 class="dash-sec">Schnellaktionen</h2>
       <section class="quick-grid">
         ${QUICK.map((q) => `<a class="quick" href="#${q.href}">
@@ -838,6 +892,7 @@ async function viewFav() {
   updateScrolled();
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
+  fillSparkline(root.querySelector('[data-spark]'));
   const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
   if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('[data-sec=recent] .ios-row.recent'));
   lastRecentTop = top;
@@ -848,7 +903,7 @@ async function viewFav() {
   on(root, 'scan', async () => {
     const code = await scan(); if (!code) return;
     const m = await db.findByCode(code);
-    if (m) go(`/m/${m.id}`);
+    if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   });
 }
@@ -1042,7 +1097,7 @@ async function viewList(q) {
   on(root, 'scan', async () => {
     const code = await scan(); if (!code) return;
     const m = await db.findByCode(code);
-    if (m) go(`/m/${m.id}`);
+    if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   });
   on(root, 'filter', () => openFilter());
@@ -1208,7 +1263,7 @@ async function viewPick(q) {
   const doScan = async () => {
     const code = await scan({ title: titles[mode] }); if (!code) return;
     const m = await db.findByCode(code);
-    if (m) picked(m);
+    if (m) { foundToast(m); picked(m); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   };
   render();
@@ -1253,7 +1308,7 @@ async function openBooking(m, type, onDone, preset = {}) {
     </div>
     <div class="stepper big">
       <button data-s="-1" aria-label="Weniger">${icon('minus', 28, 2.6)}</button>
-      <input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty">
+      <span class="odo"><input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty"></span>
       <button data-s="1" aria-label="Mehr">${icon('plus', 28, 2.6)}</button>
     </div>
     <div class="form-group"><label class="frow col"><span>${type === 'out' ? 'Wofür? (Notiz, optional)' : 'Notiz (optional)'}</span><input data-f="note" placeholder="${type === 'out' ? 'z.B. Kunde Müller, Auftrag 2410-17' : 'z.B. Lieferung, Lieferant'}" value="${esc(preset.note || '')}" autocomplete="off" enterkeyhint="done"></label></div>
@@ -1276,7 +1331,12 @@ async function openBooking(m, type, onDone, preset = {}) {
       let prevFrom = f('from').value; let prevTo = f('to')?.value;
       f('from').onchange = async () => { await handleNew(f('from'), prevFrom); prevFrom = f('from').value; f('here').textContent = fmtQty(qtyAt(prevFrom)); };
       if (f('to')) f('to').onchange = async () => { await handleNew(f('to'), prevTo); prevTo = f('to').value; };
-      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { qty.value = Math.max(0, (+qty.value || 0) + +b.dataset.s); haptic(); }));
+      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => {
+        const old = qty.value; const next = Math.max(0, (+qty.value || 0) + +b.dataset.s);
+        if (String(next) === old) return;
+        qty.value = next; haptic();
+        odometer(qty, old, +b.dataset.s > 0 ? 1 : -1);
+      }));
       root.querySelectorAll('[data-note]').forEach((b) => (b.onclick = () => { f('note').value = b.dataset.note; haptic(); }));
       root.querySelector('[data-a=ok]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true;
@@ -1285,8 +1345,15 @@ async function openBooking(m, type, onDone, preset = {}) {
           rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
           haptic('success');
-          toast('Erfolgreich gebucht', 'ok', { sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}` });
-          if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') setTimeout(() => toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }), 3050);
+          const booked = { material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null };
+          const hashAtBooking = location.hash;
+          const lowWarn = () => { if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); };
+          toast('Erfolgreich gebucht', 'ok', {
+            sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}`,
+            // 5 Sekunden „Rückgängig“: bucht genau die Gegenbewegung (steht dann auch so in der Historie)
+            action: { label: 'Rückgängig', onClick: () => undoBooking(booked, conf.title, hashAtBooking === location.hash ? onDone : null) },
+            onTimeout: lowWarn,                      // Meldebestand-Hinweis erst, wenn nicht rückgängig gemacht
+          });
           await onDone?.(total);
         } catch (err) { errToast(err); b.disabled = false; }
       };
@@ -1567,7 +1634,60 @@ async function toggleFavorite(m, refresh) {
 /** Löschen mit Sicherheitsabfrage (Kontextmenü + Wisch-Aktion) */
 async function deleteMaterialFlow(m, refresh) {
   if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
-  try { await db.deleteMaterial(m.id); invalidate(); successHUD('Gelöscht'); refresh(); } catch (e) { errToast(e); }
+  // Erst nur ausblenden – endgültig gelöscht wird nach 5 Sekunden, solange niemand „Rückgängig“ tippt
+  const hash = location.hash;
+  if (cache.materials) cache.materials = cache.materials.filter((x) => x.id !== m.id);
+  refresh();
+  haptic('medium');
+  toast(`${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} gelöscht`, 'ok', {
+    sub: `${m.number}: ${m.name}`, icon: 'trash',
+    action: {
+      label: 'Rückgängig',
+      onClick: () => { invalidate('materials'); if (location.hash === hash) refresh(); toast('Wiederhergestellt', 'ok', { sub: m.name }); },
+    },
+    onTimeout: async () => {
+      try { await db.deleteMaterial(m.id); invalidate(); updateBadge(); } catch (e) { invalidate('materials'); errToast(e); if (location.hash === hash) refresh(); }
+    },
+  });
+}
+/** Kurze Bestätigung nach einem erfolgreichen Scan */
+function foundToast(m) {
+  toast('Gefunden', 'ok', { icon: 'scan', sub: `${m.number}: ${m.name} · Bestand ${fmtQty(m.total)}`, duration: 1800 });
+}
+/** Gegenbuchung zu einer gerade gemachten Buchung */
+async function undoBooking(b, title, onDone) {
+  const back = b.type === 'in' ? { type: 'out', location_id: b.location_id }
+    : b.type === 'out' ? { type: 'in', location_id: b.location_id }
+      : { type: 'transfer', location_id: b.to_location_id, to_location_id: b.location_id };
+  try {
+    const total = await db.book({ material_id: b.material_id, qty: b.qty, to_location_id: null, ...back, note: `Rückgängig (${title})` });
+    invalidate('materials', 'locations');
+    toast('Rückgängig gemacht', 'info', { icon: 'history', sub: `Gesamtbestand wieder ${fmtQty(total)}` });
+    await onDone?.(total);
+  } catch (e) { errToast(e); }
+}
+
+/** Bestands-Ring: wie voll ist das Fach im Verhältnis zu Melde- und Maximalbestand? (nur wenn einer davon gesetzt ist) */
+function stockRing(m) {
+  const min = +m.min_stock || 0; const max = +m.max_stock || 0; const total = Math.max(0, +m.total || 0);
+  if (!min && !max) return '';
+  const full = max || Math.max(min * 2, total, 1);              // ohne Maximalbestand: doppelter Meldebestand = „voll“
+  const frac = Math.max(0, Math.min(1, total / full));
+  const state = isLow(m) ? 'low' : (min && total <= min * 1.5) ? 'warn' : 'ok';
+  const text = { low: 'Nachbestellen!', warn: 'Bald nachbestellen', ok: 'Genug auf Lager' }[state];
+  const R = 26; const C = +(2 * Math.PI * R).toFixed(2);
+  const minAngle = min && full ? Math.min(1, min / full) * 360 : null;   // Markierung für den Meldebestand
+  return `<div class="stock-ring-card ${state}">
+      <svg class="stock-ring" viewBox="0 0 64 64" aria-hidden="true" style="--c:${C};--off:${(C * (1 - frac)).toFixed(2)}">
+        <circle class="sr-track" cx="32" cy="32" r="${R}"/>
+        <circle class="sr-fill" cx="32" cy="32" r="${R}"/>
+        ${minAngle != null && minAngle < 360 ? `<line class="sr-mark" x1="32" y1="3" x2="32" y2="9" transform="rotate(${minAngle.toFixed(1)} 32 32)"/>` : ''}
+      </svg>
+      <span class="sr-val">${fmtQty(total)}</span>
+      <div class="sr-text"><b>${text}</b>
+        <small>Meldebestand ${fmtQty(min)}${max ? ` · Maximalbestand ${fmtQty(max)}` : ''}</small>
+        ${max && total < max ? `<small>Bis voll: ${fmtQty(max - total)}</small>` : ''}</div>
+    </div>`;
 }
 
 async function infosTab(m) {
@@ -1584,7 +1704,7 @@ async function infosTab(m) {
     </div>
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
-    ${+m.min_stock || m.max_stock ? `<p class="muted small">Meldebestand ${fmtQty(m.min_stock)}${m.max_stock ? ` · Maximalbestand ${fmtQty(m.max_stock)}` : ''}${low ? ' · <b class="red">nachbestellen!</b>' : ''}</p>` : ''}
+    ${stockRing(m)}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
@@ -1595,6 +1715,19 @@ async function infosTab(m) {
       ${open ? tasks.map((t) => `<div class="task" data-task="${t.id}"><label><input type="checkbox" ${t.done ? 'checked' : ''}><span>${esc(t.title)}</span></label><button class="icon-btn" data-del aria-label="Löschen">${icon('trash', 18)}</button></div>`).join('') : ''}
     </div>
     <button class="link-row" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>`;
+}
+
+/** Zahl rollt wie ein Kilometerzähler: alte Zahl gleitet raus, neue kommt von unten (+) bzw. oben (−) */
+function odometer(input, oldValue, dir) {
+  if (reduceMotion.matches || !input.animate) return;
+  const box = input.parentElement;
+  box.querySelector('.odo-ghost')?.remove();
+  const ghost = document.createElement('span');
+  ghost.className = 'odo-ghost'; ghost.textContent = oldValue; ghost.setAttribute('aria-hidden', 'true');
+  box.appendChild(ghost);
+  const opts = { duration: 260, easing: 'cubic-bezier(.22, 1, .36, 1)' };
+  ghost.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: `translateY(${-dir * 70}%)`, opacity: 0 }], opts).onfinish = () => ghost.remove();
+  input.animate([{ transform: `translateY(${dir * 70}%)`, opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], opts);
 }
 
 // Zuletzt verwendete Buchungs-Notizen (pro Gerät gemerkt) → als Vorschläge zum Antippen
@@ -2174,12 +2307,27 @@ async function viewInventory(q) {
 
   const root = screen({
     header: navbar({ left: backBtn(), title: `<div class="two-line">Inventur<br><small>${esc(loc.name)}</small></div>`, right: btn('scan', 'scan', 'Scannen') }),
-    body: `<label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
+    body: `<div class="inv-progress" aria-live="polite">
+        <div class="ip-head"><b data-ip="text">0 von 0 gezählt</b><span data-ip="pct">0 %</span></div>
+        <div class="ip-bar"><i data-ip="bar"></i></div>
+      </div>
+      <label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
       <div id="irows" class="inv-list mt"></div>
       <button class="btn-tinted full mt" data-act="add-mat">${icon('plus', 18)} Material zu diesem Lagerort hinzufügen</button>`,
     footer: `<footer class="bottom-bar wide"><button class="btn-filled full" data-act="commit">Inventur buchen</button></footer>`,
   });
   const box = root.querySelector('#irows');
+  let justCounted = null;                  // diese Zeile bekommt beim nächsten Aufbau das kurze Häkchen
+  const updateProgress = () => {
+    const done = rows.filter((m) => (counts.get(m.id) ?? '') !== '').length;
+    const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
+    const ip = (k) => root.querySelector(`[data-ip=${k}]`);
+    ip('text').textContent = `${done} von ${rows.length} gezählt`;
+    ip('pct').textContent = `${pct} %`;
+    ip('bar').style.width = `${pct}%`;
+    root.querySelector('.inv-progress').classList.toggle('complete', !!rows.length && done === rows.length);
+    root.querySelector('.inv-progress').hidden = !rows.length;
+  };
   const updateCommit = () => {
     const n = [...counts].filter(([mid, v]) => v !== '' && +v !== soll(rows.find((m) => m.id === mid) || { locations: [] })).length;
     const b = root.querySelector('[data-act=commit]'); b.textContent = n ? `Inventur buchen (${n} Änderung${n > 1 ? 'en' : ''})` : 'Keine Änderungen'; b.disabled = !n;
@@ -2188,15 +2336,23 @@ async function viewInventory(q) {
     const f = filterMats(rows, { q: term });
     box.innerHTML = f.map((m) => {
       const c = counts.get(m.id) ?? ''; const diff = c === '' ? null : +c - soll(m);
-      return `<div class="inv-row" data-m="${m.id}">${thumb(m, 'sm')}
+      return `<div class="inv-row ${c !== '' ? 'counted' : ''} ${justCounted === m.id ? 'just' : ''}" data-m="${m.id}"><span class="inv-thumb">${thumb(m, 'sm')}<span class="inv-ok">${icon('check', 12, 3.4)}</span></span>
         <div class="inv-main"><div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div><small class="muted">Soll: ${fmtQty(soll(m))}${diff ? ` · <b class="${diff > 0 ? 'green' : 'red'}-text">${diff > 0 ? '+' : ''}${fmtQty(diff)}</b>` : diff === 0 ? ' · <b class="green-text">✓</b>' : ''}</small></div>
         <input type="number" inputmode="decimal" min="0" step="any" placeholder="Ist" value="${esc(c)}"></div>`;
     }).join('') || '<p class="muted center pad">Keine Materialien an diesem Lagerort.</p>';
     box.querySelectorAll('.inv-row').forEach((r) => {
       const inp = r.querySelector('input');
-      inp.onchange = () => { counts.set(r.dataset.m, inp.value); persist(); render(root.querySelector('#iq').value); };
+      inp.onchange = () => {
+        const was = counts.get(r.dataset.m) ?? '';
+        counts.set(r.dataset.m, inp.value); persist();
+        justCounted = was === '' && inp.value !== '' ? r.dataset.m : null;
+        if (justCounted) haptic('light');
+        render(root.querySelector('#iq').value);
+        justCounted = null;
+      };
     });
     updateCommit();
+    updateProgress();
   };
   render();
   root.querySelector('#iq').oninput = (e) => render(e.target.value);
