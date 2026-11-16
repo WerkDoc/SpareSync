@@ -1627,3 +1627,27 @@ a.chip.fit { padding: 5px 11px; text-decoration: none; }
 .dupes-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 70px 20px; text-align: center; color: var(--text-2); }
 .dupes-empty .ic { color: var(--green); margin-bottom: 6px; }
 .dupes-empty b { color: var(--text); font-size: 18px; }
+
+/* =====================================================================
+   Backup-Erinnerung auf der Übersicht
+   ===================================================================== */
+.backup-hint {
+  display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 8px 10px 12px; border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--card-shadow); overflow: hidden;
+  animation: bh-in .5s cubic-bezier(.22, 1, .36, 1) .3s backwards;
+  transition: height .38s cubic-bezier(.4, 0, .2, 1), opacity .25s, margin .38s, padding .38s;
+}
+.backup-hint.gone { height: 0 !important; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
+.bh-ic { flex-shrink: 0; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--orange-soft, #fff1e0); color: var(--orange, #f08c00);
+  animation: bh-wiggle 1.1s ease-in-out .9s 2; }
+.bh-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bh-text b { font-size: 15px; }
+.bh-text small { font-size: 12.5px; color: var(--text-2); }
+.bh-go { flex-shrink: 0; height: 34px; padding: 0 14px; border-radius: 999px; background: var(--primary); color: #fff; font-weight: 700; font-size: 14px; }
+.bh-x { flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: var(--text-3); }
+@keyframes bh-in { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes bh-wiggle { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-12deg); } 40% { transform: rotate(10deg); } 60% { transform: rotate(-6deg); } 80% { transform: rotate(3deg); } }
+/* Ziel-Zeile in den Einstellungen leuchtet kurz auf */
+.flash-row { animation: flash-row 1.6s ease .3s both; }
+@keyframes flash-row { 0%, 100% { background-color: transparent; } 25%, 60% { background-color: color-mix(in srgb, var(--primary) 16%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .backup-hint, .bh-ic, .flash-row { animation: none; } }

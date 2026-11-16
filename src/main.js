@@ -851,6 +851,30 @@ async function fillSparkline(el) {
   el.hidden = false;
 }
 
+// ---------- Backup-Erinnerung auf der Übersicht ----------
+// Erscheint, wenn das letzte Backup (auf diesem Gerät) älter als 14 Tage ist – oder es noch nie eins gab
+// und die App schon ein paar Tage benutzt wird. „Später“ blendet sie für 3 Tage aus.
+const BACKUP_DAYS = 14;
+function backupHint(mats) {
+  let last = null; let snooze = 0; let first = null;
+  try {
+    last = localStorage.getItem('wl-last-backup');
+    snooze = +localStorage.getItem('ss-backup-snooze') || 0;
+    first = localStorage.getItem('ss-first-seen');
+    if (!first) { first = new Date().toISOString(); localStorage.setItem('ss-first-seen', first); }
+  } catch { return ''; }
+  if (!mats.length || Date.now() < snooze || db.isDemo) return '';
+  const days = last ? Math.floor((Date.now() - Date.parse(last)) / 864e5) : null;
+  const usedDays = Math.floor((Date.now() - Date.parse(first)) / 864e5);
+  if (days != null ? days < BACKUP_DAYS : usedDays < 3) return '';
+  return `<div class="backup-hint" role="status">
+      <span class="bh-ic">${icon('save', 22, 2.1)}</span>
+      <span class="bh-text"><b>Zeit für ein Backup</b><small>${days == null ? 'Auf diesem Gerät gab es noch keins' : `Letztes Backup vor ${days} Tagen`}</small></span>
+      <button class="bh-go" data-act="backup-now">Sichern</button>
+      <button class="bh-x" data-act="backup-later" aria-label="Später erinnern">${icon('x', 16, 2.4)}</button>
+    </div>`;
+}
+
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
 
@@ -901,6 +925,7 @@ async function viewFav() {
         </a>
       </section>
 
+      ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
       <h2 class="dash-sec">Schnellaktionen</h2>
       <section class="quick-grid">
@@ -949,6 +974,12 @@ async function viewFav() {
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
+  on(root, 'backup-later', (el) => {
+    try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
+    const card = el.closest('.backup-hint'); card.style.height = `${card.offsetHeight}px`;
+    requestAnimationFrame(() => card.classList.add('gone')); setTimeout(() => card.remove(), 420);
+  });
+  on(root, 'backup-now', () => { sessionStorage.setItem('ss-flash', 'backup'); openMenu('R'); });
   const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
   if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('[data-sec=recent] .ios-row.recent'));
   lastRecentTop = top;
@@ -2768,6 +2799,7 @@ function saveFile(blob, name) {
 }
 
 async function viewSettings() {
+  const flash = sessionStorage.getItem('ss-flash'); sessionStorage.removeItem('ss-flash');
   const user = await db.getUser();
   const theme = localStorage.getItem('wl-theme') || '';
   const TONE = { info: 'blue', list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tag: 'indigo', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
@@ -2894,6 +2926,11 @@ async function viewSettings() {
     b.disabled = false;
   };
   on(root, 'backup', (b) => runBackup(b, false));
+  // Von der Backup-Erinnerung gekommen: Zeile nach der Einflug-Animation in Sicht holen und kurz aufleuchten lassen
+  if (flash === 'backup') {
+    const row = root.querySelector('[data-act=backup]');
+    setTimeout(() => { row?.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' }); row?.classList.add('flash-row'); }, 420);
+  }
   on(root, 'thumbs', async () => {
     if (!navigator.onLine) return toast('Dafür wird Internet gebraucht', 'err');
     const pp = progressPanel({ title: 'Vorschaubilder erzeugen', icon: 'camera' });
