@@ -129,21 +129,33 @@ let toastTimer; let toastHide;
  */
 export function toast(msg, type = 'ok', opt = {}) {
   const prev = document.querySelector('.toast');
-  if (prev) { prev.remove(); clearTimeout(toastTimer); clearTimeout(toastHide); }
+  if (prev) { prev._finish?.(); prev.remove(); clearTimeout(toastTimer); clearTimeout(toastHide); }
   const t = document.createElement('div');
-  t.className = `toast ${type}`;
+  t.className = `toast ${type}${opt.action ? ' has-action' : ''}`;
   t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite');
   const ic = opt.icon || (type === 'err' ? 'alert' : type === 'info' ? 'info' : 'check');
-  t.innerHTML = `<span class="di-ic">${icon(ic, 17, 2.6)}</span><span class="di-text"><b>${esc(msg)}</b>${opt.sub ? `<small>${esc(opt.sub)}</small>` : ''}</span>`;
+  const dur = opt.duration ?? (opt.action ? 5000 : type === 'err' ? 3500 : 2400);
+  // Mit Aktion (z. B. „Rückgängig“): Knopf rechts mit einem Ring, der in `dur` Millisekunden abläuft
+  const act = opt.action ? `<button type="button" class="di-act" style="--dur:${dur}ms">
+      <svg class="di-ring" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+      <span>${esc(opt.action.label)}</span></button>` : '';
+  t.innerHTML = `<span class="di-ic">${icon(ic, 17, 2.6)}</span><span class="di-text"><b>${esc(msg)}</b>${opt.sub ? `<small>${esc(opt.sub)}</small>` : ''}</span>${act}`;
   document.body.appendChild(t);
   void t.offsetWidth;                                     // Startzustand (klein in der Notch) übernehmen
   t.classList.add('show');
-  const dur = opt.duration ?? (type === 'err' ? 3500 : 2400);
-  toastTimer = setTimeout(() => {
-    t.classList.remove('show'); t.classList.add('hide');  // erst Inhalt aus, dann Pille zurück in die Notch
-    toastHide = setTimeout(() => t.remove(), 600);
-  }, dur);
-  t.onclick = () => { clearTimeout(toastTimer); t.classList.remove('show'); t.classList.add('hide'); toastHide = setTimeout(() => t.remove(), 600); };
+  let done = false;
+  const hide = () => { clearTimeout(toastTimer); t.classList.remove('show'); t.classList.add('hide'); toastHide = setTimeout(() => t.remove(), 600); };
+  // Läuft die Zeit ab (oder kommt eine neue Pille), gilt die Aktion als NICHT gewählt
+  t._finish = () => { if (done) return; done = true; opt.onTimeout?.(); };
+  toastTimer = setTimeout(() => { t._finish(); hide(); }, dur);
+  t.onclick = (e) => {
+    if (opt.action && e.target.closest('.di-act')) {
+      if (done) return; done = true;
+      haptic('medium'); hide(); opt.action.onClick();
+      return;
+    }
+    t._finish(); hide();
+  };
 }
 export const errToast = (e) => {
   console.error(e);

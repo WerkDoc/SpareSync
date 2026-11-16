@@ -1285,8 +1285,15 @@ async function openBooking(m, type, onDone, preset = {}) {
           rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
           haptic('success');
-          toast('Erfolgreich gebucht', 'ok', { sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}` });
-          if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') setTimeout(() => toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }), 3050);
+          const booked = { material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null };
+          const hashAtBooking = location.hash;
+          const lowWarn = () => { if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); };
+          toast('Erfolgreich gebucht', 'ok', {
+            sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}`,
+            // 5 Sekunden „Rückgängig“: bucht genau die Gegenbewegung (steht dann auch so in der Historie)
+            action: { label: 'Rückgängig', onClick: () => undoBooking(booked, conf.title, hashAtBooking === location.hash ? onDone : null) },
+            onTimeout: lowWarn,                      // Meldebestand-Hinweis erst, wenn nicht rückgängig gemacht
+          });
           await onDone?.(total);
         } catch (err) { errToast(err); b.disabled = false; }
       };
@@ -1567,7 +1574,33 @@ async function toggleFavorite(m, refresh) {
 /** Löschen mit Sicherheitsabfrage (Kontextmenü + Wisch-Aktion) */
 async function deleteMaterialFlow(m, refresh) {
   if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
-  try { await db.deleteMaterial(m.id); invalidate(); successHUD('Gelöscht'); refresh(); } catch (e) { errToast(e); }
+  // Erst nur ausblenden – endgültig gelöscht wird nach 5 Sekunden, solange niemand „Rückgängig“ tippt
+  const hash = location.hash;
+  if (cache.materials) cache.materials = cache.materials.filter((x) => x.id !== m.id);
+  refresh();
+  haptic('medium');
+  toast(`${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} gelöscht`, 'ok', {
+    sub: `${m.number}: ${m.name}`, icon: 'trash',
+    action: {
+      label: 'Rückgängig',
+      onClick: () => { invalidate('materials'); if (location.hash === hash) refresh(); toast('Wiederhergestellt', 'ok', { sub: m.name }); },
+    },
+    onTimeout: async () => {
+      try { await db.deleteMaterial(m.id); invalidate(); updateBadge(); } catch (e) { invalidate('materials'); errToast(e); if (location.hash === hash) refresh(); }
+    },
+  });
+}
+/** Gegenbuchung zu einer gerade gemachten Buchung */
+async function undoBooking(b, title, onDone) {
+  const back = b.type === 'in' ? { type: 'out', location_id: b.location_id }
+    : b.type === 'out' ? { type: 'in', location_id: b.location_id }
+      : { type: 'transfer', location_id: b.to_location_id, to_location_id: b.location_id };
+  try {
+    const total = await db.book({ material_id: b.material_id, qty: b.qty, to_location_id: null, ...back, note: `Rückgängig (${title})` });
+    invalidate('materials', 'locations');
+    toast('Rückgängig gemacht', 'info', { icon: 'history', sub: `Gesamtbestand wieder ${fmtQty(total)}` });
+    await onDone?.(total);
+  } catch (e) { errToast(e); }
 }
 
 async function infosTab(m) {

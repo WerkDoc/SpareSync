@@ -1364,3 +1364,22 @@ html.fullbleed .toast.hide {
 .stats-bar i { display: block; height: 100%; border-radius: 3px; background: var(--primary); }
 .stats-row .chip { flex-shrink: 0; }
 .ios-row.stats-row + .ios-row.stats-row::before { left: 14px; }
+
+/* =====================================================================
+   „Rückgängig“ in der Island-Pille: Knopf mit ablaufendem Ring
+   ===================================================================== */
+.toast.has-action { padding-right: 8px; gap: 12px; }
+.di-act {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px 0 8px; border-radius: 999px;
+  background: rgba(255, 255, 255, .14); color: #fff; font-size: 14px; font-weight: 700;
+}
+.di-act:active { background: rgba(255, 255, 255, .26); }
+.di-ring { width: 20px; height: 20px; transform: rotate(-90deg); }
+.di-ring circle {
+  fill: none; stroke: #ffd60a; stroke-width: 2.6; stroke-linecap: round;
+  stroke-dasharray: 63; stroke-dashoffset: 0;
+  animation: di-countdown var(--dur, 5000ms) linear forwards;
+}
+@keyframes di-countdown { to { stroke-dashoffset: 63; } }
+@media (prefers-reduced-motion: reduce) { .di-ring circle { animation: none; } }
