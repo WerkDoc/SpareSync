@@ -1869,3 +1869,46 @@ span.pv-btn { background: none; }
   :root[data-style="neu"] .btn-action:active, :root[data-style="neu"] .book-card:active,
   :root[data-style="neu"] .outline-btn:active { transform: none; }
 }
+
+/* ---- 7. Plastisch: Kopfzeilen-Knöpfe, Widgets der Übersicht, Segment-Schalter ---- */
+:root[data-style="neu"] { --bar: color-mix(in srgb, var(--neu) 86%, transparent); }
+/* runde Knöpfe in der Kopfzeile (Übersicht + Teile) */
+:root[data-style="neu"] .glass-btn {
+  background: var(--neu); backdrop-filter: none; -webkit-backdrop-filter: none;
+  box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi);
+  transition: box-shadow .18s var(--neu-ease), transform .18s var(--neu-ease);
+}
+:root[data-style="neu"] .glass-btn:active { box-shadow: var(--press-s); transform: scale(.96); }
+:root[data-style="neu"] .glass-btn .dot { border-color: var(--neu); }
+:root[data-style="neu"] .list-nav .search-field { background: var(--neu); box-shadow: var(--press-s); }
+
+/* Widgets + Verbrauchs-Karte: erhaben, Symbol in einer kleinen erhabenen Taste */
+:root[data-style="neu"] .widget,
+:root[data-style="neu"] .dash-screen.gyro .widget,
+:root[data-style="neu"] .spark-card {
+  background: var(--neu); box-shadow: var(--raise); border-radius: 22px;
+  transition: box-shadow .22s var(--neu-ease), transform .22s var(--neu-ease);
+}
+:root[data-style="neu"] .widget.is-alert,
+:root[data-style="neu"] .dash-screen.gyro .widget.is-alert { box-shadow: var(--raise), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 40%, transparent); }
+:root[data-style="neu"] .widget:active, :root[data-style="neu"] .dash-screen.gyro .widget:active,
+:root[data-style="neu"] .spark-card:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .widget.is-alert:active { box-shadow: var(--press), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 40%, transparent); }
+:root[data-style="neu"] .widget .w-ic { background: var(--neu); border-radius: 50%; box-shadow: 3px 3px 6px var(--neu-sh), -3px -3px 6px var(--neu-hi); }
+:root[data-style="neu"] .widgets .widget::after { opacity: .5; }     /* Glanz dezenter, sonst wirkt die Fläche speckig */
+:root[data-style="neu"] .widgets { gap: 12px; }
+
+/* Segment-Schalter: eingedrückte Spur, aktiver Teil als erhabene Taste */
+:root[data-style="neu"] .segment { background: var(--neu); border-radius: 16px; padding: 4px; box-shadow: var(--press-s); }
+:root[data-style="neu"] .segment > button { color: var(--text-2); }
+:root[data-style="neu"] .segment > button.on,
+:root[data-style="neu"] .segment.seg-icons > button.on { color: var(--primary); font-weight: 600; }
+:root[data-style="neu"] .segment:not(.has-ind) > button.on { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); border-radius: 12px; }
+:root[data-style="neu"] .seg-ind {
+  top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--n, 3)); border-radius: 12px;
+  background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-style="neu"]:not([data-theme="light"]) .segment > button.on { color: #fff; }
+}
+:root[data-style="neu"][data-theme="dark"] .segment > button.on { color: #fff; }
