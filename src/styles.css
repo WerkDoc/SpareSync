@@ -1295,3 +1295,32 @@ html.fullbleed .toast.hide {
   :root:not([data-theme="light"]) .segment.seg-icons > button.on { color: #ffffff; font-weight: 600; }
   :root:not([data-theme="light"]) .seg-ind { box-shadow: 0 3px 8px rgba(0, 0, 0, .35), inset 0 .5px 0 rgba(255, 255, 255, .08); }
 }
+
+/* =====================================================================
+   Wisch-Aktionen in der Teile-Liste (links: Bearbeiten/Löschen, rechts: Dazu buchen)
+   ===================================================================== */
+.mlist { position: relative; }
+.mrow.swipe-open { position: relative; z-index: 1; background: var(--surface) !important; }
+.mrow.swiping { transition: none !important; }
+.swipe-under {
+  /* liegt hinter der Zeile und ist immer genau so breit, wie die Zeile verschoben ist (--w) */
+  position: absolute; z-index: 0; display: flex; overflow: hidden;
+  --w: 0px; width: var(--w); transition: width .35s var(--ease-out-soft);
+}
+.swipe-under.swipe-left { right: 0; }
+.swipe-under.swipe-right { left: 0; }
+.swipe-under.no-anim { transition: none; }
+.swipe-btn {
+  flex: 1 1 0; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  color: #fff; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden;
+  transition: flex-grow .22s var(--ease-out-soft), opacity .18s ease;
+}
+.swipe-btn.tone-gray { background: #8e8e93; }
+.swipe-btn.tone-red { background: var(--red); }
+.swipe-btn.tone-green { background: var(--green); }
+.swipe-btn.tone-blue { background: var(--primary); }
+/* weit gewischt: Hauptaktion füllt die ganze Fläche */
+.swipe-under.full > .swipe-btn:not(.main) { flex-grow: 0; opacity: 0; }
+.swipe-under.full > .swipe-btn.main { flex-grow: 1; }
+@media (prefers-reduced-motion: reduce) { .swipe-under, .swipe-btn { transition: none; } }

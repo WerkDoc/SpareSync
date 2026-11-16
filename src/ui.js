@@ -844,3 +844,140 @@ export function contextMenu(sourceEl, { title = '', sub = '', items = [] } = {})
     el.querySelectorAll('.ctx-item').forEach((b) => (b.onclick = () => { haptic('light'); finish(b.dataset.v); }));
   });
 }
+
+// =====================================================================
+//  Wisch-Aktionen für Listenzeilen (wie in Mail/Outlook)
+//  nach links  → Aktionen von rechts (z. B. Bearbeiten, Löschen)
+//  nach rechts → Aktion von links  (z. B. Dazu buchen)
+//  Kurz wischen = Knöpfe bleiben offen stehen, weit wischen = Hauptaktion sofort.
+// =====================================================================
+/**
+ * @param {HTMLElement} container  Element, in dem die Zeilen liegen (bleibt beim Neuaufbau der Liste bestehen)
+ * @param {string} selector        Zeilen-Selektor, z. B. '.mrow'
+ * @param {{ left?: Array, right?: Array, enabled?: () => boolean, onAction: (key: string, row: HTMLElement) => void }} opt
+ *        left/right: [{ key, label, icon, tone, width }] – die LETZTE Aktion von `left` bzw. die ERSTE von `right` ist die Hauptaktion (voller Wisch)
+ */
+export function enableSwipeActions(container, selector, { left = [], right = [], enabled = () => true, onAction }) {
+  const BTN = 78;                       // Standardbreite eines Knopfs (pro Aktion über `width` änderbar)
+  let row = null; let under = null; let side = null;      // side: 'left' (Zeile wandert nach links) | 'right'
+  let startX = 0; let startY = 0; let base = 0; let dx = 0;
+  let dragging = false; let decided = false; let full = false; let lastEnd = 0;
+  let open = null;                      // { row, under, side, x }
+
+  const widthOf = (s) => (s === 'left' ? left : right).reduce((sum, a) => sum + (a.width || BTN), 0);
+  const build = (r, s) => {
+    const acts = s === 'left' ? left : right;
+    const u = document.createElement('div');
+    u.className = `swipe-under swipe-${s}`;
+    u.style.top = `${r.offsetTop}px`; u.style.height = `${r.offsetHeight}px`;
+    u.innerHTML = acts.map((a, i) => {
+      const main = s === 'left' ? i === acts.length - 1 : i === 0;
+      return `<button type="button" class="swipe-btn tone-${a.tone || 'gray'} ${main ? 'main' : ''}" data-key="${a.key}">${a.icon ? icon(a.icon, 22) : ''}<span>${esc(a.label)}</span></button>`;
+    }).join('');
+    r.parentNode.insertBefore(u, r);
+    u.addEventListener('click', (e) => {
+      const b = e.target.closest('.swipe-btn'); if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      const target = r; close(); haptic('light'); onAction(b.dataset.key, target);
+    });
+    return u;
+  };
+  const setX = (x, animate) => {
+    if (!row) return;
+    row.classList.toggle('swiping', !animate);
+    row.style.transform = x ? `translate3d(${x}px, 0, 0)` : '';
+    if (under) {
+      under.classList.toggle('no-anim', !animate);
+      under.style.setProperty('--w', `${Math.abs(x)}px`);
+    }
+  };
+  function close(animate = true) {
+    const o = open || (row ? { row, under } : null);
+    if (!o) return;
+    open = null;
+    o.row.classList.remove('swiping');
+    if (!animate) o.row.style.transition = 'none';
+    o.row.style.transform = '';
+    o.under?.style.setProperty('--w', '0px');
+    o.under?.classList.remove('no-anim', 'full');
+    const u = o.under; const r = o.row;
+    setTimeout(() => { u?.remove(); r.classList.remove('swipe-open'); r.style.transition = ''; }, animate ? 320 : 0);
+    if (row === o.row) { row = null; under = null; side = null; }
+  }
+
+  container.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || !enabled()) return;
+    const r = e.target.closest(selector);
+    if (e.target.closest('.swipe-under')) return;           // Tipp auf einen Aktionsknopf
+    if (open && open.row !== r) { close(); }                // andere Zeile berührt → offene schließen
+    if (!r || !container.contains(r)) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    dragging = true; decided = false; full = false; dx = 0;
+    if (open && open.row === r) { row = r; under = open.under; side = open.side; base = open.x; }
+    else { row = r; under = null; side = null; base = 0; }
+  }, { passive: true });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!dragging || !row) return;
+    const mx = e.touches[0].clientX - startX; const my = e.touches[0].clientY - startY;
+    if (!decided) {
+      if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+      if (Math.abs(my) > Math.abs(mx)) { dragging = false; if (!open) { row = null; } return; }   // senkrecht = scrollen
+      decided = true;
+      row.classList.add('swipe-open');
+    }
+    e.preventDefault(); e.stopPropagation();                // nicht scrollen, kein Pull-to-Refresh
+    let x = base + mx;
+    const want = x < 0 ? 'left' : x > 0 ? 'right' : side;
+    if (want && !(want === 'left' ? left : right).length) x = 0;   // in diese Richtung gibt es keine Aktion
+    if (want && want !== side && x !== 0) { under?.remove(); side = want; under = build(row, side); }
+    const w = row.offsetWidth; const max = widthOf(side || 'left');
+    // über die Knopfbreite hinaus: leichter Widerstand
+    const over = Math.abs(x) - max;
+    if (over > 0) x = Math.sign(x) * (max + over * 0.75);
+    x = Math.max(-w, Math.min(w, x));
+    dx = x;
+    const nowFull = Math.abs(x) > Math.max(max + 50, w * 0.55);
+    if (nowFull !== full) { full = nowFull; under?.classList.toggle('full', full); haptic(full ? 'medium' : 'light'); }
+    setX(x, false);
+  }, { passive: false });
+
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    if (!decided || !row) return;
+    lastEnd = Date.now();
+    const max = widthOf(side || 'left');
+    if (full && under) {                                    // weit gewischt → Hauptaktion sofort
+      const key = under.querySelector('.swipe-btn.main')?.dataset.key;
+      const target = row;
+      open = { row, under, side, x: dx };
+      close();
+      if (key) onAction(key, target);
+      return;
+    }
+    if (Math.abs(dx) > max * 0.45 && under) {               // offen stehen lassen
+      const x = side === 'left' ? -max : max;
+      setX(x, true);
+      open = { row, under, side, x };
+    } else {
+      open = { row, under, side, x: 0 };
+      close();
+    }
+  };
+  container.addEventListener('touchend', end, { passive: true });
+  container.addEventListener('touchcancel', end, { passive: true });
+
+  // Tipp direkt nach dem Wischen bzw. auf eine offene Zeile: schließen statt öffnen
+  container.addEventListener('click', (e) => {
+    if (e.target.closest('.swipe-under')) return;
+    if (open || Date.now() - lastEnd < 350) {
+      e.preventDefault(); e.stopPropagation();
+      if (open) close();
+    }
+  }, true);
+  window.addEventListener('scroll', () => { if (open && !dragging) close(); }, { passive: true });
+  document.addEventListener('touchstart', (e) => { if (open && !container.contains(e.target)) close(); }, { passive: true });
+
+  return { close: () => close(false) };
+}
