@@ -1,22 +1,13 @@
 // ---------------------------------------------------------------------
 //  Pull-to-Refresh im iOS-Stil
 //  Am oberen Rand nach unten ziehen → Inhalt folgt mit Widerstand,
-//  iOS-Spinner erscheint. Ab 60 px loslassen = aktualisieren.
+//  das SpareSync-„S“ erscheint und dreht sich. Ab 60 px loslassen = aktualisieren.
 // ---------------------------------------------------------------------
 import { haptic } from './haptics.js';
 
 const THRESHOLD = 60;      // ab hier wird aktualisiert
 const HOLD = 56;           // Position des Inhalts während des Ladens
 const MAX = 120;           // weiter lässt sich nicht ziehen
-
-const spinnerSVG = () => {
-  // klassischer iOS-Aktivitätsindikator: 8 Speichen mit abnehmender Deckkraft
-  let s = '';
-  for (let i = 0; i < 8; i++) {
-    s += `<rect x="11" y="2" width="2.4" height="6.5" rx="1.2" fill="currentColor" opacity="${(1 - i * 0.11).toFixed(2)}" transform="rotate(${-i * 45} 12.2 12)"/>`;
-  }
-  return `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">${s}</svg>`;
-};
 
 /**
  * @param {HTMLElement} screenEl  die aktuelle Seite (.screen)
@@ -28,7 +19,8 @@ export function setupPullToRefresh(screenEl, onRefresh, onDone) {
   if (!content) return;
   const ptr = document.createElement('div');
   ptr.className = 'ptr';
-  ptr.innerHTML = `<div class="ptr-spin">${spinnerSVG()}</div>`;
+  // SpareSync-„S“ aus zwei Pfeilen als Lade-Symbol (dreht sich beim Ziehen mit, beim Laden durchgehend)
+  ptr.innerHTML = `<div class="ptr-spin ptr-brand"><img src="${import.meta.env.BASE_URL}brand-s.png" alt="" width="30" height="32" draggable="false"></div>`;
   content.before(ptr);
   const spin = ptr.firstElementChild;
 

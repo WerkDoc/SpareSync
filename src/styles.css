@@ -1511,3 +1511,14 @@ html.vt-theme::view-transition-new(root) {
    ===================================================================== */
 .hero-scroll { transform-origin: 50% 0; will-change: transform, opacity; }
 .hero-scroll.springback { transition: transform .45s cubic-bezier(.34, 1.4, .64, 1); }
+
+/* =====================================================================
+   Pull-to-Refresh mit dem SpareSync-„S“ statt Standard-Kreisel
+   ===================================================================== */
+.ptr-brand { top: 10px; }
+.ptr-brand img { display: block; width: 30px; height: 32px; filter: drop-shadow(0 2px 6px rgba(29, 78, 137, .25)); }
+.ptr-brand.armed img { animation: ptr-s-armed .35s cubic-bezier(.34, 1.56, .64, 1); }
+.ptr-brand.spinning img { animation: ptr-s-spin .9s cubic-bezier(.45, .05, .55, .95) infinite; }
+@keyframes ptr-s-armed { 50% { transform: scale(1.18); } }
+@keyframes ptr-s-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr-brand.spinning img { animation: ptr-s-pulse 1.2s ease-in-out infinite; } @keyframes ptr-s-pulse { 50% { opacity: .5; } } }
