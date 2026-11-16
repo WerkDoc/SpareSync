@@ -153,6 +153,12 @@ const go = (path, replace = false, transition) => {
 
 // ================= Hero-Animation (View Transitions API) =================
 // Liste → Detail: das Vorschaubild fliegt und morpht ins große Bild. Zurück: umgekehrt.
+let activeVT = null;
+/** Wartet, bis gerade keine Seiten-/Bild-Animation läuft (Neuzeichnen mitten in der Animation ruckelt) */
+async function whenIdle() {
+  try { await activeVT?.finished; } catch { /* abgebrochen */ }
+  for (let i = 0; i < 60 && finishRunning; i++) await new Promise((r) => requestAnimationFrame(r));
+}
 const canVT = () => typeof document.startViewTransition === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function settleImg(img) { if (img && !img.complete) await Promise.race([img.decode().catch(() => {}), sleep(450)]); }
@@ -161,6 +167,7 @@ function runHero(dir, update) {
   document.documentElement.classList.add('vt-hero', dir === 'back' ? 'vt-back' : 'vt-fwd');
   let vt;
   try { vt = document.startViewTransition(update); } catch { document.documentElement.classList.remove('vt-hero', 'vt-back', 'vt-fwd'); return false; }
+  activeVT = vt; vt.finished.finally(() => { if (activeVT === vt) activeVT = null; });
   const clean = () => {
     document.documentElement.classList.remove('vt-hero', 'vt-back', 'vt-fwd');
     document.querySelectorAll('[style*="view-transition-name"]').forEach((el) => (el.style.viewTransitionName = ''));
@@ -523,7 +530,7 @@ const on = (root, act, fn) => root.querySelectorAll(`[data-act="${act}"]`).forEa
 
 const thumb = (m, size = 'md') => {
   const img = m.images?.[0]?.url;
-  return `<div class="thumb ${size}">${img ? `<img src="${esc(img)}" loading="lazy" alt="">` : icon(m.kind === 'tool' ? 'wrench' : 'box', size === 'sm' ? 22 : 30, 1.6)}</div>`;
+  return `<div class="thumb ${size}">${img ? `<img src="${esc(img)}" loading="lazy" decoding="async" alt="">` : icon(m.kind === 'tool' ? 'wrench' : 'box', size === 'sm' ? 22 : 30, 1.6)}</div>`;
 };
 const locLabel = (m) => {
   const withStock = m.locations.filter((l) => l.qty > 0);
@@ -953,9 +960,57 @@ async function viewFav() {
 //  LISTEN (Material / Werkzeug / Warenkorb)
 // =====================================================================
 const listState = { charge: '', fav: false, ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
-const saveListState = () => sessionStorage.setItem('wl-list', JSON.stringify(listState));
+const saveListState = () => {
+  sessionStorage.setItem('wl-list', JSON.stringify(listState));
+  // Änderungen IN der sichtbaren Liste (Suche, Reiter …) gehören zu ihr; Änderungen von außen erzwingen Neuaufbau
+  if (listKeep?.el.isConnected) listKeep.state = JSON.stringify(listState);
+};
+
+// ---------- Teile-Liste beim Zurückkommen wiederverwenden ----------
+// Die Liste (285 Zeilen mit Bildern) neu aufzubauen kostet am Handy spürbar Zeit – genau während der
+// Zurück-Animation. Deshalb wird die fertige Liste aufgehoben und unverändert wieder eingesetzt,
+// solange sich Daten und Filter nicht geändert haben (Scroll-Position, Bilder, alles bleibt).
+let listKeep = null;      // { el, mats, cart, state }
+function presentKept(el) {
+  unfreeze(el); el.classList.remove('screen-edge', 'screen-edge-r');
+  const kind = pendingTransition; pendingTransition = null;
+  swapScreen(el, kind);
+  requestAnimationFrame(updateScrolled);
+  placeTabIndicator(el);
+}
+/** Aufgehobene Liste mit frischen Daten abgleichen: nur geänderte Zeilen tauschen, bei neuen/gelöschten Teilen neu aufbauen */
+async function refreshKeptList(k) {
+  const rid = renderId;
+  let mats; let cart;
+  try { [mats, cart] = await Promise.all([getMats(), getCart()]); } catch { return; }
+  await whenIdle();
+  if (rid !== renderId || listKeep !== k || !k.el.isConnected) return;
+  const old = new Map(k.mats.map((m) => [m.id, matSig(m)]));
+  const sameSet = mats.length === k.mats.length && mats.every((m) => old.has(m.id));
+  if (!sameSet || (cart?.length ?? 0) !== (k.cart?.length ?? 0)) { viewList({}); return; }   // Anzahlen ändern sich → komplett
+  const changed = mats.filter((m) => old.get(m.id) !== matSig(m));
+  // Filter/Sortierung, die vom Bestand abhängen, könnten die Reihenfolge ändern → dann lieber komplett
+  if (changed.length && (listState.low || listState.fav || ['stock', 'updated'].includes(listState.sort))) { viewList({}); return; }
+  changed.forEach(patchListRow);
+  popChanged(k.el);
+  k.mats = mats; k.cart = cart;
+}
+/** Eine einzelne Zeile der aufgehobenen Liste aktualisieren (z. B. nach frischem Stand auf der Detailseite) */
+function patchListRow(m) {
+  const row = listKeep?.el.querySelector(`.mrow[data-id="${m.id}"]`);
+  if (!row) return;
+  const t = document.createElement('div'); t.innerHTML = materialRow(m);
+  row.replaceWith(t.firstElementChild);
+}
 
 async function viewList(q) {
+  if (!Object.keys(q).length && listKeep && !listKeep.el.isConnected && listKeep.state === JSON.stringify(listState)) {
+    const k = listKeep;
+    presentKept(k.el);
+    // Daten inzwischen geändert (z. B. gebucht)? Liste steht schon da – frischen Stand im Hintergrund holen
+    if (k.mats !== cache.materials || k.cart !== cache.cart) refreshKeptList(k);
+    return;
+  }
   if (q.tab) listState.tab = q.tab;
   if ('low' in q) listState.low = q.low === '1';
   if ('fav' in q) listState.fav = q.fav === '1';
@@ -995,6 +1050,7 @@ async function viewList(q) {
     tab: 'list',
     cls: 'list-screen',
   });
+  listKeep = { el: root, mats, cart: cache.cart, state: JSON.stringify(listState) };
 
   const rows = root.querySelector('#rows');
   // Mehrfachauswahl (Auswählen → Häkchen → Löschen)
@@ -1462,11 +1518,13 @@ async function viewMaterial(id, q) {
         changed = true;
         const i = cache.materials?.findIndex((x) => x.id === id) ?? -1;
         if (i >= 0) cache.materials[i] = fresh;            // Liste bleibt im Gleichstand
+        patchListRow(fresh);                               // … auch die aufgehobene Liste
       }
       if (t && JSON.stringify(t) !== JSON.stringify(tasks)) { detailMemo.tasks.set(id, t); changed = true; }
       if (mv && JSON.stringify(mv) !== JSON.stringify(movs)) { detailMemo.movs.set(id, mv); changed = true; }
       if (!fresh && cached) { toast('Material nicht gefunden', 'err'); return; }
-      if (changed && rid === renderId && root.isConnected) viewMaterial(id, { tab, fresh: true });
+      // erst neu zeichnen, wenn der Bild-Flug bzw. Seitenwechsel fertig ist – sonst ruckelt es
+      if (changed) whenIdle().then(() => { if (rid === renderId && root.isConnected) viewMaterial(id, { tab, fresh: true }); });
     }).catch(() => { /* offline o. ä.: der Stand aus dem Speicher bleibt stehen */ });
   }
   on(root, 'fav', () => toggleFavorite(m, () => viewMaterial(id, { tab })));
@@ -1630,8 +1688,8 @@ function gallery(m) {
   const imgs = m.images;
   return `<div class="gallery">
       <div class="gal-imgs">
-        ${imgs.length ? `<button class="gal-main" data-img="0"><img src="${esc(imgs[0].url)}" alt=""></button>
-          ${imgs.length > 1 ? `<div class="gal-thumbs">${imgs.slice(1, 5).map((im, i) => `<button data-img="${i + 1}"><img src="${esc(im.url)}" alt=""></button>`).join('')}</div>` : ''}`
+        ${imgs.length ? `<button class="gal-main" data-img="0"><img src="${esc(imgs[0].url)}" decoding="async" alt=""></button>
+          ${imgs.length > 1 ? `<div class="gal-thumbs">${imgs.slice(1, 5).map((im, i) => `<button data-img="${i + 1}"><img src="${esc(im.url)}" loading="lazy" decoding="async" alt=""></button>`).join('')}</div>` : ''}`
         : `<button class="gal-empty" data-act="add-image">${icon(m.kind === 'tool' ? 'wrench' : 'box', 54, 1.2)}<span>Noch kein Bild</span></button>`}
       </div>
       <div class="gal-side">
