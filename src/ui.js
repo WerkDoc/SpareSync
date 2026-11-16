@@ -362,6 +362,7 @@ function scanBox(mode, vw, vh) {
   return { width: w, height: h };
 }
 
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 export function scan({ title = 'Scanner' } = {}) {
   return new Promise((resolve) => {
     let mode = 'auto';
@@ -385,7 +386,7 @@ export function scan({ title = 'Scanner' } = {}) {
       <div class="sc-view">
         <div class="sc-stage">
           <div id="sc-reader"></div>
-          <div class="sc-frame" hidden><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i><span class="sc-line"></span></div>
+          <div class="sc-frame" hidden><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i><span class="sc-line"></span><span class="sc-ok" aria-hidden="true">${icon('check', 34, 3)}</span></div>
         </div>
         <div class="sc-msg" hidden></div>
         <button type="button" class="sc-torch" data-a="torch" aria-label="Taschenlampe" hidden>${icon('flash', 28, 2)}</button>
@@ -441,8 +442,9 @@ export function scan({ title = 'Scanner' } = {}) {
         frame.classList.remove('hit'); void frame.offsetWidth; frame.classList.add('hit');
         return;
       }
-      haptic('success'); frame.classList.add('hit');
-      setTimeout(() => finish(text), 120);
+      // Treffer: Rahmen blitzt grün auf, zieht sich zusammen, Haken erscheint – dann erst schließen
+      haptic('success'); frame.classList.add('hit', 'got');
+      setTimeout(() => finish(text), reduced() ? 150 : 560);
     };
 
     const startCam = () => {

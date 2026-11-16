@@ -1408,3 +1408,27 @@ html.fullbleed .toast.hide {
 .sr-text b { font-size: 16px; color: var(--ring); }
 .sr-text small { font-size: 13px; color: var(--text-2); }
 @media (prefers-reduced-motion: reduce) { .sr-fill { animation: none; } }
+
+/* =====================================================================
+   Scanner-Treffer: grüner Blitz, Rahmen zieht sich zusammen, Haken
+   ===================================================================== */
+.sc-ok {
+  position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%;
+  display: grid; place-items: center; background: #34c759; color: #fff; box-shadow: 0 8px 24px rgba(52, 199, 89, .5);
+  opacity: 0; transform: scale(.3);
+}
+.sc-frame.got { animation: sc-hit .5s cubic-bezier(.34, 1.4, .64, 1) both; }
+.sc-frame.got::before {                       /* kurzer grüner Blitz in der Fläche */
+  content: ''; position: absolute; inset: 0; border-radius: inherit; background: rgba(52, 199, 89, .28);
+  animation: sc-flash .5s ease-out both;
+}
+.sc-frame.got .sc-line { opacity: 0; transition: opacity .15s; }
+.sc-frame.got .sc-ok { animation: sc-ok .42s cubic-bezier(.34, 1.56, .64, 1) .08s both; }
+@keyframes sc-hit {
+  0%   { transform: translate(-50%, -50%) scale(1); }
+  45%  { transform: translate(-50%, -50%) scale(.9); }
+  100% { transform: translate(-50%, -50%) scale(.94); }
+}
+@keyframes sc-flash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: .35; } }
+@keyframes sc-ok { from { opacity: 0; transform: scale(.3); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .sc-frame.got, .sc-frame.got::before, .sc-frame.got .sc-ok { animation: none; opacity: 1; transform: none; } .sc-frame.got { transform: translate(-50%, -50%); } }

@@ -848,7 +848,7 @@ async function viewFav() {
   on(root, 'scan', async () => {
     const code = await scan(); if (!code) return;
     const m = await db.findByCode(code);
-    if (m) go(`/m/${m.id}`);
+    if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   });
 }
@@ -1042,7 +1042,7 @@ async function viewList(q) {
   on(root, 'scan', async () => {
     const code = await scan(); if (!code) return;
     const m = await db.findByCode(code);
-    if (m) go(`/m/${m.id}`);
+    if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   });
   on(root, 'filter', () => openFilter());
@@ -1208,7 +1208,7 @@ async function viewPick(q) {
   const doScan = async () => {
     const code = await scan({ title: titles[mode] }); if (!code) return;
     const m = await db.findByCode(code);
-    if (m) picked(m);
+    if (m) { foundToast(m); picked(m); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   };
   render();
@@ -1589,6 +1589,10 @@ async function deleteMaterialFlow(m, refresh) {
       try { await db.deleteMaterial(m.id); invalidate(); updateBadge(); } catch (e) { invalidate('materials'); errToast(e); if (location.hash === hash) refresh(); }
     },
   });
+}
+/** Kurze Bestätigung nach einem erfolgreichen Scan */
+function foundToast(m) {
+  toast('Gefunden', 'ok', { icon: 'scan', sub: `${m.number}: ${m.name} · Bestand ${fmtQty(m.total)}`, duration: 1800 });
 }
 /** Gegenbuchung zu einer gerade gemachten Buchung */
 async function undoBooking(b, title, onDone) {
