@@ -742,6 +742,59 @@ function flashNew(el) {
   el.addEventListener('animationend', (e) => { if (e.animationName === 'fade-highlight') el.classList.remove('highlight-new'); }, { once: true });
 }
 
+// ---------- Mini-Verlaufskurve „Verbrauch der letzten 14 Tage“ ----------
+// Wird NACH dem Aufbau der Übersicht nachgeladen (blockiert die Seite nicht) und 60 s zwischengespeichert.
+const SPARK_DAYS = 14;
+let sparkCache = null;                 // { at, days: [Menge pro Tag] }
+async function sparkData() {
+  if (sparkCache && Date.now() - sparkCache.at < 60000 && cache.materials) return sparkCache.days;
+  const movs = await db.listMovementsSince(SPARK_DAYS);
+  const days = Array(SPARK_DAYS).fill(0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  movs.forEach((x) => {
+    if (x.type !== 'out') return;
+    const d = new Date(x.created_at); d.setHours(0, 0, 0, 0);
+    const i = SPARK_DAYS - 1 - Math.round((today - d) / 864e5);
+    if (i >= 0 && i < SPARK_DAYS) days[i] += Math.abs(+x.qty);
+  });
+  sparkCache = { at: Date.now(), days };
+  return days;
+}
+async function fillSparkline(el) {
+  if (!el) return;
+  let days;
+  try { days = await sparkData(); } catch { return; }
+  if (!el.isConnected || !days.some((v) => v > 0)) return;          // ohne Entnahmen: Karte bleibt weg
+  const W = 300; const H = 54; const P = 4;
+  const max = Math.max(...days, 1);
+  const pts = days.map((v, i) => [P + (i * (W - 2 * P)) / (days.length - 1), H - P - (v / max) * (H - 2 * P - 6)]);
+  // weiche Kurve (Catmull-Rom → Bézier)
+  const d = pts.map((p, i) => {
+    if (!i) return `M${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+    const p0 = pts[i - 2] || pts[i - 1]; const p1 = pts[i - 1]; const p3 = pts[i + 1] || p;
+    const c1 = [p1[0] + (p[0] - p0[0]) / 6, p1[1] + (p[1] - p0[1]) / 6];
+    const c2 = [p[0] - (p3[0] - p1[0]) / 6, p[1] - (p3[1] - p1[1]) / 6];
+    return `C${c1[0].toFixed(1)},${Math.min(H - P, c1[1]).toFixed(1)} ${c2[0].toFixed(1)},${Math.min(H - P, c2[1]).toFixed(1)} ${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+  }).join(' ');
+  const last = pts[pts.length - 1];
+  const sum = days.reduce((a, b) => a + b, 0);
+  const week = days.slice(-7).reduce((a, b) => a + b, 0); const prev = days.slice(0, 7).reduce((a, b) => a + b, 0);
+  const trend = prev ? Math.round(((week - prev) / prev) * 100) : null;
+  el.innerHTML = `
+    <div class="spark-head">
+      <span><b>${fmtQty(sum)}</b> Teile entnommen</span>
+      <small>letzte ${SPARK_DAYS} Tage${trend != null ? ` · <i class="${trend > 0 ? 'up' : trend < 0 ? 'down' : ''}">${trend > 0 ? '+' : ''}${trend} %</i> zur Vorwoche` : ''}</small>
+    </div>
+    <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="spark-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity=".22"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient></defs>
+      <path class="spark-area" d="${d} L${last[0].toFixed(1)},${H} L${P},${H} Z" fill="url(#spark-g)"/>
+      <path class="spark-line" d="${d}" pathLength="1"/>
+      <circle class="spark-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5"/>
+    </svg>
+    ${icon('chevR', 18)}`;
+  el.hidden = false;
+}
+
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
 
@@ -792,6 +845,7 @@ async function viewFav() {
         </a>
       </section>
 
+      <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
       <h2 class="dash-sec">Schnellaktionen</h2>
       <section class="quick-grid">
         ${QUICK.map((q) => `<a class="quick" href="#${q.href}">
@@ -838,6 +892,7 @@ async function viewFav() {
   updateScrolled();
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
+  fillSparkline(root.querySelector('[data-spark]'));
   const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
   if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('[data-sec=recent] .ios-row.recent'));
   lastRecentTop = top;
