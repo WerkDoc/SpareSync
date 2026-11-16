@@ -1492,3 +1492,86 @@ html.fullbleed .toast.hide {
 .inv-row.just .inv-ok { animation: inv-ok-pop .45s cubic-bezier(.34, 1.56, .64, 1) both; }
 @keyframes inv-ok-pop { from { opacity: 0; transform: scale(0); } }
 @media (prefers-reduced-motion: reduce) { .ip-bar i { transition: none; } .inv-row.just .inv-ok { animation: none; } }
+
+/* =====================================================================
+   Hell/Dunkel: Kreis-Übergang vom Knopf aus (View Transitions API)
+   ===================================================================== */
+html.vt-theme::view-transition-old(root),
+html.vt-theme::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.vt-theme::view-transition-new(root) {
+  animation: theme-reveal .6s cubic-bezier(.4, 0, .2, 1) both;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); }
+  to   { clip-path: circle(var(--vt-r, 150vmax) at var(--vt-x, 50%) var(--vt-y, 0)); }
+}
+
+/* =====================================================================
+   Detailseite: großes Bild schrumpft beim Scrollen / wächst beim Herunterziehen
+   ===================================================================== */
+.hero-scroll { transform-origin: 50% 0; will-change: transform, opacity; }
+.hero-scroll.springback { transition: transform .45s cubic-bezier(.34, 1.4, .64, 1); }
+
+/* =====================================================================
+   Pull-to-Refresh mit dem SpareSync-„S“ statt Standard-Kreisel
+   ===================================================================== */
+.ptr-brand { top: 10px; }
+.ptr-brand img { display: block; width: 30px; height: 32px; filter: drop-shadow(0 2px 6px rgba(29, 78, 137, .25)); }
+.ptr-brand.armed img { animation: ptr-s-armed .35s cubic-bezier(.34, 1.56, .64, 1); }
+.ptr-brand.spinning img { animation: ptr-s-spin .9s cubic-bezier(.45, .05, .55, .95) infinite; }
+@keyframes ptr-s-armed { 50% { transform: scale(1.18); } }
+@keyframes ptr-s-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr-brand.spinning img { animation: ptr-s-pulse 1.2s ease-in-out infinite; } @keyframes ptr-s-pulse { 50% { opacity: .5; } } }
+
+/* Konfetti-Ebene: liegt über allem, fängt keine Tipps ab */
+.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 9998; pointer-events: none; }
+
+/* =====================================================================
+   Etikett „druckt aus“: schiebt sich aus einem Druckerschlitz nach unten
+   ===================================================================== */
+.lbl-preview { position: relative; overflow: hidden; }
+.lbl-slot {
+  position: absolute; left: 50%; top: 12px; width: min(78%, 330px); height: 8px; transform: translateX(-50%);
+  border-radius: 6px; background: #2b2f36; box-shadow: inset 0 2px 3px rgba(0, 0, 0, .6), 0 1px 0 rgba(255, 255, 255, .15);
+  z-index: 2;
+  opacity: 0; transition: opacity .2s;
+}
+.lbl-preview.printing .lbl-slot { opacity: 1; }
+.lbl-preview.printing .lbl-scale { animation: lbl-out .85s cubic-bezier(.25, .8, .3, 1) both; }
+/* erst im Schlitz verschwinden, dann ruckelnd (wie ein Thermodrucker) wieder herauskommen */
+@keyframes lbl-out {
+  0%   { transform: translateY(0); clip-path: inset(0 0 0 0); }
+  18%  { transform: translateY(-115%); clip-path: inset(100% 0 0 0); }
+  30%  { transform: translateY(-115%); clip-path: inset(100% 0 0 0); }
+  48%  { transform: translateY(-70%); clip-path: inset(62% 0 0 0); }
+  56%  { transform: translateY(-62%); clip-path: inset(55% 0 0 0); }
+  72%  { transform: translateY(-25%); clip-path: inset(22% 0 0 0); }
+  80%  { transform: translateY(-18%); clip-path: inset(16% 0 0 0); }
+  100% { transform: translateY(0); clip-path: inset(0 0 0 0); }
+}
+
+/* =====================================================================
+   Begrüßung je nach Tageszeit
+   ===================================================================== */
+.dash-greet { display: flex; align-items: center; gap: 7px; margin: 0 0 3px; font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.dash-greet + .dash-date { font-size: 12px; }
+.gi { width: 26px; height: 26px; flex-shrink: 0; overflow: visible; }
+.gi-sun circle { fill: #ffb300; }
+.gi-rays line { stroke: #ffb300; stroke-width: 2; stroke-linecap: round; }
+.gi-horizon { stroke: var(--text-3); stroke-width: 1.6; stroke-linecap: round; }
+/* Morgens: Sonne steigt über den Horizont, Strahlen fahren aus */
+.gi-sunrise .gi-sun { animation: gi-rise 1.2s cubic-bezier(.22, 1, .36, 1) .2s backwards; }
+.gi-sunrise .gi-rays { transform-origin: 14px 14px; animation: gi-rays-in .6s cubic-bezier(.34, 1.56, .64, 1) 1s backwards; }
+/* Tagsüber: Strahlen drehen sich einmal gemächlich */
+.gi-rays { transform-origin: 14px 14px; }
+svg.gi-sun .gi-rays { animation: gi-spin 2.4s cubic-bezier(.4, 0, .2, 1) .2s backwards; }
+/* Abends/nachts: Mond schwingt ein, Sterne funkeln */
+.gi-moon { fill: #8fa7ff; transform-origin: 14px 14px; animation: gi-swing .9s cubic-bezier(.34, 1.56, .64, 1) .15s backwards; }
+.gi-star { fill: #ffd60a; transform-box: fill-box; transform-origin: center; animation: gi-twinkle 2.6s ease-in-out infinite; }
+.gi-star.s2 { animation-delay: 1.1s; }
+@keyframes gi-rise { from { transform: translateY(12px); } }
+@keyframes gi-rays-in { from { transform: scale(.4); opacity: 0; } }
+@keyframes gi-spin { from { transform: rotate(-90deg); opacity: .2; } }
+@keyframes gi-swing { from { transform: rotate(-40deg) scale(.6); opacity: 0; } }
+@keyframes gi-twinkle { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.55); opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .gi * { animation: none !important; } }

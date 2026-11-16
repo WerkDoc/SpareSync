@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
@@ -106,10 +106,21 @@ function syncThemeColor() {
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
 // Overlays (Sheets, Dialoge, Kontextmenü) kommen und gehen → Farbe nachziehen
 new MutationObserver(() => requestAnimationFrame(syncThemeColor)).observe(document.body, { childList: true });
-function toggleTheme() {
+function toggleTheme(btn) {
   const dark = document.documentElement.dataset.theme === 'dark'
     || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
-  localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); route();
+  const apply = () => { localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); return route(); };
+  // Kreis-Übergang: das neue Design breitet sich als Kreis vom Mond-/Sonnen-Knopf über den Bildschirm aus
+  if (typeof document.startViewTransition !== 'function' || reduceMotion.matches || !btn?.getBoundingClientRect) { apply(); return; }
+  const r = btn.getBoundingClientRect();
+  const x = r.left + r.width / 2; const y = r.top + r.height / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const html = document.documentElement;
+  html.style.setProperty('--vt-x', `${x}px`); html.style.setProperty('--vt-y', `${y}px`); html.style.setProperty('--vt-r', `${radius}px`);
+  html.classList.add('vt-theme');
+  haptic('light');
+  const vt = document.startViewTransition(apply);
+  vt.finished.finally(() => html.classList.remove('vt-theme'));
 }
 applyTheme();
 
@@ -229,6 +240,7 @@ async function route() {
   const { path, q } = parseHash();
   if (!db.isDemo && path !== '/login' && path !== '/register') {
     const user = await db.getUser();
+    currentUser = user;
     if (!user) return go('/login', true);
     // nach Klick auf den Bestätigungslink: ersten Lagerort aus der Registrierung anlegen
     if (await db.ensureStarterLocation()) invalidate('locations');
@@ -584,10 +596,39 @@ const dashHeader = () => `<header class="dash-nav">
           <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
         </span>
       </header>`;
-const dashHead = () => `<div class="dash-head">
-        <p class="dash-date">${esc(new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
+// ---------- Begrüßung je nach Tageszeit (Sonne geht auf, abends Mond mit Sternen) ----------
+let currentUser = null;
+function greeting(now = new Date()) {
+  const h = now.getHours();
+  const first = String(currentUser?.user_metadata?.full_name || '').trim().split(/\s+/)[0];
+  const name = first ? `, ${first}` : '';
+  if (h >= 5 && h < 11) return { text: `Guten Morgen${name}`, kind: 'sunrise' };
+  if (h >= 11 && h < 17) return { text: `Guten Tag${name}`, kind: 'sun' };
+  if (h >= 17 && h < 22) return { text: `Guten Abend${name}`, kind: 'moon' };
+  return { text: `Noch fleißig${name}?`, kind: 'night' };
+}
+const greetIcon = (kind) => (kind === 'sunrise' || kind === 'sun')
+  ? `<svg class="gi gi-${kind}" viewBox="0 0 28 28" aria-hidden="true">
+       ${kind === 'sunrise' ? '<defs><clipPath id="gi-hz"><rect x="0" y="0" width="28" height="21"/></clipPath></defs>' : ''}
+       <g ${kind === 'sunrise' ? 'clip-path="url(#gi-hz)"' : ''}><g class="gi-sun">
+         <g class="gi-rays">${Array.from({ length: 8 }, (_, i) => `<line x1="14" y1="3" x2="14" y2="5.6" transform="rotate(${i * 45} 14 14)"/>`).join('')}</g>
+         <circle cx="14" cy="14" r="5.2"/></g></g>
+       ${kind === 'sunrise' ? '<line class="gi-horizon" x1="3" y1="21" x2="25" y2="21"/>' : ''}
+     </svg>`
+  : `<svg class="gi gi-${kind}" viewBox="0 0 28 28" aria-hidden="true">
+       <path class="gi-moon" d="M19.5 17.5A8 8 0 0 1 10.5 6.6a8 8 0 1 0 9 10.9z"/>
+       <path class="gi-star s1" d="M21 4l.7 1.6 1.6.7-1.6.7L21 8.6l-.7-1.6-1.6-.7 1.6-.7z"/>
+       <path class="gi-star s2" d="M24.5 11l.45 1 1 .45-1 .45-.45 1-.45-1-1-.45 1-.45z"/>
+     </svg>`;
+const dashHead = () => {
+  const g = greeting();
+  const date = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  return `<div class="dash-head">
+        <p class="dash-greet">${greetIcon(g.kind)}<span>${esc(g.text)}</span></p>
+        <p class="dash-date">${esc(date)}</p>
         <h1 class="dash-title lt-collapse">Übersicht</h1>
       </div>`;
+};
 const skelRows = (n) => Array.from({ length: n }, (_, i) => `<div class="mrow skel-row">
       ${skel('skel-thumb')}
       <div class="mrow-main">${skel('skel-line', `width:${[78, 64, 86, 58, 72][i % 5]}%`)}${skel('skel-line sm', `width:${[46, 38, 52, 30, 42][i % 5]}%`)}</div>
@@ -1192,7 +1233,13 @@ function renderCart(rows, mats, cart) {
       try {
         if (v === 'del') { await db.deleteCart(c.id); await reload(); }
         if (v === 'qty') { const n = await prompt({ title: 'Menge', value: c.qty, type: 'number' }); if (n && +n > 0) { await db.updateCart(c.id, +n); await reload(); } }
-        if (v === 'in' || v === 'out') openBooking(m, v, async () => { await db.deleteCart(c.id); await reload(); }, { qty: c.qty });
+        if (v === 'in' || v === 'out') {
+          const lastInCart = c.list === 'cart' && order.length === 1;      // letzter offener Posten der Bestellliste
+          openBooking(m, v, async () => {
+            await db.deleteCart(c.id); await reload();
+            if (lastInCart && v === 'in') { confetti(); toast('Bestellung komplett eingebucht', 'ok', { sub: 'Der Warenkorb ist leer' }); }
+          }, { qty: c.qty });
+        }
       } catch (e) { errToast(e); }
     };
   });
@@ -1231,6 +1278,7 @@ function renderCart(rows, mats, cart) {
         }
         if (errors.length) toast(`Nicht alles gebucht – ${errors[0]}`, 'err'); else toast('Kommission entnommen');
         await reload();
+        if (!errors.length) confetti();
       }
     };
   });
@@ -1388,6 +1436,7 @@ async function viewMaterial(id, q) {
   });
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
+  setupHeroScroll(root);
   on(root, 'fav', () => toggleFavorite(m, () => viewMaterial(id, { tab })));
 
   // ----- gemeinsame Aktionen -----
@@ -1553,6 +1602,42 @@ function gallery(m) {
         <button class="outline-btn" data-act="label" aria-label="Etikett">${icon('tag', 22)}</button>
       </div>
     </div>`;
+}
+/**
+ * Großes Teilebild auf der Detailseite:
+ * beim Hochscrollen schrumpft es weich und blendet aus (bewegt sich langsamer als der Inhalt = Tiefe),
+ * zieht man ganz oben nach unten, wird es leicht größer und federt beim Loslassen zurück.
+ */
+function setupHeroScroll(root) {
+  const g = root.querySelector('.gal-main, .gal-empty');
+  if (!g || reduceMotion.matches) return;
+  g.classList.add('hero-scroll');
+  let raf = 0; let pull = 0;
+  const apply = () => {
+    raf = 0;
+    if (!g.isConnected) { window.removeEventListener('scroll', onScroll); return; }
+    if (root.classList.contains('screen-anim')) return;
+    const h = g.offsetHeight || 1;
+    const y = Math.max(0, window.scrollY);
+    const p = Math.min(1, y / (h * 1.1));
+    const scale = pull ? 1 + Math.min(0.14, pull / 900) : 1 - 0.28 * p;
+    g.style.transform = `translate3d(0, ${(y * 0.35).toFixed(1)}px, 0) scale(${scale.toFixed(3)})`;
+    g.style.opacity = (1 - 0.85 * p).toFixed(3);
+  };
+  const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply); };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  // Ganz oben nach unten ziehen → Bild wird größer (iOS „Stretchy Header“)
+  let startY = null;
+  root.addEventListener('touchstart', (e) => { startY = window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; g.classList.remove('springback'); }, { passive: true });
+  root.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    const dy = e.touches[0].clientY - startY;
+    pull = dy > 0 && window.scrollY <= 0 ? dy : 0;
+    onScroll();
+  }, { passive: true });
+  const release = () => { if (!pull) return; pull = 0; startY = null; g.classList.add('springback'); onScroll(); };
+  root.addEventListener('touchend', release, { passive: true });
+  root.addEventListener('touchcancel', release, { passive: true });
 }
 function openImage(m, img, reload) {
   sheet(`<img class="viewer-img" src="${esc(img.url)}" alt="">
@@ -2380,7 +2465,9 @@ async function viewInventory(q) {
     b.disabled = true;
     try {
       for (const [mid, v] of changes) await db.book({ material_id: mid, type: 'inventory', qty: +v, location_id: loc.id, note: 'Inventur' });
-      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); successHUD('Inventur gebucht'); go('/inventory', true);
+      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); successHUD('Inventur gebucht');
+      if (rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '')) confetti();   // ganzer Lagerort gezählt
+      go('/inventory', true);
     } catch (e) { errToast(e); b.disabled = false; }
   });
 }

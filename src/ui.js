@@ -617,7 +617,7 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
   const size = () => LABEL_SIZES.find((x) => x.id === sizeId) || LABEL_SIZES[0];
   const data = { name: title, line2: sub, line3: extra, svg };
   sheet(`
-    <div class="lbl-preview"><div class="lbl-scale"></div></div>
+    <div class="lbl-preview"><span class="lbl-slot" aria-hidden="true"></span><div class="lbl-scale"></div></div>
     <p class="muted small center"><span data-f="hint"></span> · QR-Inhalt: <b class="selectable">${esc(code)}</b></p>
     <div class="form-group">
       <label class="frow"><span>Etikettengröße</span>
@@ -648,7 +648,15 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
           });
           return;
         }
-        printLabel(labelHTML(data, size()), size(), copies);
+        // Etikett „kommt aus dem Drucker“: schiebt sich aus dem Schlitz heraus, dann erst der Druckdialog.
+        // Safari blockiert print() nach einer Verzögerung → dort sofort drucken (ohne Vorab-Animation).
+        const safari = /^((?!chrome|android|crios|edg).)*safari/i.test(navigator.userAgent);
+        const prev = root.querySelector('.lbl-preview');
+        const go = () => printLabel(labelHTML(data, size()), size(), copies);
+        if (safari || matchMedia('(prefers-reduced-motion: reduce)').matches) { go(); return; }
+        prev.classList.remove('printing'); void prev.offsetWidth; prev.classList.add('printing');
+        haptic('light');
+        setTimeout(() => { go(); prev.classList.remove('printing'); }, 900);
       };
     },
   });
@@ -994,4 +1002,48 @@ export function enableSwipeActions(container, selector, { left = [], right = [],
   document.addEventListener('touchstart', (e) => { if (open && !container.contains(e.target)) close(); }, { passive: true });
 
   return { close: () => close(false) };
+}
+
+// =====================================================================
+//  Konfetti für Meilensteine (Inventur fertig, Warenkorb komplett eingebucht …)
+//  Kurz, dezent, in den Markenfarben – blockiert keine Eingaben.
+// =====================================================================
+export function confetti({ count = 90, duration = 1700 } = {}) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas');
+  cv.className = 'confetti';
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = innerWidth; const H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  document.body.appendChild(cv);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const colors = ['#1d4e89', '#2f80ed', '#4ab3f4', '#f7931e', '#ff5e3a', '#34c759', '#ffd60a'];
+  // zwei „Kanonen“ unten links und rechts, schießen schräg nach oben zur Mitte
+  const parts = Array.from({ length: count }, (_, i) => {
+    const left = i % 2 === 0;
+    const a = (left ? -60 : -120) + (Math.random() * 36 - 18);
+    const v = 11 + Math.random() * 7;
+    return {
+      x: left ? -10 : W + 10, y: H * 0.78,
+      vx: Math.cos((a * Math.PI) / 180) * v, vy: Math.sin((a * Math.PI) / 180) * v,
+      w: 6 + Math.random() * 5, h: 9 + Math.random() * 7, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.35,
+      c: colors[i % colors.length], tilt: Math.random() * 10,
+    };
+  });
+  haptic('success');
+  const t0 = performance.now();
+  const frame = (now) => {
+    const t = now - t0;
+    g.clearRect(0, 0, W, H);
+    const fade = Math.max(0, 1 - Math.max(0, t - duration * 0.6) / (duration * 0.4));
+    parts.forEach((p) => {
+      p.vy += 0.32; p.vx *= 0.985; p.vy *= 0.985;           // Schwerkraft + Luftwiderstand
+      p.x += p.vx; p.y += p.vy; p.r += p.vr; p.tilt += 0.12;
+      g.save(); g.globalAlpha = fade; g.translate(p.x, p.y); g.rotate(p.r);
+      g.fillStyle = p.c; g.fillRect(-p.w / 2, -p.h / 2 * Math.abs(Math.cos(p.tilt)), p.w, p.h * Math.abs(Math.cos(p.tilt)));
+      g.restore();
+    });
+    if (t < duration) requestAnimationFrame(frame); else cv.remove();
+  };
+  requestAnimationFrame(frame);
 }
