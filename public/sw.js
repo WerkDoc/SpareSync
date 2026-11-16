@@ -41,12 +41,17 @@ self.addEventListener('fetch', (e) => {
     e.respondWith((async () => {
       const cache = await caches.open(IMAGES);
       const hit = await cache.match(req);
-      if (hit) return hit;
+      // Ein „undurchsichtiger“ Eintrag (früher ohne CORS geladen) passt nicht zu einer CORS-Anfrage (Vorschaubild erzeugen)
+      if (hit && !(req.mode === 'cors' && hit.type === 'opaque')) return hit;
       try {
-        const res = await fetch(req);
-        if (res.ok || res.type === 'opaque') cache.put(req, res.clone());
+        // Mit CORS laden: dann ist der Status lesbar und nur ECHTE Bilder landen im Cache
+        // (sonst würde ein noch fehlendes Vorschaubild als Fehler dauerhaft gespeichert)
+        const res = await fetch(new Request(req.url, { mode: 'cors', credentials: 'omit' }));
+        if (res.ok) cache.put(req.url, res.clone());
         return res;
-      } catch { return hit || Response.error(); }
+      } catch {
+        try { return await fetch(req); } catch { return hit || Response.error(); }
+      }
     })());
     return;
   }
