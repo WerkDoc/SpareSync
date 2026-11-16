@@ -1399,6 +1399,7 @@ async function viewMaterial(id, q) {
   });
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
+  setupHeroScroll(root);
   on(root, 'fav', () => toggleFavorite(m, () => viewMaterial(id, { tab })));
 
   // ----- gemeinsame Aktionen -----
@@ -1564,6 +1565,42 @@ function gallery(m) {
         <button class="outline-btn" data-act="label" aria-label="Etikett">${icon('tag', 22)}</button>
       </div>
     </div>`;
+}
+/**
+ * Großes Teilebild auf der Detailseite:
+ * beim Hochscrollen schrumpft es weich und blendet aus (bewegt sich langsamer als der Inhalt = Tiefe),
+ * zieht man ganz oben nach unten, wird es leicht größer und federt beim Loslassen zurück.
+ */
+function setupHeroScroll(root) {
+  const g = root.querySelector('.gal-main, .gal-empty');
+  if (!g || reduceMotion.matches) return;
+  g.classList.add('hero-scroll');
+  let raf = 0; let pull = 0;
+  const apply = () => {
+    raf = 0;
+    if (!g.isConnected) { window.removeEventListener('scroll', onScroll); return; }
+    if (root.classList.contains('screen-anim')) return;
+    const h = g.offsetHeight || 1;
+    const y = Math.max(0, window.scrollY);
+    const p = Math.min(1, y / (h * 1.1));
+    const scale = pull ? 1 + Math.min(0.14, pull / 900) : 1 - 0.28 * p;
+    g.style.transform = `translate3d(0, ${(y * 0.35).toFixed(1)}px, 0) scale(${scale.toFixed(3)})`;
+    g.style.opacity = (1 - 0.85 * p).toFixed(3);
+  };
+  const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply); };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  // Ganz oben nach unten ziehen → Bild wird größer (iOS „Stretchy Header“)
+  let startY = null;
+  root.addEventListener('touchstart', (e) => { startY = window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; g.classList.remove('springback'); }, { passive: true });
+  root.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    const dy = e.touches[0].clientY - startY;
+    pull = dy > 0 && window.scrollY <= 0 ? dy : 0;
+    onScroll();
+  }, { passive: true });
+  const release = () => { if (!pull) return; pull = 0; startY = null; g.classList.add('springback'); onScroll(); };
+  root.addEventListener('touchend', release, { passive: true });
+  root.addEventListener('touchcancel', release, { passive: true });
 }
 function openImage(m, img, reload) {
   sheet(`<img class="viewer-img" src="${esc(img.url)}" alt="">

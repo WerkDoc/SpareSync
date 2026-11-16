@@ -1505,3 +1505,9 @@ html.vt-theme::view-transition-new(root) {
   from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); }
   to   { clip-path: circle(var(--vt-r, 150vmax) at var(--vt-x, 50%) var(--vt-y, 0)); }
 }
+
+/* =====================================================================
+   Detailseite: großes Bild schrumpft beim Scrollen / wächst beim Herunterziehen
+   ===================================================================== */
+.hero-scroll { transform-origin: 50% 0; will-change: transform, opacity; }
+.hero-scroll.springback { transition: transform .45s cubic-bezier(.34, 1.4, .64, 1); }
