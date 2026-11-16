@@ -1764,3 +1764,108 @@ span.pv-btn { background: none; }
 @media (prefers-reduced-motion: reduce) {
   .quick-grid.jiggle .quick { animation: none; outline: 2px dashed color-mix(in srgb, var(--primary) 45%, transparent); outline-offset: -2px; }
 }
+
+/* =====================================================================
+   Design „Plastisch“ (Neumorph) – html[data-style="neu"]
+   Nur dort, wo man drückt, schaltet oder zählt: Schnellaktionen, Buchen,
+   Schalter, Suchfelder, runde Knöpfe, Bestandsring, Regal-Füllstand.
+   Licht kommt von oben links: heller Schatten oben links, dunkler unten rechts.
+   Eingedrückt = dieselben Schatten nach innen.
+   ===================================================================== */
+:root[data-style="neu"] {
+  --neu: #e6eaf0; --neu-hi: #ffffff; --neu-sh: #c2cad6;
+  --bg-grouped: var(--neu);
+  --neu-grad: linear-gradient(135deg, var(--brand-blue), var(--primary));
+  --neu-grad-red: linear-gradient(135deg, #ff7a6b, var(--red));
+  --neu-glow: color-mix(in srgb, var(--primary) 35%, var(--neu-sh));
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-style="neu"]:not([data-theme="light"]) { --neu: #17191e; --neu-hi: #22252c; --neu-sh: #0a0b0d; --bg-grouped: var(--neu); --neu-glow: rgba(0, 0, 0, .6); }
+}
+:root[data-style="neu"][data-theme="dark"] { --neu: #17191e; --neu-hi: #22252c; --neu-sh: #0a0b0d; --bg-grouped: var(--neu); --neu-glow: rgba(0, 0, 0, .6); }
+:root[data-style="neu"] {
+  --raise: 7px 7px 16px var(--neu-sh), -7px -7px 16px var(--neu-hi);
+  --raise-s: 4px 4px 10px var(--neu-sh), -4px -4px 10px var(--neu-hi);
+  --press: inset 5px 5px 11px var(--neu-sh), inset -5px -5px 11px var(--neu-hi);
+  --press-s: inset 3px 3px 7px var(--neu-sh), inset -3px -3px 7px var(--neu-hi);
+  --neu-ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* ---- 1. Schnellaktionen: erhabene Kacheln, Symbol in einer runden Taste ---- */
+:root[data-style="neu"] .quick,
+:root[data-style="neu"] .dash-screen.gyro .quick {
+  background: var(--neu); box-shadow: var(--raise); border-radius: 22px;
+  transition: box-shadow .22s var(--neu-ease), transform .22s var(--neu-ease);
+}
+:root[data-style="neu"] .quick:active,
+:root[data-style="neu"] .dash-screen.gyro .quick:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .quick .q-ic {
+  background: var(--neu); box-shadow: var(--raise-s);
+  transition: box-shadow .22s var(--neu-ease);
+}
+:root[data-style="neu"] .quick:active .q-ic { box-shadow: var(--press-s); }
+:root[data-style="neu"] .quick-grid { gap: 12px; }
+:root[data-style="neu"] .quick-grid .quick.dragging { box-shadow: 14px 16px 30px var(--neu-sh), -6px -6px 14px var(--neu-hi); }
+
+/* ---- 2. Buchen: Plus/Minus-Tasten, Menge im eingedrückten Feld, Pillen-Knopf mit Verlauf ---- */
+:root[data-style="neu"] .bsheet { background: var(--neu); }
+:root[data-style="neu"] .stepper.big { gap: 18px; margin: 26px 0 12px; }
+:root[data-style="neu"] .stepper.big button {
+  width: 68px; height: 68px; border-radius: 20px; background: var(--neu); color: var(--primary);
+  box-shadow: var(--raise-s); transition: box-shadow .15s var(--neu-ease), transform .15s var(--neu-ease);
+}
+:root[data-style="neu"] .stepper.big button[data-s="1"] { background: var(--neu-grad); color: #fff; box-shadow: 5px 5px 12px var(--neu-glow), -4px -4px 10px var(--neu-hi); }
+:root[data-style="neu"] .stepper.big button:active { box-shadow: var(--press-s); transform: scale(.95); }
+:root[data-style="neu"] .stepper.big button[data-s="1"]:active { box-shadow: inset 4px 4px 9px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
+:root[data-style="neu"] .stepper.big input { height: 68px; border: 0; border-radius: 20px; background: var(--neu); box-shadow: var(--press); }
+:root[data-style="neu"] .btn-action {
+  border-radius: 30px; min-height: 60px; background: var(--neu-grad);
+  box-shadow: 6px 6px 14px var(--neu-glow), -5px -5px 12px var(--neu-hi);
+  transition: box-shadow .18s var(--neu-ease), transform .18s var(--neu-ease);
+}
+:root[data-style="neu"] .btn-action.red { background: var(--neu-grad-red); box-shadow: 6px 6px 14px color-mix(in srgb, var(--red) 35%, var(--neu-sh)), -5px -5px 12px var(--neu-hi); }
+:root[data-style="neu"] .btn-action:active { filter: none; transform: scale(.99); box-shadow: inset 4px 4px 10px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
+/* Buchungs-Karten auf der Detailseite (Dazu buchen / Entnehmen / Umbuchen) */
+:root[data-style="neu"] .book-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .book-card:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .book-card i { background: var(--neu) !important; box-shadow: var(--raise-s); transition: box-shadow .2s var(--neu-ease); }
+:root[data-style="neu"] .book-card:active i { box-shadow: var(--press-s); }
+
+/* ---- 3. Schalter: eingedrückte Rille, Knopf mit Verlauf (aus) bzw. Verlauf-Rille mit weißem Knopf (an) ---- */
+:root[data-style="neu"] .switch {
+  width: 72px !important; height: 40px; border: 0; background: var(--neu); box-shadow: var(--press-s);
+  transition: background .3s, box-shadow .3s;
+}
+:root[data-style="neu"] .switch::after {
+  top: 6px; left: 6px; width: 28px; height: 28px; border-radius: 14px;
+  background: var(--neu-grad); box-shadow: 2px 3px 6px rgba(0, 0, 0, .25);
+  transition: transform .45s cubic-bezier(.34, 1.5, .64, 1), width .2s, background .3s;
+}
+:root[data-style="neu"] .switch:checked { background: var(--neu-grad); box-shadow: inset 3px 3px 7px rgba(0, 0, 0, .25), inset -2px -2px 5px rgba(255, 255, 255, .12); }
+:root[data-style="neu"] .switch:checked::after { background: #fff; transform: translateX(32px); }
+:root[data-style="neu"] .switch:active::after { width: 34px; }
+:root[data-style="neu"] .switch:checked:active::after { transform: translateX(26px); }
+
+/* ---- 4. Suchfelder: eingedrückt ---- */
+:root[data-style="neu"] .search-field {
+  background: var(--neu); border-radius: 23px; padding: 0 16px;
+  box-shadow: var(--press-s);
+}
+
+/* ---- 5. Detailseite: runde Knöpfe erhaben, Bestandsring in einer Mulde ---- */
+:root[data-style="neu"] .outline-btn { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .outline-btn:active { background: var(--neu); box-shadow: var(--press-s); transform: scale(.97); }
+:root[data-style="neu"] .stock-ring-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .stock-ring { border-radius: 50%; /* SVG ist um -90° gedreht → Schatten-Richtung mitdrehen */ box-shadow: inset -3px 3px 7px var(--neu-sh), inset 3px -3px 7px var(--neu-hi); }
+:root[data-style="neu"] .sr-track { stroke: transparent; }
+
+/* ---- 6. Regal-Ansicht: Füllstand in einer eingedrückten Rille ---- */
+:root[data-style="neu"] .shelf-bar { height: 12px; padding: 2px; border-radius: 6px; background: var(--neu); box-shadow: inset 2px 2px 4px var(--neu-sh), inset -2px -2px 4px var(--neu-hi); }
+:root[data-style="neu"] .shelf-bar i:first-child { border-radius: 4px 0 0 4px; }
+:root[data-style="neu"] .shelf-bar i:last-child { border-radius: 0 4px 4px 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-style="neu"] .quick:active, :root[data-style="neu"] .stepper.big button:active,
+  :root[data-style="neu"] .btn-action:active, :root[data-style="neu"] .book-card:active,
+  :root[data-style="neu"] .outline-btn:active { transform: none; }
+}
