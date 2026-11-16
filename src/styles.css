@@ -1333,3 +1333,12 @@ html.fullbleed .toast.hide {
 .fav-btn.on { color: #f5a400; transform: scale(1.08); }
 .fav-mark { display: inline-flex; vertical-align: -1px; margin-left: 6px; color: #f5a400; }
 .dash-sec .sec-link { float: right; font-size: 15px; font-weight: 600; color: var(--blue); letter-spacing: 0; text-transform: none; }
+
+/* =====================================================================
+   Buchungs-Notizen: Vorschläge im Buchungsfenster, Notiz gut sichtbar in der Historie
+   ===================================================================== */
+.note-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin-top: -4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.note-chips::-webkit-scrollbar { display: none; }
+.note-chips .chip { flex-shrink: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mov-note { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin-top: 4px; padding: 2px 8px; border-radius: 8px; background: var(--fill); font-size: 13px; font-weight: 600; color: var(--text); }
+.mov-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

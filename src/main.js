@@ -1254,7 +1254,8 @@ async function openBooking(m, type, onDone, preset = {}) {
       <input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty">
       <button data-s="1" aria-label="Mehr">${icon('plus', 28, 2.6)}</button>
     </div>
-    <div class="form-group"><label class="frow col"><span>Notiz (optional)</span><input data-f="note" placeholder="z.B. Auftrag 2410-17, Kunde Müller" value="${esc(preset.note || '')}"></label></div>
+    <div class="form-group"><label class="frow col"><span>${type === 'out' ? 'Wofür? (Notiz, optional)' : 'Notiz (optional)'}</span><input data-f="note" placeholder="${type === 'out' ? 'z.B. Kunde Müller, Auftrag 2410-17' : 'z.B. Lieferung, Lieferant'}" value="${esc(preset.note || '')}" autocomplete="off" enterkeyhint="done"></label></div>
+    ${recentNotes(type).length ? `<div class="note-chips" aria-label="Zuletzt verwendete Notizen">${recentNotes(type).map((n) => `<button type="button" class="chip" data-note="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
     <button class="btn-action ${conf.cls} full" data-a="ok">${icon(conf.icon, 22, 2.6)} ${conf.title}</button>`,
   {
     title: conf.title,
@@ -1274,10 +1275,12 @@ async function openBooking(m, type, onDone, preset = {}) {
       f('from').onchange = async () => { await handleNew(f('from'), prevFrom); prevFrom = f('from').value; f('here').textContent = fmtQty(qtyAt(prevFrom)); };
       if (f('to')) f('to').onchange = async () => { await handleNew(f('to'), prevTo); prevTo = f('to').value; };
       root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { qty.value = Math.max(0, (+qty.value || 0) + +b.dataset.s); haptic(); }));
+      root.querySelectorAll('[data-note]').forEach((b) => (b.onclick = () => { f('note').value = b.dataset.note; haptic(); }));
       root.querySelector('[data-a=ok]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true;
         try {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
+          rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
           haptic('success');
           toast('Erfolgreich gebucht', 'ok', { sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}` });
@@ -1592,6 +1595,23 @@ async function infosTab(m) {
     <button class="link-row" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>`;
 }
 
+// Zuletzt verwendete Buchungs-Notizen (pro Gerät gemerkt) → als Vorschläge zum Antippen
+const NOTES_KEY = 'ss-notes';
+const NOTES_MAX = 6;
+function recentNotes(type) {
+  try { return (JSON.parse(localStorage.getItem(NOTES_KEY) || '{}')[type === 'out' ? 'out' : 'in'] || []).slice(0, NOTES_MAX); } catch { return []; }
+}
+function rememberNote(type, note) {
+  note = String(note || '').trim();
+  if (!note || type === 'transfer') return;
+  try {
+    const all = JSON.parse(localStorage.getItem(NOTES_KEY) || '{}');
+    const k = type === 'out' ? 'out' : 'in';
+    all[k] = [note, ...(all[k] || []).filter((n) => n.toLowerCase() !== note.toLowerCase())].slice(0, NOTES_MAX);
+    localStorage.setItem(NOTES_KEY, JSON.stringify(all));
+  } catch { /* Speicher nicht verfügbar */ }
+}
+
 const typeInfo = {
   in: { label: 'Dazu gebucht', cls: 'green', ic: 'plus' }, out: { label: 'Entnommen', cls: 'red', ic: 'minus' },
   transfer: { label: 'Umgebucht', cls: 'blue', ic: 'swap' }, inventory: { label: 'Inventur', cls: 'gray', ic: 'tally' },
@@ -1602,7 +1622,8 @@ const movementRow = (x, showAfter = false) => {
   const sign = x.type === 'transfer' ? '' : x.qty > 0 ? '+' : '';
   return `<div class="mov">
     <div class="mov-ic ${t.cls}">${icon(t.ic, 18, 2.6)}</div>
-    <div class="mov-main"><b>${t.label}</b><div class="small muted">${where}${x.note ? ` · ${esc(x.note)}` : ''}</div>
+    <div class="mov-main"><b>${t.label}</b><div class="small muted">${where}</div>
+      ${x.note ? `<div class="mov-note">${icon('tag', 13, 2.2)}<span>${esc(x.note)}</span></div>` : ''}
       ${showAfter && x.stock_after != null ? `<div class="small muted">Gesamtbestand danach: ${fmtQty(x.stock_after)}</div>` : ''}</div>
     <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div></div>
   </div>`;
