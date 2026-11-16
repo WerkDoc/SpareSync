@@ -1342,3 +1342,25 @@ html.fullbleed .toast.hide {
 .note-chips .chip { flex-shrink: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mov-note { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin-top: 4px; padding: 2px 8px; border-radius: 8px; background: var(--fill); font-size: 13px; font-weight: 600; color: var(--text); }
 .mov-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* =====================================================================
+   Auswertung
+   ===================================================================== */
+.stats-screen .segment { margin-bottom: 14px; }
+.stats-hint { display: flex; gap: 8px; align-items: flex-start; margin: 0 2px 14px; padding: 10px 12px; border-radius: 12px; background: var(--blue-soft); color: var(--text); font-size: 13.5px; line-height: 1.35; }
+.stats-hint .ic { flex-shrink: 0; color: var(--blue); margin-top: 1px; }
+.stats-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stats-kpi { display: flex; flex-direction: column; gap: 2px; padding: 13px 12px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); min-width: 0; }
+.stats-kpi .k-val { font-size: 24px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stats-kpi .k-label { font-size: 14px; font-weight: 600; }
+.stats-kpi .k-sub { font-size: 12px; color: var(--text-2); }
+.stats-note { margin: -4px 4px 10px; font-size: 13.5px; color: var(--text-2); line-height: 1.35; }
+.stats-empty { margin: 0 4px; padding: 18px 14px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); color: var(--text-2); font-size: 15px; text-align: center; }
+.stats-more { margin-top: 8px; }
+.stats-row .r-label { min-width: 0; }
+.stats-row .r-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stats-rank { flex-shrink: 0; width: 18px; text-align: center; font-size: 14px; font-weight: 700; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.stats-bar { display: block; height: 5px; margin: 5px 0 3px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.stats-bar i { display: block; height: 100%; border-radius: 3px; background: var(--primary); }
+.stats-row .chip { flex-shrink: 0; }
+.ios-row.stats-row + .ios-row.stats-row::before { left: 14px; }

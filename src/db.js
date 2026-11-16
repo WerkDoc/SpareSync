@@ -457,6 +457,29 @@ export async function listMovements(material_id, limit = 200) {
   return data.map(({ from_loc, to_loc, ...x }) => ({ ...x, from_name: from_loc?.name || '', to_name: to_loc?.name || '' }));
 }
 
+/** Alle Buchungen der letzten `days` Tage (für die Auswertung), neueste zuerst */
+export async function listMovementsSince(days) {
+  const since = new Date(Date.now() - days * 864e5).toISOString();
+  if (isDemo) return load().movements.filter((x) => x.created_at >= since).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const out = []; const PAGE = 1000;
+  for (let from = 0; from < 20000; from += PAGE) {          // Supabase liefert höchstens 1000 Zeilen pro Abruf
+    const { data, error } = await sb.from(T.mov).select('id, material_id, type, qty, note, created_at')
+      .gte('created_at', since).order('created_at', { ascending: false }).range(from, from + PAGE - 1);
+    fail(error);
+    out.push(...data);
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+/** Zeitpunkt der allerersten Buchung (ISO) oder null – damit die Auswertung weiß, seit wann es Daten gibt */
+export async function firstMovementDate() {
+  if (isDemo) { const all = load().movements.map((x) => x.created_at).sort(); return all[0] || null; }
+  const { data, error } = await sb.from(T.mov).select('created_at').order('created_at', { ascending: true }).limit(1);
+  fail(error);
+  return data[0]?.created_at || null;
+}
+
 // =====================================================================
 //  AUFGABEN
 // =====================================================================
@@ -771,5 +794,7 @@ listCart = withOffline('cart', listCart);
 listFieldDefs = withOffline('fields', listFieldDefs, () => []);
 listMovements = withOffline((id) => `mov:${id}`, listMovements, () => []);
 listTasks = withOffline((id) => `tasks:${id}`, listTasks, () => []);
+listMovementsSince = withOffline((days) => `movs:${days}`, listMovementsSince, () => []);
+firstMovementDate = withOffline('movs:first', firstMovementDate, () => null);
 getMaterial = withOffline((id) => `mat:${id}`, getMaterial,
   (id) => (cacheRead('materials')?.data || []).find((m) => m.id === id) ?? undefined);

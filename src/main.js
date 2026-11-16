@@ -243,6 +243,7 @@ async function route() {
     [/^\/new$/, () => viewForm(null, q)],
     [/^\/edit\/([^/]+)$/, (m) => viewForm(m[1], q)],
     [/^\/groups$/, () => viewGroups()],
+    [/^\/stats$/, () => viewStats()],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -566,6 +567,7 @@ const QUICK = [
 const MANAGE = [
   { label: 'Teil per Scan finden', icon: 'scan', tone: 'blue', href: '/pick?mode=info&scan=1' },
   { label: 'Werkzeug hinzufügen', icon: 'wrench', tone: 'indigo', href: '/new?kind=tool' },
+  { label: 'Auswertung', icon: 'chart', tone: 'green', href: '/stats' },
   { label: 'Lagerorte', icon: 'shelf', tone: 'teal', href: '/locations', count: 'locs' },
   { label: 'Material-Gruppen', icon: 'boxes', tone: 'orange', href: '/groups', count: 'groups' },
 ];
@@ -1690,6 +1692,124 @@ async function viewHistory(id) {
     body: mov.length ? `<div class="mov-list">${mov.map((x) => movementRow(x, true)).join('')}</div>`
       : empty('history', 'Noch keine Bestandsänderungen'),
   });
+}
+
+// =====================================================================
+//  AUSWERTUNG: Verbrauch, Ladenhüter, Meldebestand-Vorschläge
+// =====================================================================
+const STATS_RANGES = [[30, '30 Tage'], [90, '90 Tage'], [365, '1 Jahr']];
+const REACH_WEEKS = 2;            // Meldebestand-Vorschlag = Verbrauch von so vielen Wochen
+/** Reine Rechnung (ohne Anzeige) – so lässt sie sich leicht prüfen */
+function computeStats(mats, movs, days, firstEver = null, nowMs = Date.now()) {
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const sinceMs = nowMs - days * 864e5;
+  const isStart = (x) => /^anfangsbestand/i.test(x.note || '') || /csv-import/i.test(x.note || '');
+  const outs = movs.filter((x) => x.type === 'out' && byId.has(x.material_id));
+  const ins = movs.filter((x) => x.type === 'in' && !isStart(x) && byId.has(x.material_id));
+  // Gibt es überhaupt erst seit kurzem Buchungen (App neu im Einsatz), zählt für den Wochenschnitt nur diese Zeitspanne
+  const firstMs = firstEver ? Date.parse(firstEver) : sinceMs;
+  const spanDays = Math.max(7, Math.min(days, (nowMs - Math.max(sinceMs, firstMs)) / 864e5));
+  const weeks = spanDays / 7;
+
+  const used = new Map();           // material_id → { qty, count }
+  outs.forEach((x) => { const u = used.get(x.material_id) || { qty: 0, count: 0 }; u.qty += Math.abs(+x.qty); u.count += 1; used.set(x.material_id, u); });
+  const top = [...used.entries()].map(([id, u]) => ({ m: byId.get(id), ...u, perWeek: u.qty / weeks }))
+    .sort((a, b) => b.qty - a.qty || a.m.number - b.m.number);
+
+  const outQty = outs.reduce((s, x) => s + Math.abs(+x.qty), 0);
+  const inQty = ins.reduce((s, x) => s + Math.abs(+x.qty), 0);
+  const outValue = outs.reduce((s, x) => s + Math.abs(+x.qty) * (+byId.get(x.material_id).purchase_price || 0), 0);
+
+  // Ladenhüter: Bestand vorhanden, im Zeitraum nichts entnommen, und das Teil ist älter als der Zeitraum
+  const slow = mats.filter((m) => m.kind === 'part' && m.total > 0 && !used.has(m.id) && Date.parse(m.created_at || 0) < sinceMs)
+    .map((m) => ({ m, value: m.total * (+m.purchase_price || 0) }))
+    .sort((a, b) => b.value - a.value || b.m.total - a.m.total);
+
+  // Meldebestand-Vorschlag: Verbrauch von REACH_WEEKS Wochen, nur bei mindestens 2 Entnahmen
+  const suggest = top.filter((t) => t.m.kind === 'part' && t.count >= 2)
+    .map((t) => ({ ...t, cur: +t.m.min_stock || 0, sug: Math.max(1, Math.ceil(t.perWeek * REACH_WEEKS)) }))
+    .filter((t) => t.sug > t.cur)
+    .sort((a, b) => (b.sug - b.cur) - (a.sug - a.cur));
+
+  // Verbrauch nach Notiz (z. B. Kunde / Auftrag)
+  const notes = new Map();
+  outs.forEach((x) => { const n = (x.note || '').trim(); if (!n) return; const e = notes.get(n) || { note: n, qty: 0, count: 0, last: '' }; e.qty += Math.abs(+x.qty); e.count += 1; if (x.created_at > e.last) e.last = x.created_at; notes.set(n, e); });
+  const byNote = [...notes.values()].sort((a, b) => b.last.localeCompare(a.last));
+
+  return { outQty, inQty, outValue, outCount: outs.length, top, slow, suggest, byNote, weeks, spanDays, firstMs, short: spanDays < days - 1 };
+}
+
+async function viewStats() {
+  let days = +sessionStorage.getItem('ss-stats-days') || 30;
+  if (!STATS_RANGES.some(([d]) => d === days)) days = 30;
+  let mats = []; let movs = []; let first = null;
+  try { [mats, movs, first] = await Promise.all([getMats(), db.listMovementsSince(days), db.firstMovementDate()]); } catch (e) { errToast(e); }
+  const st = computeStats(mats, movs, days, first);
+  const maxTop = st.top[0]?.qty || 1;
+  const perWeek = (v) => (v >= 10 ? fmtQty(Math.round(v)) : fmtQty(Math.round(v * 10) / 10));
+  const more = (list, n) => (list.length > n ? `<p class="muted small center stats-more">… und ${list.length - n} weitere</p>` : '');
+  const matLine = (m) => `${thumb(m, 'sm')}<span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span>`;
+
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Auswertung' }),
+    cls: 'stats-screen',
+    body: `
+      <div class="segment">${STATS_RANGES.map(([d, l]) => `<button data-days="${d}" class="${d === days ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${st.short ? `<p class="stats-hint">${icon('info', 16)} Buchungen gibt es erst seit dem ${new Date(st.firstMs).toLocaleDateString('de-DE')}. Der Wochenschnitt rechnet nur mit dieser Zeit.</p>` : ''}
+
+      <section class="stats-kpis">
+        <div class="stats-kpi"><span class="k-val red-text">${fmtQty(st.outQty)}</span><span class="k-label">Entnommen</span><span class="k-sub">${st.outCount} Buchungen</span></div>
+        <div class="stats-kpi"><span class="k-val green-text">${fmtQty(st.inQty)}</span><span class="k-label">Dazu gebucht</span><span class="k-sub">ohne Anfangsbestand</span></div>
+        <div class="stats-kpi"><span class="k-val">${st.outValue ? fmtEUR(st.outValue) : '–'}</span><span class="k-label">Wert</span><span class="k-sub">der Entnahmen (Einkaufspreis)</span></div>
+      </section>
+
+      <h2 class="dash-sec">Meistverbraucht</h2>
+      ${st.top.length ? `<section class="ios-list">
+        ${st.top.slice(0, 10).map((t, i) => `<a class="ios-row recent stats-row" href="#/m/${t.m.id}" data-id="${t.m.id}">
+            <span class="stats-rank">${i + 1}</span>${matLine(t.m)}
+              <span class="stats-bar"><i style="width:${Math.max(4, Math.round((t.qty / maxTop) * 100))}%"></i></span>
+              <small>Ø ${perWeek(t.perWeek)} pro Woche · Bestand ${fmtQty(t.m.total)}</small></span>
+            <span class="r-qty">${fmtQty(t.qty)}</span>
+          </a>`).join('')}
+      </section>${more(st.top, 10)}` : `<p class="stats-empty">Im gewählten Zeitraum wurde nichts entnommen.</p>`}
+
+      ${st.suggest.length ? `<h2 class="dash-sec">Meldebestand-Vorschläge</h2>
+      <p class="stats-note">Vorschlag = Verbrauch von ${REACH_WEEKS} Wochen. So bleibt Zeit zum Nachbestellen.</p>
+      <section class="ios-list">
+        ${st.suggest.slice(0, 8).map((t) => `<div class="ios-row recent stats-row">
+            ${matLine(t.m)}<small>Ø ${perWeek(t.perWeek)} pro Woche · Meldebestand ${fmtQty(t.cur)} → <b>${fmtQty(t.sug)}</b></small></span>
+            <button class="chip" data-apply="${t.m.id}" data-sug="${t.sug}">Übernehmen</button>
+          </div>`).join('')}
+      </section>${more(st.suggest, 8)}` : ''}
+
+      <h2 class="dash-sec">Ladenhüter</h2>
+      ${st.slow.length ? `<p class="stats-note">Auf Lager, aber in diesem Zeitraum nie entnommen (${st.slow.length} Teile${st.slow.some((x) => x.value) ? `, gebundener Wert ${fmtEUR(st.slow.reduce((s, x) => s + x.value, 0))}` : ''}).</p>
+      <section class="ios-list">
+        ${st.slow.slice(0, 12).map((x) => `<a class="ios-row recent stats-row" href="#/m/${x.m.id}" data-id="${x.m.id}">
+            ${matLine(x.m)}<small>${locLabel(x.m)}${x.value ? ` · Wert ${fmtEUR(x.value)}` : ''}</small></span>
+            <span class="r-qty">${fmtQty(x.m.total)}</span>
+          </a>`).join('')}
+      </section>${more(st.slow, 12)}` : `<p class="stats-empty">${st.short ? 'Dafür reichen die Daten noch nicht: Ladenhüter zeigen sich erst, wenn Teile länger als der gewählte Zeitraum im Lager sind.' : 'Keine Ladenhüter in diesem Zeitraum.'}</p>`}
+
+      ${st.byNote.length ? `<h2 class="dash-sec">Entnahmen nach Notiz</h2>
+      <section class="ios-list">
+        ${st.byNote.slice(0, 10).map((n) => `<div class="ios-row stats-row">
+            <span class="r-ic tone-gray">${icon('tag', 18, 2.1)}</span>
+            <span class="r-label"><span class="r-title">${esc(n.note)}</span><small>${n.count} ${n.count === 1 ? 'Entnahme' : 'Entnahmen'} · zuletzt ${fmtDate(n.last)}</small></span>
+            <span class="r-qty">${fmtQty(n.qty)}</span>
+          </div>`).join('')}
+      </section>${more(st.byNote, 10)}` : ''}`,
+  });
+  root.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('ss-stats-days', b.dataset.days); viewStats(); }));
+  root.querySelectorAll('[data-apply]').forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try {
+      await db.saveMaterial(b.dataset.apply, { min_stock: +b.dataset.sug });
+      invalidate('materials');
+      successHUD('Meldebestand gesetzt', `auf ${fmtQty(b.dataset.sug)}`);
+      viewStats();
+    } catch (e) { b.disabled = false; errToast(e); }
+  }));
 }
 
 // =====================================================================
