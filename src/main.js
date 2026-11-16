@@ -1412,18 +1412,30 @@ async function openBooking(m, type, onDone, preset = {}) {
 // =====================================================================
 //  MATERIAL-DETAIL  (Tabs: Infos · Buchung · Details)
 // =====================================================================
+// Zuletzt geladene Aufgaben / Buchungen je Teil → Detailseite kann sofort zeichnen und lädt im Hintergrund nach
+const detailMemo = { tasks: new Map(), movs: new Map() };
+// Felder, an denen man erkennt, ob sich ein Teil seit dem Listen-Stand geändert hat
+const matSig = (m) => JSON.stringify([m.updated_at, m.total, m.locations, m.name, m.number, m.min_stock, m.max_stock,
+  m.is_favorite, m.default_location_id, (m.files || []).map((f) => f.id), m.custom_fields, m.barcode, m.group_id]);
+
 async function viewMaterial(id, q) {
   const tab = q.tab || sessionStorage.getItem('wl-mtab') || 'infos';
   sessionStorage.setItem('wl-mtab', tab);
-  const m = await db.getMaterial(id);
+  const rid = renderId;
+  // Sofort zeichnen: Die Liste hat das Teil schon komplett im Speicher (gleiche Abfrage inkl. Bestand & Bilder).
+  // Nur wenn es dort fehlt (z. B. direkt per Link geöffnet), wird gewartet.
+  const cached = cache.materials?.find((x) => x.id === id);
+  const m = cached || await db.getMaterial(id);
   if (!m) { toast('Material nicht gefunden', 'err'); return go('/list', true); }
-  const reload = () => { invalidate('materials', 'locations', 'groups'); viewMaterial(id, { tab }); };
+  const reload = () => { detailMemo.tasks.delete(id); detailMemo.movs.delete(id); invalidate('materials', 'locations', 'groups'); viewMaterial(id, { tab }); };
   const setTab = (t) => { replaceHash(`#/m/${id}?tab=${t}`); viewMaterial(id, { tab: t }); };
 
+  const tasks = detailMemo.tasks.get(id);            // undefined = noch nicht geladen → Platzhalter
+  const movs = detailMemo.movs.get(id);
   let body = '';
-  if (tab === 'infos') body = await infosTab(m);
-  if (tab === 'buchung') body = await bookingTab(m);
-  const defs = tab === 'details' ? fieldsFor(await getFields(), m.kind) : [];
+  if (tab === 'infos') body = infosTab(m, tasks);
+  if (tab === 'buchung') body = bookingTab(m, movs);
+  const defs = tab === 'details' ? fieldsFor(cache.fields || await getFields(), m.kind) : [];
   if (tab === 'details') body = detailsTab(m, defs);
 
   const root = screen({
@@ -1437,6 +1449,26 @@ async function viewMaterial(id, q) {
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
   setupHeroScroll(root);
+
+  // Im Hintergrund frischen Stand holen; nur wenn sich etwas geändert hat, wird die Seite (ohne Animation) neu gezeichnet
+  if (!q.fresh) {
+    Promise.all([
+      cached ? db.getMaterial(id) : m,
+      tab === 'infos' ? db.listTasks(id) : null,
+      tab === 'buchung' ? db.listMovements(id, 5) : null,
+    ]).then(([fresh, t, mv]) => {
+      let changed = false;
+      if (fresh && cached && matSig(fresh) !== matSig(cached)) {
+        changed = true;
+        const i = cache.materials?.findIndex((x) => x.id === id) ?? -1;
+        if (i >= 0) cache.materials[i] = fresh;            // Liste bleibt im Gleichstand
+      }
+      if (t && JSON.stringify(t) !== JSON.stringify(tasks)) { detailMemo.tasks.set(id, t); changed = true; }
+      if (mv && JSON.stringify(mv) !== JSON.stringify(movs)) { detailMemo.movs.set(id, mv); changed = true; }
+      if (!fresh && cached) { toast('Material nicht gefunden', 'err'); return; }
+      if (changed && rid === renderId && root.isConnected) viewMaterial(id, { tab, fresh: true });
+    }).catch(() => { /* offline o. ä.: der Stand aus dem Speicher bleibt stehen */ });
+  }
   on(root, 'fav', () => toggleFavorite(m, () => viewMaterial(id, { tab })));
 
   // ----- gemeinsame Aktionen -----
@@ -1497,13 +1529,18 @@ async function viewMaterial(id, q) {
     on(root, 'cart', () => addToCartFlow(m));
     // Aufgaben
     const tasksOpen = localStorage.getItem('wl-tasks-open') !== '0';
-    on(root, 'tasks-toggle', () => { localStorage.setItem('wl-tasks-open', tasksOpen ? '0' : '1'); reload(); });
+    on(root, 'tasks-toggle', () => { localStorage.setItem('wl-tasks-open', tasksOpen ? '0' : '1'); viewMaterial(id, { tab, fresh: !!tasks }); });
     on(root, 'task-add', async () => {
       const t = await prompt({ title: 'Neue Aufgabe', placeholder: 'z.B. Nachbestellen bei Lieferant X', okText: 'Hinzufügen' });
       if (t) { try { await db.addTask(id, t); localStorage.setItem('wl-tasks-open', '1'); reload(); } catch (e) { errToast(e); } }
     });
     root.querySelectorAll('[data-task]').forEach((el) => {
-      el.querySelector('input').onchange = async (e) => { try { await db.setTaskDone(el.dataset.task, e.target.checked); } catch (er) { errToast(er); } };
+      el.querySelector('input').onchange = async (e) => {
+        try {
+          await db.setTaskDone(el.dataset.task, e.target.checked);
+          const t = tasks?.find((x) => x.id === el.dataset.task); if (t) t.done = e.target.checked;   // Zwischenspeicher mitziehen
+        } catch (er) { errToast(er); }
+      };
       el.querySelector('[data-del]').onclick = async () => { try { await db.deleteTask(el.dataset.task); reload(); } catch (er) { errToast(er); } };
     });
   }
@@ -1775,8 +1812,9 @@ function stockRing(m) {
     </div>`;
 }
 
-async function infosTab(m) {
-  const tasks = await db.listTasks(m.id);
+function infosTab(m, tasks) {
+  const loading = !tasks;                  // Aufgaben werden gerade nachgeladen
+  tasks = tasks || [];
   const open = localStorage.getItem('wl-tasks-open') !== '0';
   const low = isLow(m);
   return `
@@ -1794,7 +1832,7 @@ async function infosTab(m) {
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
     <div class="tasks">
-      <div class="tasks-head"><b>Aufgaben (${tasks.filter((t) => !t.done).length})</b>
+      <div class="tasks-head"><b>Aufgaben ${loading ? '<span class="tasks-loading" aria-label="lädt"></span>' : `(${tasks.filter((t) => !t.done).length})`}</b>
         <span><button class="icon-btn" data-act="task-add" aria-label="Aufgabe hinzufügen">${icon('plus', 24)}</button>
         <button class="icon-btn" data-act="tasks-toggle" aria-label="Auf/Zu">${icon(open ? 'chevU' : 'chevD', 24)}</button></span></div>
       ${open ? tasks.map((t) => `<div class="task" data-task="${t.id}"><label><input type="checkbox" ${t.done ? 'checked' : ''}><span>${esc(t.title)}</span></label><button class="icon-btn" data-del aria-label="Löschen">${icon('trash', 18)}</button></div>`).join('') : ''}
@@ -1849,15 +1887,16 @@ const movementRow = (x, showAfter = false) => {
   </div>`;
 };
 
-async function bookingTab(m) {
-  const mov = await db.listMovements(m.id, 5);
+function bookingTab(m, mov) {
+  const loading = !mov;
+  mov = mov || [];
   return `
     <p class="caps center">Aktion auswählen:</p>
     <button class="book-card red" data-act="book-out"><i>${icon('minus', 34, 2.6)}</i><span>Entnehmen</span></button>
     <button class="book-card green" data-act="book-in"><i>${icon('plus', 34, 2.6)}</i><span>Dazu buchen</span></button>
     <button class="book-card blue" data-act="book-transfer"><i>${icon('swap', 34, 2.4)}</i><span>Umbuchen</span></button>
     <button class="link-row muted" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>
-    ${mov.length ? `<div class="mov-list">${mov.map(movementRow).join('')}</div>` : ''}`;
+    ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map(movementRow).join('')}</div>` : ''}`;
 }
 
 function detailsTab(m, defs = []) {

@@ -1575,3 +1575,16 @@ svg.gi-sun .gi-rays { animation: gi-spin 2.4s cubic-bezier(.4, 0, .2, 1) .2s bac
 @keyframes gi-swing { from { transform: rotate(-40deg) scale(.6); opacity: 0; } }
 @keyframes gi-twinkle { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.55); opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .gi * { animation: none !important; } }
+
+/* =====================================================================
+   Detailseite öffnet sofort: Platzhalter, während Aufgaben/Buchungen nachladen
+   ===================================================================== */
+.tasks-loading { display: inline-block; width: 26px; height: 12px; margin-left: 4px; vertical-align: -1px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--fill) 0%, color-mix(in srgb, var(--fill) 40%, transparent) 50%, var(--fill) 100%);
+  background-size: 200% 100%; animation: tasks-shimmer 1.1s linear infinite; }
+@keyframes tasks-shimmer { to { background-position: -200% 0; } }
+.mov-loading .skel-row { padding: 10px 0; }
+.mov-list.fade-in { animation: detail-fade .3s ease both; }
+.task { animation: detail-fade .3s ease both; }
+@keyframes detail-fade { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .tasks-loading, .mov-list.fade-in, .task { animation: none; } }
