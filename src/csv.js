@@ -2,7 +2,7 @@
 import * as db from './db.js';
 
 const COLS = ['Nr', 'Typ', 'Name', 'Barcode', 'Gruppe', 'Lagerort', 'Bestand', 'Meldebestand', 'Maximalbestand',
-  'Einheit', 'Verkaufspreis', 'Einkaufspreis', 'Lieferant', 'Notizen'];
+  'Einheit', 'Verkaufspreis', 'Einkaufspreis', 'Lieferant', 'Notizen', 'Passt für'];
 
 const cell = (v) => {
   const s = String(v ?? '');
@@ -16,7 +16,7 @@ export function exportCSV(materials) {
     const locs = m.locations.length ? m.locations : [{ name: '', qty: 0 }];
     for (const l of locs) {
       lines.push([m.number, m.kind === 'tool' ? 'Werkzeug' : 'Ersatzteil', m.name, m.barcode, m.group_name, l.name, de(l.qty),
-        de(m.min_stock), de(m.max_stock), m.unit, de(m.sale_price), de(m.purchase_price), m.supplier, m.notes].map(cell).join(';'));
+        de(m.min_stock), de(m.max_stock), m.unit, de(m.sale_price), de(m.purchase_price), m.supplier, m.notes, (m.fits || []).join(', ')].map(cell).join(';'));
     }
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -50,7 +50,7 @@ const ALIASES = {
   barcode: ['barcode', 'ean', 'code'], group: ['gruppe', 'ersatzteil gruppe', 'kategorie', 'materialgruppe', 'material gruppe'], location: ['lagerort', 'lager', 'ort', 'haupt lagerort (hl)', 'haupt lagerort', 'hauptlagerort'],
   qty: ['bestand', 'menge', 'aktueller bestand', 'anzahl', 'hl bestand'], min_stock: ['meldebestand', 'meb', 'mindestbestand', 'hl meldebestand'], max_stock: ['maximalbestand', 'max', 'hl maximalbestand'],
   image: ['bild', 'bild url', 'image', 'foto'],
-  unit: ['einheit'], sale_price: ['verkaufspreis', 'vk', 'preis'], purchase_price: ['einkaufspreis', 'ek'], supplier: ['lieferant'], notes: ['notizen', 'notiz', 'bemerkung'],
+  unit: ['einheit'], sale_price: ['verkaufspreis', 'vk', 'preis'], purchase_price: ['einkaufspreis', 'ek'], supplier: ['lieferant'], notes: ['notizen', 'notiz', 'bemerkung'], fits: ['passt für', 'passt fuer', 'passend für', 'kompatibel', 'geräte'],
 };
 const num = (s) => { s = String(s ?? '').trim(); if (!s) return null; s = s.replace(/\s|€/g, ''); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); return Number.isNaN(+s) ? null : +s; };
 
@@ -86,6 +86,7 @@ export async function importCSV(text, progress) {
       if (location_id) d.default_location_id = location_id;
       for (const k of ['min_stock', 'max_stock', 'sale_price', 'purchase_price']) if (get(k)) d[k] = num(get(k));
       for (const k of ['unit', 'supplier', 'notes']) if (get(k)) d[k] = get(k);
+      if (get('fits')) d.fits = get('fits').split(/[,;]/);
       const qty = num(get('qty'));
       const ex = mats.find((m) => (d.number != null && m.number === d.number) || m.name.toLowerCase() === name.toLowerCase());
       if (ex) {

@@ -286,7 +286,7 @@ export async function findByCode(code) {
 }
 
 const MAT_FIELDS = ['number', 'kind', 'name', 'barcode', 'group_id', 'default_location_id', 'unit', 'booking_type',
-  'sale_price', 'purchase_price', 'min_stock', 'max_stock', 'supplier', 'notes', 'custom_fields'];
+  'sale_price', 'purchase_price', 'min_stock', 'max_stock', 'supplier', 'notes', 'custom_fields', 'fits'];
 function cleanMaterial(d) {
   const o = {};
   MAT_FIELDS.forEach((k) => { if (k in d) o[k] = d[k]; });
@@ -295,6 +295,11 @@ function cleanMaterial(d) {
   if ('min_stock' in o && o.min_stock == null) o.min_stock = 0;
   ['barcode', 'group_id', 'default_location_id', 'supplier', 'notes'].forEach((k) => { if (k in o && o[k] === '') o[k] = null; });
   if (o.name != null) o.name = o.name.trim();
+  // „Passt für“: Liste ohne Leereinträge/Doppelte (Groß/klein egal)
+  if ('fits' in o) {
+    const seen = new Set();
+    o.fits = (Array.isArray(o.fits) ? o.fits : String(o.fits || '').split(/[,;\n]/)).map((x) => String(x).trim()).filter((x) => x && !seen.has(x.toLowerCase()) && seen.add(x.toLowerCase()));
+  }
   return o;
 }
 
@@ -318,13 +323,21 @@ export async function saveMaterial(id, data, opts = {}) {
         ...d, id, number, created_at: now(), updated_at: now() });
     }
     save();
-  } else if (id) {
-    const { error } = await sb.from(T.mat).update(d).eq('id', id);
-    if (error?.code === '23505') throw new Error(`Artikelnummer ${d.number} ist schon vergeben`); fail(error);
   } else {
-    const { data: row, error } = await sb.from(T.mat).insert(d).select('id').single();
-    if (error?.code === '23505') throw new Error(`Artikelnummer ${d.number} ist schon vergeben`); fail(error);
-    id = row.id;
+    // Fehlt die Spalte „fits“ noch (Datenbank-Update nicht ausgeführt), trotzdem alles andere speichern
+    const noFitsCol = (e) => e && (e.code === '42703' || e.code === 'PGRST204') && /fits/.test(e.message || '');
+    let fitsLost = false;
+    const run = async () => {
+      if (id) { const { error } = await sb.from(T.mat).update(d).eq('id', id); return { error }; }
+      const { data: row, error } = await sb.from(T.mat).insert(d).select('id').single(); return { error, row };
+    };
+    let r = await run();
+    if (noFitsCol(r.error)) { fitsLost = (d.fits || []).length > 0; delete d.fits; r = await run(); }
+    if (r.error?.code === '23505') throw new Error(`Artikelnummer ${d.number} ist schon vergeben`); fail(r.error);
+    if (!id) id = r.row.id;
+    if (fitsLost) {
+      opts.onWarning?.('„Passt für“ wurde nicht gespeichert: bitte supabase/migration-passt-fuer-zusammenfuehren.sql im Supabase-SQL-Editor ausführen.');
+    }
   }
   const ini = opts.initial;
   if (ini?.location_id) {
@@ -345,6 +358,37 @@ export async function deleteMaterial(id) {
   if (files?.length) await sb.storage.from(BUCKET).remove(files.flatMap((f) => (f.kind === 'image' ? [f.path, f.path + THUMB] : [f.path])));
   const { error } = await sb.from(T.mat).delete().eq('id', id); fail(error);
 }
+/** Zwei Teile zusammenführen: drop geht in keep auf (Bestand addiert, Historie/Bilder/Aufgaben wandern mit). Liefert neuen Gesamtbestand. */
+export async function mergeMaterials(keepId, dropId) {
+  if (keepId === dropId) throw new Error('Bitte zwei verschiedene Teile wählen');
+  if (isDemo) {
+    const s = load();
+    const k = s.materials.find((m) => m.id === keepId); const d = s.materials.find((m) => m.id === dropId);
+    if (!k || !d) throw new Error('Teil nicht gefunden');
+    s.stock.filter((x) => x.material_id === dropId).forEach((x) => {
+      const t = s.stock.find((y) => y.material_id === keepId && y.location_id === x.location_id);
+      if (t) t.qty = +t.qty + +x.qty; else s.stock.push({ ...x, material_id: keepId });
+    });
+    s.stock = s.stock.filter((x) => x.material_id !== dropId);
+    ['movements', 'files', 'tasks', 'cart'].forEach((t) => s[t].forEach((x) => { if (x.material_id === dropId) x.material_id = keepId; }));
+    ['barcode', 'group_id', 'default_location_id', 'purchase_price', 'max_stock', 'supplier', 'notes'].forEach((f) => { if (k[f] == null || k[f] === '') k[f] = d[f] ?? k[f]; });
+    if (!+k.sale_price) k.sale_price = d.sale_price;
+    k.min_stock = Math.max(+k.min_stock || 0, +d.min_stock || 0);
+    k.custom_fields = { ...(d.custom_fields || {}), ...(k.custom_fields || {}) };
+    k.fits = [...new Set([...(k.fits || []), ...(d.fits || [])])];
+    k.is_favorite = !!(k.is_favorite || d.is_favorite); k.updated_at = now();
+    s.materials = s.materials.filter((m) => m.id !== dropId);
+    save();
+    return s.stock.filter((x) => x.material_id === keepId).reduce((a, b) => a + +b.qty, 0);
+  }
+  const { data, error } = await sb.rpc('lager_merge', { p_keep: keepId, p_drop: dropId });
+  if (error && /lager_merge|function/i.test(error.message || '') && /not find|does not exist|schema cache/i.test(error.message || '')) {
+    throw new Error('Für das Zusammenführen fehlt noch ein Datenbank-Update: bitte supabase/migration-passt-fuer-zusammenfuehren.sql im Supabase-SQL-Editor ausführen.');
+  }
+  fail(error);
+  return +data;
+}
+
 /** Mehrere Materialien auf einmal löschen (inkl. Bestand, Historie, Bilder). onProgress(fertig, gesamt) */
 export async function deleteMaterials(ids, onProgress) {
   ids = [...new Set(ids)];
