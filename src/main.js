@@ -263,6 +263,7 @@ async function route() {
     [/^\/edit\/([^/]+)$/, (m) => viewForm(m[1], q)],
     [/^\/groups$/, () => viewGroups()],
     [/^\/stats$/, () => viewStats()],
+    [/^\/dupes$/, () => viewDupes()],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -2168,6 +2169,103 @@ async function viewStats() {
 }
 
 // =====================================================================
+//  DOPPELTE TEILE FINDEN & ZUSAMMENFÜHREN
+// =====================================================================
+const DUPES_IGNORE = 'ss-dupes-ignore';
+const STOP = new Set(['für', 'fuer', 'und', 'mit', 'the', 'for', 'and', 'der', 'die', 'das', 'neu', 'new', 'original', 'ersatz', 'ersatzteil']);
+function nameTokens(name) {
+  const t = String(name || '').toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/(\d)\s*(mm|gb|tb|mah|zoll|")/g, '$1$2')          // „40 mm“ = „40mm“
+    .split(/[^a-z0-9+]+/).filter((w) => w && !STOP.has(w));
+  return [...new Set(t)];
+}
+/** Paare ähnlicher Teile: gleicher Barcode oder fast gleiche Wörter – Zahlen (Modell, Größe) müssen exakt passen */
+function findDupes(mats) {
+  const ign = new Set((() => { try { return JSON.parse(localStorage.getItem(DUPES_IGNORE) || '[]'); } catch { return []; } })());
+  const info = mats.map((m) => { const tok = nameTokens(m.name); return { m, tok: new Set(tok), nums: tok.filter((w) => /\d/.test(w)).sort().join(' ') }; });
+  const pairs = [];
+  for (let i = 0; i < info.length; i++) {
+    for (let j = i + 1; j < info.length; j++) {
+      const a = info[i]; const b = info[j];
+      if (a.m.kind !== b.m.kind) continue;
+      const key = [a.m.id, b.m.id].sort().join('|');
+      if (ign.has(key)) continue;
+      let score = 0; let why = '';
+      if (a.m.barcode && b.m.barcode && a.m.barcode.trim().toLowerCase() === b.m.barcode.trim().toLowerCase()) { score = 1; why = 'Gleicher Barcode'; }
+      else if (a.nums === b.nums && a.tok.size && b.tok.size) {
+        let inter = 0; a.tok.forEach((w) => { if (b.tok.has(w)) inter += 1; });
+        const jac = inter / (a.tok.size + b.tok.size - inter);
+        if (jac >= 0.75) { score = jac; why = jac === 1 ? 'Gleiche Wörter' : 'Sehr ähnlicher Name'; }
+      }
+      if (score) pairs.push({ a: a.m, b: b.m, score, why, key });
+    }
+  }
+  return pairs.sort((x, y) => y.score - x.score || x.a.number - y.a.number);
+}
+
+async function viewDupes() {
+  const mats = await getMats();
+  const pairs = findDupes(mats);
+  const side = (m, p, keep) => `<label class="dupe-side ${keep ? 'keep' : ''}">
+      <input type="radio" name="k-${p.key}" value="${m.id}" ${keep ? 'checked' : ''}>
+      ${thumb(m, 'sm')}
+      <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span>
+        <small>Bestand ${fmtQty(m.total)} · ${esc(locLabel(m) || 'kein Lagerort')}${m.barcode ? ` · ${esc(m.barcode)}` : ''}</small></span>
+      <span class="dupe-badge">behalten</span>
+    </label>`;
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Doppelte Teile' }),
+    cls: 'dupes-screen',
+    body: pairs.length ? `
+      <p class="stats-note">${pairs.length} mögliche ${pairs.length === 1 ? 'Doppelung' : 'Doppelungen'}. Wähle das Teil, das bleiben soll – Bestand, Historie, Bilder und Aufgaben des anderen wandern dazu.</p>
+      ${pairs.map((p) => {
+        const keepA = p.a.total >= p.b.total;            // Vorschlag: das mit mehr Bestand behalten
+        return `<section class="dupe-card" data-key="${p.key}">
+          <div class="dupe-why">${icon('copy', 15, 2.2)} ${p.why}${p.score < 1 ? ` · ${Math.round(p.score * 100)} % gleich` : ''}</div>
+          ${side(p.a, p, keepA)}${side(p.b, p, !keepA)}
+          <div class="dupe-actions">
+            <button class="btn-gray" data-ignore="${p.key}">Kein Duplikat</button>
+            <button class="btn-filled" data-merge="${p.key}">${icon('swap', 18)} Zusammenführen</button>
+          </div>
+        </section>`;
+      }).join('')}` : `<div class="dupes-empty">${icon('check', 46, 2.2)}<b>Keine Doppelungen gefunden</b><span>Alle ${mats.length} Teile haben eindeutige Namen.</span></div>`,
+  });
+  const removeCard = (card) => {
+    card.style.height = `${card.offsetHeight}px`;
+    requestAnimationFrame(() => card.classList.add('gone'));
+    setTimeout(() => { card.remove(); if (!root.querySelector('.dupe-card')) viewDupes(); }, 420);
+  };
+  root.querySelectorAll('.dupe-side input').forEach((r) => (r.onchange = () => {
+    r.closest('.dupe-card').querySelectorAll('.dupe-side').forEach((l) => l.classList.toggle('keep', l.querySelector('input').checked));
+    haptic('light');
+  }));
+  root.querySelectorAll('[data-ignore]').forEach((b) => (b.onclick = () => {
+    try { const a = JSON.parse(localStorage.getItem(DUPES_IGNORE) || '[]'); a.push(b.dataset.ignore); localStorage.setItem(DUPES_IGNORE, JSON.stringify(a)); } catch { /* egal */ }
+    removeCard(b.closest('.dupe-card'));
+  }));
+  root.querySelectorAll('[data-merge]').forEach((b) => (b.onclick = async () => {
+    const card = b.closest('.dupe-card');
+    const p = pairs.find((x) => x.key === b.dataset.merge);
+    const keepId = card.querySelector('input:checked').value;
+    const keep = keepId === p.a.id ? p.a : p.b; const drop = keepId === p.a.id ? p.b : p.a;
+    const ok = await confirmBox({
+      title: 'Zusammenführen?',
+      message: `„${drop.number}: ${drop.name}“ geht in „${keep.number}: ${keep.name}“ auf. Bestand wird addiert (${fmtQty(keep.total)} + ${fmtQty(drop.total)} = ${fmtQty(keep.total + drop.total)}), Historie, Bilder und Aufgaben wandern mit. Danach wird Nr. ${drop.number} gelöscht.`,
+      okText: 'Zusammenführen',
+    });
+    if (!ok) return;
+    b.disabled = true;
+    try {
+      const total = await db.mergeMaterials(keep.id, drop.id);
+      invalidate();
+      successHUD('Zusammengeführt', `Nr. ${keep.number} · Bestand ${fmtQty(total)}`);
+      removeCard(card);
+    } catch (e) { b.disabled = false; errToast(e); }
+  }));
+}
+
+// =====================================================================
 //  FORMULAR: Ersatzteil / Werkzeug anlegen & bearbeiten
 // =====================================================================
 /** Eingabe „Passt für“: Geräte als Chips, Vorschläge aus allen bisher verwendeten Geräten */
@@ -2697,6 +2795,7 @@ async function viewSettings() {
         ${item('boxes', 'Material Gruppen', 'go:/groups')}
         ${item('tag', 'Eigene Felder', 'go:/fields')}
         ${item('tally', 'Inventur', 'go:/inventory')}
+        ${item('copy', 'Doppelte Teile finden', 'go:/dupes')}
         ${db.isDemo ? '' : item('camera', 'Vorschaubilder erzeugen', 'thumbs', '', '', 'teal').replace('<span>Vorschaubilder erzeugen</span>', '<span>Vorschaubilder erzeugen<small>Kleine Bilder für schnellere Listen</small></span>')}
       </div>
       <div class="set-group">
