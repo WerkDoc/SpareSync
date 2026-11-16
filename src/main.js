@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
@@ -183,7 +183,7 @@ function heroOpen(a, path) {
   return runHero('fwd', async () => {
     th.style.viewTransitionName = '';
     await go(path, false, 'none');
-    const big = app.querySelector('.gal-main img');
+    const big = app.querySelector('.gal-main .cur img');
     if (big) { big.style.viewTransitionName = 'hero'; await settleImg(big); }
   });
 }
@@ -191,7 +191,7 @@ function heroOpen(a, path) {
 function heroBack() {
   const m = location.hash.match(/^#\/m\/([^/?]+)/);
   const prev = navStack[navStack.length - 2] || '';
-  const big = app.querySelector('.gal-main img');
+  const big = app.querySelector('.gal-main .cur img');
   if (!m || !big || !canVT() || !/^#\/(list|fav)/.test(prev)) return false;
   big.style.viewTransitionName = 'hero';
   return runHero('back', async () => {
@@ -591,6 +591,14 @@ const QUICK = [
   { id: 'new', label: 'Teil anlegen', sub: 'Neues Ersatzteil', icon: 'plus', tone: 'primary', href: '/new?kind=part' },
   { id: 'inv', label: 'Inventur', sub: 'Bestand zählen', icon: 'tally', tone: 'primary', href: '/inventory' },
 ];
+// Eigene Reihenfolge der Schnellaktionen (langes Drücken → wackeln → verschieben)
+const QUICK_KEY = 'ss-quick-order';
+const quickOrdered = () => {
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(QUICK_KEY) || '[]'); } catch { /* egal */ }
+  const pos = (q) => { const i = ids.indexOf(q.id); return i < 0 ? 99 + QUICK.indexOf(q) : i; };
+  return [...QUICK].sort((a, b) => pos(a) - pos(b));
+};
 const MANAGE = [
   { label: 'Teil per Scan finden', icon: 'scan', tone: 'blue', href: '/pick?mode=info&scan=1' },
   { label: 'Werkzeug hinzufügen', icon: 'wrench', tone: 'indigo', href: '/new?kind=tool' },
@@ -927,9 +935,9 @@ async function viewFav() {
 
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
-      <h2 class="dash-sec">Schnellaktionen</h2>
+      <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
-        ${QUICK.map((q) => `<a class="quick" href="#${q.href}">
+        ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
             <span class="q-ic tone-${q.tone}">${icon(q.icon, 22, 2.2)}</span>
             <span class="q-text"><b>${q.label}</b><small>${q.sub}</small></span>
           </a>`).join('')}
@@ -974,6 +982,7 @@ async function viewFav() {
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
+  setupQuickReorder(root);
   on(root, 'backup-later', (el) => {
     try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
     const card = el.closest('.backup-hint'); card.style.height = `${card.offsetHeight}px`;
@@ -993,6 +1002,95 @@ async function viewFav() {
     if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   });
+}
+
+/**
+ * Schnellaktionen umsortieren wie auf dem iPhone-Homescreen:
+ * lange drücken → Kacheln wackeln → (ohne loszulassen) an die neue Stelle ziehen.
+ * „Fertig“ oder ein Tipp daneben beendet den Modus. Die Reihenfolge bleibt auf diesem Gerät gespeichert.
+ */
+function setupQuickReorder(root) {
+  const grid = root.querySelector('.quick-grid'); if (!grid) return;
+  const done = root.querySelector('[data-a=quick-done]');
+  let editing = false; let timer = 0; let start = null; let drag = null;
+  const tiles = () => [...grid.querySelectorAll('.quick')];
+
+  const enter = (tile) => {
+    editing = true; haptic('medium');
+    grid.classList.add('jiggle'); done.hidden = false;
+    // Kacheln wackeln leicht versetzt (wirkt natürlicher)
+    tiles().forEach((t, i) => t.style.setProperty('--jd', `${(i % 3) * -0.09}s`));
+    document.addEventListener('pointerdown', outside, true);
+    if (tile && start) beginDrag(tile, start.x, start.y);
+  };
+  const exit = () => {
+    if (!editing) return;
+    editing = false; grid.classList.remove('jiggle'); done.hidden = true;
+    document.removeEventListener('pointerdown', outside, true);
+    haptic('light');
+  };
+  const outside = (e) => {
+    if (!grid.isConnected) { document.removeEventListener('pointerdown', outside, true); return; }
+    if (!grid.contains(e.target) && !done.contains(e.target)) exit();
+  };
+  done.onclick = exit;
+
+  function beginDrag(tile, x, y) {
+    drag = { el: tile, x, y, ox: tile.offsetLeft, oy: tile.offsetTop };
+    tile.classList.add('dragging'); haptic('light');
+  }
+  const save = () => { try { localStorage.setItem(QUICK_KEY, JSON.stringify(tiles().map((t) => t.dataset.q))); } catch { /* egal */ } };
+
+  grid.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const tile = e.target.closest('.quick'); if (!tile) return;
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    if (editing) { e.preventDefault(); beginDrag(tile, e.clientX, e.clientY); try { grid.setPointerCapture(e.pointerId); } catch { /* egal */ } return; }
+    clearTimeout(timer);
+    timer = setTimeout(() => { timer = 0; try { grid.setPointerCapture(e.pointerId); } catch { /* egal */ } enter(tile); }, 480);
+  });
+  grid.addEventListener('pointermove', (e) => {
+    if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) { clearTimeout(timer); timer = 0; }
+    if (!drag) return;
+    const vx = drag.ox + (e.clientX - drag.x); const vy = drag.oy + (e.clientY - drag.y);   // gewünschte Position
+    const el = drag.el;
+    // Platz mit der nächstgelegenen Kachelmitte suchen
+    const cx = vx + el.offsetWidth / 2; const cy = vy + el.offsetHeight / 2;
+    let best = el; let bd = Infinity;
+    tiles().forEach((t) => {
+      const d = Math.hypot(t.offsetLeft + t.offsetWidth / 2 - cx, t.offsetTop + t.offsetHeight / 2 - cy);
+      if (d < bd) { bd = d; best = t; }
+    });
+    if (best !== el && bd < el.offsetHeight * 0.6) {
+      // FLIP: andere Kacheln gleiten weich an ihren neuen Platz
+      const others = tiles().filter((t) => t !== el);
+      const before = new Map(others.map((t) => [t, [t.offsetLeft, t.offsetTop]]));
+      const list = tiles(); const from = list.indexOf(el); const to = list.indexOf(best);
+      grid.insertBefore(el, from < to ? best.nextSibling : best);
+      others.forEach((t) => {
+        const [x0, y0] = before.get(t); const dx = x0 - t.offsetLeft; const dy = y0 - t.offsetTop;
+        if ((dx || dy) && !reduceMotion.matches) t.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], { duration: 320, easing: MENU_EASE });
+      });
+      haptic('selection');
+    }
+    el.style.translate = `${vx - el.offsetLeft}px ${vy - el.offsetTop}px`;
+  });
+  const end = () => {
+    clearTimeout(timer); timer = 0; start = null;
+    if (!drag) return;
+    const el = drag.el; drag = null;
+    const [x, y] = (el.style.translate || '0px 0px').split(' ');
+    el.style.translate = '';
+    el.classList.remove('dragging');
+    if (!reduceMotion.matches) el.animate([{ translate: `${x} ${y || '0px'}` }, { translate: '0 0' }], { duration: 380, easing: 'cubic-bezier(.34,1.4,.64,1)' });
+    save();
+  };
+  grid.addEventListener('pointerup', end);
+  grid.addEventListener('pointercancel', end);
+  // Während des Ziehens nicht scrollen; im Bearbeiten-Modus keine Aktion öffnen; kein Kontextmenü
+  grid.addEventListener('touchmove', (e) => { if (drag || editing) e.preventDefault(); }, { passive: false });
+  grid.addEventListener('click', (e) => { if (editing) { e.preventDefault(); e.stopPropagation(); } }, true);
+  grid.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 // =====================================================================
@@ -1616,7 +1714,7 @@ async function viewMaterial(id, q) {
     try { toast('Bild wird hochgeladen…'); for (const f of files) await db.addFile(id, await compressImage(f), f.name, 'image'); toast('Bild gespeichert'); reload(); } catch (e) { errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
-  root.querySelectorAll('[data-img]').forEach((el) => (el.onclick = () => openImage(m, m.images[+el.dataset.img], reload)));
+  setupGallery(root, m, reload);
 
   if (tab === 'infos') {
     on(root, 'add-loc', async () => {
@@ -1759,8 +1857,10 @@ function gallery(m) {
   const imgs = m.images;
   return `<div class="gallery">
       <div class="gal-imgs">
-        ${imgs.length ? `<button class="gal-main" data-img="0"><img src="${esc(imgs[0].url)}" decoding="async" alt=""></button>
-          ${imgs.length > 1 ? `<div class="gal-thumbs">${imgs.slice(1, 5).map((im, i) => `<button data-img="${i + 1}"><img src="${esc(im.url)}" loading="lazy" decoding="async" alt=""></button>`).join('')}</div>` : ''}`
+        ${imgs.length ? `<div class="gal-main${imgs.length > 1 ? ' multi' : ''}">
+            <div class="gal-track">${imgs.map((im, i) => `<button class="gal-slide${i ? '' : ' cur'}" data-img="${i}"><img src="${esc(im.url)}" ${i ? 'loading="lazy" ' : ''}decoding="async" alt="" draggable="false"></button>`).join('')}</div>
+            ${imgs.length > 1 ? `<div class="gal-dots">${imgs.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div><span class="gal-count">1/${imgs.length}</span>` : ''}
+          </div>`
         : `<button class="gal-empty" data-act="add-image">${icon(m.kind === 'tool' ? 'wrench' : 'box', 54, 1.2)}<span>Noch kein Bild</span></button>`}
       </div>
       <div class="gal-side">
@@ -1805,15 +1905,31 @@ function setupHeroScroll(root) {
   root.addEventListener('touchend', release, { passive: true });
   root.addEventListener('touchcancel', release, { passive: true });
 }
-function openImage(m, img, reload) {
-  sheet(`<img class="viewer-img" src="${esc(img.url)}" alt="">
-    <button class="btn-gray full mt danger-text" data-a="del">${icon('trash', 18)} Bild löschen</button>`,
-  { title: m.name, onMount: (root, close) => {
-    root.querySelector('[data-a=del]').onclick = async () => {
+/** Bilder auf der Detailseite: seitlich wischen (Punkte zeigen die Position), Tipp öffnet die Vollbild-Ansicht */
+function setupGallery(root, m, reload) {
+  const main = root.querySelector('.gal-main'); if (!main) return;
+  const track = main.querySelector('.gal-track');
+  const slides = [...track.children];
+  const dots = [...main.querySelectorAll('.gal-dots i')];
+  const cnt = main.querySelector('.gal-count');
+  let cur = 0;
+  const show = (i, scroll) => {
+    if (scroll) track.scrollLeft = i * track.clientWidth;
+    if (i === cur) return;
+    slides[cur].classList.remove('cur'); slides[i].classList.add('cur');
+    dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    if (cnt) cnt.textContent = `${i + 1}/${slides.length}`;
+    cur = i; haptic('selection');
+  };
+  track.addEventListener('scroll', () => show(Math.max(0, Math.min(slides.length - 1, Math.round(track.scrollLeft / track.clientWidth))), false), { passive: true });
+  slides.forEach((b, i) => (b.onclick = () => photoViewer({
+    images: m.images, start: i, title: m.name,
+    onChange: (k) => show(k, true),                     // Detailseite folgt dem Blättern im Vollbild
+    onDelete: async (img, close) => {
       if (!await confirmBox({ title: 'Bild löschen?', okText: 'Löschen', danger: true })) return;
       try { await db.deleteFile(img); close(); reload(); } catch (e) { errToast(e); }
-    };
-  } });
+    },
+  })));
 }
 
 // ---------- Gemeinsame Material-Aktionen (Detailseite + Kontextmenü) ----------
@@ -2126,6 +2242,64 @@ function computeStats(mats, movs, days, firstEver = null, nowMs = Date.now()) {
   return { outQty, inQty, outValue, outCount: outs.length, top, slow, suggest, byNote, weeks, spanDays, firstMs, short: spanDays < days - 1 };
 }
 
+// ---------- Verbrauchs-Kalender (wie bei GitHub): ein Kästchen pro Tag, je dunkler desto mehr entnommen ----------
+const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function heatmap(movs, days) {
+  const perDay = new Map();
+  movs.forEach((x) => { if (x.type !== 'out') return; const k = dayKey(new Date(x.created_at)); perDay.set(k, (perDay.get(k) || 0) + Math.abs(+x.qty)); });
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - (days - 1));
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));        // auf Montag zurück
+  const vals = [...perDay.values()].sort((a, b) => a - b);
+  const q = (p) => vals[Math.min(vals.length - 1, Math.floor(p * vals.length))] || 1;
+  const steps = [q(0.25), q(0.5), q(0.75)];
+  const level = (v) => (!v ? 0 : v <= steps[0] ? 1 : v <= steps[1] ? 2 : v <= steps[2] ? 3 : 4);
+  const weeks = []; const months = [];
+  for (let d = new Date(start), w = 0; d <= today; w++) {
+    const col = [];
+    for (let i = 0; i < 7; i++, d.setDate(d.getDate() + 1)) {
+      if (d > today) { col.push('<span class="hm-cell out"></span>'); continue; }
+      if (d.getDate() === 1 || (w === 0 && i === 0)) months.push({ w, label: d.toLocaleDateString('de-DE', { month: 'short' }) });
+      const k = dayKey(d); const v = perDay.get(k) || 0;
+      col.push(`<span class="hm-cell l${level(v)}" data-day="${k}" data-v="${v}" style="--w:${w}" title="${d.toLocaleDateString('de-DE')}: ${fmtQty(v)}"></span>`);
+    }
+    weeks.push(`<div class="hm-col">${col.join('')}</div>`);
+  }
+  const lbl = months.filter((m, i) => i === 0 || m.w - months[i - 1].w >= 3);
+  return `<div class="hm-card">
+      <div class="hm-scroll"><div class="hm-inner" style="--weeks:${weeks.length}">
+        <div class="hm-months">${lbl.map((m) => `<span style="--w:${m.w}">${esc(m.label)}</span>`).join('')}</div>
+        <div class="hm-grid"><div class="hm-days"><span>Mo</span><span></span><span>Mi</span><span></span><span>Fr</span><span></span><span></span></div>${weeks.join('')}</div>
+      </div></div>
+      <div class="hm-foot"><span class="hm-info" data-hm-info>Tippe auf einen Tag</span>
+        <span class="hm-scale">weniger <i class="hm-cell l0"></i><i class="hm-cell l1"></i><i class="hm-cell l2"></i><i class="hm-cell l3"></i><i class="hm-cell l4"></i> mehr</span></div>
+    </div>`;
+}
+function setupHeatmap(root, movs, mats) {
+  const box = root.querySelector('.hm-card'); if (!box) return;
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const info = box.querySelector('[data-hm-info]');
+  const sc = box.querySelector('.hm-scroll'); const inner = box.querySelector('.hm-inner');
+  // Kurze Zeiträume füllen die Breite (größere Kästchen), lange scrollen seitlich
+  const fit = () => {
+    const weeks = +inner.style.getPropertyValue('--weeks') || 1;
+    const c = Math.max(13, Math.min(30, Math.floor((sc.clientWidth - 22) / weeks) - 3));
+    inner.style.setProperty('--c', `${c}px`); sc.scrollLeft = sc.scrollWidth;            // neueste Woche sichtbar
+  };
+  fit(); new ResizeObserver(fit).observe(sc);
+  box.querySelectorAll('[data-day]').forEach((c) => (c.onclick = () => {
+    box.querySelector('.hm-cell.sel')?.classList.remove('sel'); c.classList.add('sel'); haptic('light');
+    const k = c.dataset.day; const v = +c.dataset.v;
+    const d = new Date(`${k}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (!v) { info.innerHTML = `<b>${d}</b> · nichts entnommen`; return; }
+    const per = new Map();
+    movs.forEach((x) => { if (x.type === 'out' && dayKey(new Date(x.created_at)) === k) per.set(x.material_id, (per.get(x.material_id) || 0) + Math.abs(+x.qty)); });
+    const top = [...per.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, q]) => `${esc(byId.get(id)?.name || 'gelöschtes Teil')} (${fmtQty(q)})`);
+    info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
+    info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
+  }));
+}
+
 async function viewStats() {
   let days = +sessionStorage.getItem('ss-stats-days') || 30;
   if (!STATS_RANGES.some(([d]) => d === days)) days = 30;
@@ -2149,6 +2323,9 @@ async function viewStats() {
         <div class="stats-kpi"><span class="k-val green-text">${fmtQty(st.inQty)}</span><span class="k-label">Dazu gebucht</span><span class="k-sub">ohne Anfangsbestand</span></div>
         <div class="stats-kpi"><span class="k-val">${st.outValue ? fmtEUR(st.outValue) : '–'}</span><span class="k-label">Wert</span><span class="k-sub">der Entnahmen (Einkaufspreis)</span></div>
       </section>
+
+      <h2 class="dash-sec">Verbrauchs-Kalender</h2>
+      ${heatmap(movs, days, mats)}
 
       <h2 class="dash-sec">Meistverbraucht</h2>
       ${st.top.length ? `<section class="ios-list">
@@ -2188,6 +2365,7 @@ async function viewStats() {
       </section>${more(st.byNote, 10)}` : ''}`,
   });
   root.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('ss-stats-days', b.dataset.days); viewStats(); }));
+  setupHeatmap(root, movs, mats);
   root.querySelectorAll('[data-apply]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;
     try {
@@ -2640,14 +2818,54 @@ async function viewGroups() {
   }));
 }
 
+// Regal-Ansicht: jeder Lagerort als Fach mit Füllstand und einem Kästchen pro Teil (grün/orange/rot/leer)
+const SHELF_MAX_BOXES = 48;
+function shelfStats(loc, mats) {
+  const items = [];
+  mats.forEach((m) => {
+    const l = m.locations.find((x) => x.location_id === loc.id);
+    if (!l) return;
+    const min = +m.min_stock || 0;
+    const state = l.qty <= 0 ? 'empty' : isLow(m) ? 'low' : (min && m.total <= min * 1.5) ? 'warn' : 'ok';
+    items.push({ m, qty: l.qty, state });
+  });
+  const order = { low: 0, warn: 1, ok: 2, empty: 3 };
+  items.sort((a, b) => order[a.state] - order[b.state] || a.m.number - b.m.number);
+  const n = (st) => items.filter((x) => x.state === st).length;
+  const units = items.reduce((a, x) => a + Math.max(0, x.qty), 0);
+  const value = items.reduce((a, x) => a + Math.max(0, x.qty) * (+x.m.purchase_price || 0), 0);
+  return { items, units, value, ok: n('ok'), warn: n('warn'), low: n('low'), empty: n('empty') };
+}
+function shelfCard(l, st, i) {
+  const total = st.items.length || 1;
+  const pct = (k) => ((st[k] / total) * 100).toFixed(1);
+  const boxes = st.items.slice(0, SHELF_MAX_BOXES);
+  return `<button class="shelf-card" data-l="${l.id}" style="--i:${i}">
+      <div class="shelf-head">
+        <span class="shelf-ic">${icon('shelf', 22, 2)}</span>
+        <span class="shelf-title"><b>${esc(l.name)}</b><small>${st.items.length} Teile · ${fmtQty(st.units)} Stück${st.value ? ` · ${fmtEUR(st.value)}` : ''}${l.barcode ? ` · ${esc(l.barcode)}` : ''}</small></span>
+        ${st.low ? `<span class="shelf-alert">${st.low}</span>` : ''}
+        ${icon('chevR', 18)}
+      </div>
+      ${st.items.length ? `
+      <div class="shelf-bar" aria-label="${st.ok} genug, ${st.warn} bald, ${st.low} nachbestellen, ${st.empty} leer">
+        <i class="s-ok" style="--w:${pct('ok')}%"></i><i class="s-warn" style="--w:${pct('warn')}%"></i><i class="s-low" style="--w:${pct('low')}%"></i><i class="s-empty" style="--w:${pct('empty')}%"></i>
+      </div>
+      <div class="shelf-boxes">${boxes.map((x, k) => `<span class="sb s-${x.state}" style="--k:${k}" title="${esc(`${x.m.number}: ${x.m.name} (${fmtQty(x.qty)})`)}"></span>`).join('')}${st.items.length > boxes.length ? `<span class="sb-more">+${st.items.length - boxes.length}</span>` : ''}</div>`
+        : '<div class="shelf-empty">Leeres Fach</div>'}
+    </button>`;
+}
+
 async function viewLocations() {
-  const locs = await getLocs();
+  const [locs, mats] = await Promise.all([getLocs(), getMats()]);
+  const stats = new Map(locs.map((l) => [l.id, shelfStats(l, mats)]));
   const root = screen({
     header: navbar({ left: backBtn(), right: btn('refresh', 'refresh', 'Aktualisieren') }),
-    cls: 'large-title-screen',
+    cls: 'large-title-screen shelf-screen',
     body: `<h1 class="large-title">Lagerorte</h1>
-      <div class="plain-list">${locs.map((l) => `<button class="plain-row" data-l="${l.id}"><span>${icon('shelf', 22)} ${esc(l.name)}${l.barcode ? ` <small class="muted">· ${esc(l.barcode)}</small>` : ''}</span><small class="muted">${l.count} Teile</small></button>`).join('')
-        || empty('shelf', 'Noch keine Lagerorte')}</div>`,
+      ${locs.length ? `<div class="shelf-legend"><span class="s-ok">genug</span><span class="s-warn">bald nachbestellen</span><span class="s-low">nachbestellen</span><span class="s-empty">leer</span></div>
+      <div class="shelf-list">${locs.map((l, i) => shelfCard(l, stats.get(l.id), i)).join('')}</div>`
+        : empty('shelf', 'Noch keine Lagerorte')}`,
     footer: `<footer class="bottom-bar"><button class="icon-btn blue" data-act="add" aria-label="Neuer Lagerort">${icon('plusCircle', 34, 1.8)}</button></footer>`,
   });
   on(root, 'refresh', () => { invalidate('locations'); viewLocations(); });

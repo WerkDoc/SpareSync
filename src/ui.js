@@ -1047,3 +1047,176 @@ export function confetti({ count = 90, duration = 1700 } = {}) {
   };
   requestAnimationFrame(frame);
 }
+
+// =====================================================================
+//  Foto-Ansicht im Vollbild (wie die iOS-Fotos-App)
+//  Wischen zwischen Bildern · Zwei-Finger-Zoom · Doppeltipp-Zoom ·
+//  nach unten ziehen zum Schließen · Tipp blendet die Leisten aus
+// =====================================================================
+export function photoViewer({ images, start = 0, title = '', onDelete = null, onChange = null }) {
+  const n = images.length;
+  const { el, close: closeLayer } = layer('photo-layer', `
+    <div class="pv-bg"></div>
+    <div class="pv-top">
+      <button class="pv-btn" data-a="x" aria-label="Schließen">${icon('x', 22)}</button>
+      <div class="pv-title"><b>${esc(title)}</b>${n > 1 ? `<span class="pv-count">${start + 1} von ${n}</span>` : ''}</div>
+      ${onDelete ? `<button class="pv-btn" data-a="del" aria-label="Bild löschen">${icon('trash', 21)}</button>` : '<span class="pv-btn"></span>'}
+    </div>
+    <div class="pv-track">${images.map((im) => `<div class="pv-slide"><img src="${esc(im.url)}" alt="" draggable="false"></div>`).join('')}</div>
+    ${n > 1 ? `<div class="pv-dots">${images.map((_, i) => `<i class="${i === start ? 'on' : ''}"></i>`).join('')}</div>` : ''}`);
+  const track = el.querySelector('.pv-track');
+  const bg = el.querySelector('.pv-bg');
+  const slides = [...el.querySelectorAll('.pv-slide')];
+  const count = el.querySelector('.pv-count');
+  const dots = [...el.querySelectorAll('.pv-dots i')];
+  let idx = start;
+  let z = { s: 1, x: 0, y: 0 };                      // Zoom des aktuellen Bildes
+  const img = () => slides[idx].querySelector('img');
+  const W = () => track.clientWidth;
+
+  requestAnimationFrame(() => { track.scrollLeft = start * W(); });
+  const setIdx = (i) => {
+    if (i === idx) return;
+    resetZoom(false); idx = i;
+    if (count) count.textContent = `${i + 1} von ${n}`;
+    dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    haptic('selection'); onChange?.(i);
+  };
+  track.addEventListener('scroll', () => setIdx(Math.max(0, Math.min(n - 1, Math.round(track.scrollLeft / W())))), { passive: true });
+
+  // ---- Zoom & Verschieben ----
+  const bounds = (s) => {
+    const im = img(); const w = im.offsetWidth; const h = im.offsetHeight;   // Größe ohne Zoom
+    return { bx: Math.max(0, (w * s - track.clientWidth) / 2), by: Math.max(0, (h * s - track.clientHeight) / 2) };
+  };
+  const apply = (anim) => {
+    const im = img();
+    im.style.transition = anim ? 'transform .32s cubic-bezier(.22,1,.36,1)' : 'none';
+    im.style.transform = `translate3d(${z.x}px, ${z.y}px, 0) scale(${z.s})`;
+    const zoomed = z.s > 1.01;
+    track.classList.toggle('zoomed', zoomed);
+  };
+  const clampZ = () => {
+    z.s = Math.max(1, Math.min(5, z.s));
+    const { bx, by } = bounds(z.s);
+    z.x = Math.max(-bx, Math.min(bx, z.x)); z.y = Math.max(-by, Math.min(by, z.y));
+    if (z.s === 1) { z.x = 0; z.y = 0; }
+  };
+  function resetZoom(anim = true) { if (z.s === 1 && !z.x && !z.y) return; z = { s: 1, x: 0, y: 0 }; apply(anim); }
+  /** Zoomen um einen Bildschirmpunkt (der Punkt bleibt unter dem Finger) */
+  const zoomAt = (s, cx, cy, base = z) => {
+    const r = slides[idx].getBoundingClientRect();
+    const px = cx - (r.left + r.width / 2); const py = cy - (r.top + r.height / 2);
+    const k = s / base.s;
+    z = { s, x: px - (px - base.x) * k, y: py - (py - base.y) * k };
+  };
+
+  let t0 = null; let mode = ''; let lastTap = 0; let tapTimer = 0; let moved = false;
+  const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const mid = (a, b) => ({ x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 });
+  track.addEventListener('touchstart', (e) => {
+    moved = false;
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      mode = 'pinch';
+      t0 = { d: dist(e.touches[0], e.touches[1]), m: mid(e.touches[0], e.touches[1]), z: { ...z } };
+      track.classList.add('zoomed');                                 // Wischen zwischen Bildern sperren
+    } else if (e.touches.length === 1) {
+      const t = e.touches[0];
+      t0 = { x: t.clientX, y: t.clientY, z: { ...z }, time: performance.now() };
+      mode = z.s > 1.01 ? 'pan' : '';
+    }
+  }, { passive: false });
+  track.addEventListener('touchmove', (e) => {
+    if (!t0) return;
+    if (mode === 'pinch' && e.touches.length === 2) {
+      e.preventDefault(); moved = true;
+      const s = Math.max(0.6, Math.min(6, t0.z.s * dist(e.touches[0], e.touches[1]) / t0.d));
+      const m = mid(e.touches[0], e.touches[1]);
+      zoomAt(s, t0.m.x, t0.m.y, t0.z);
+      z.x += m.x - t0.m.x; z.y += m.y - t0.m.y;
+      apply(false); return;
+    }
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0]; const dx = t.clientX - t0.x; const dy = t.clientY - t0.y;
+    if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
+    if (mode === 'pan') {
+      e.preventDefault();
+      z.x = t0.z.x + dx; z.y = t0.z.y + dy;
+      // über den Rand hinaus nur gebremst (Gummiband)
+      const { bx, by } = bounds(z.s);
+      const rub = (v, b) => (Math.abs(v) <= b ? v : Math.sign(v) * (b + (Math.abs(v) - b) * 0.35));
+      z.x = rub(z.x, bx); z.y = rub(z.y, by);
+      apply(false); return;
+    }
+    if (!mode && moved) mode = Math.abs(dy) > Math.abs(dx) * 1.2 && dy > 0 ? 'dismiss' : 'swipe';
+    if (mode === 'dismiss') {
+      e.preventDefault();
+      const p = Math.min(1, dy / 400);
+      img().style.transition = 'none';
+      img().style.transform = `translate3d(${dx * 0.6}px, ${dy}px, 0) scale(${1 - p * 0.25})`;
+      bg.style.opacity = String(1 - p * 0.9);
+      el.classList.add('pv-chrome-off');
+    }
+  }, { passive: false });
+  const onEnd = (e) => {
+    if (!t0) return;
+    if (mode === 'pinch') {
+      if (e.touches.length === 1) {                 // ein Finger bleibt liegen → weiter verschieben
+        const t = e.touches[0]; clampZ(); apply(true);
+        t0 = { x: t.clientX, y: t.clientY, z: { ...z } }; mode = z.s > 1.01 ? 'pan' : ''; return;
+      }
+      clampZ(); apply(true);
+      if (z.s > 1.01) haptic('light');
+    } else if (mode === 'pan') { clampZ(); apply(true); }
+    else if (mode === 'dismiss') {
+      const dy = (e.changedTouches[0]?.clientY ?? t0.y) - t0.y;
+      const v = dy / Math.max(1, performance.now() - t0.time);
+      if (dy > 120 || v > 0.6) { close(); return; }
+      img().style.transition = 'transform .35s cubic-bezier(.34,1.4,.64,1)'; img().style.transform = '';
+      bg.style.transition = 'opacity .3s'; bg.style.opacity = ''; el.classList.remove('pv-chrome-off');
+      setTimeout(() => { bg.style.transition = ''; }, 320);
+    } else if (!moved && e.touches.length === 0) {
+      // Tipp: zweimal schnell → Zoom an dieser Stelle; einmal → Leisten ein/aus
+      const t = e.changedTouches[0]; const now = performance.now();
+      if (now - lastTap < 300) {
+        clearTimeout(tapTimer); lastTap = 0;
+        if (z.s > 1.01) resetZoom(); else { zoomAt(2.5, t.clientX, t.clientY); clampZ(); apply(true); }
+        haptic('light');
+        e.preventDefault();
+      } else {
+        lastTap = now;
+        tapTimer = setTimeout(() => el.classList.toggle('pv-chrome-off'), 280);
+      }
+    }
+    if (e.touches.length === 0) { t0 = null; mode = ''; }
+  };
+  track.addEventListener('touchend', onEnd, { passive: false });
+  track.addEventListener('touchcancel', onEnd, { passive: false });
+
+  // Maus/Trackpad (PC): Doppelklick zoomt, Pfeiltasten blättern, Esc schließt
+  track.addEventListener('dblclick', (e) => {
+    if (z.s > 1.01) resetZoom(); else { zoomAt(2.5, e.clientX, e.clientY); clampZ(); apply(true); }
+  });
+  track.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;                          // Trackpad-Pinch
+    e.preventDefault(); zoomAt(Math.max(1, Math.min(5, z.s * Math.exp(-e.deltaY / 100))), e.clientX, e.clientY); clampZ(); apply(false);
+  }, { passive: false });
+  const go = (i) => { i = Math.max(0, Math.min(n - 1, i)); track.scrollTo({ left: i * W(), behavior: 'smooth' }); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight') go(idx + 1);
+    else if (e.key === 'ArrowLeft') go(idx - 1);
+  };
+  document.addEventListener('keydown', onKey);
+  const onResize = () => { resetZoom(false); track.scrollLeft = idx * W(); };
+  window.addEventListener('resize', onResize);
+
+  function close() {
+    document.removeEventListener('keydown', onKey); window.removeEventListener('resize', onResize);
+    closeLayer();
+  }
+  el.querySelector('[data-a=x]').onclick = close;
+  el.querySelector('[data-a=del]')?.addEventListener('click', () => onDelete(images[idx], close));
+  return close;
+}
