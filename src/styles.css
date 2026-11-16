@@ -1912,3 +1912,38 @@ span.pv-btn { background: none; }
   :root[data-style="neu"]:not([data-theme="light"]) .segment > button.on { color: #fff; }
 }
 :root[data-style="neu"][data-theme="dark"] .segment > button.on { color: #fff; }
+
+/* ---- 8. Plastisch: Tab-Leiste und Listen der Übersicht ---- */
+/* aktiver Tab = erhabene Taste, die weiter zwischen den Tabs gleitet */
+:root[data-style="neu"] .tabbar { border-top-color: color-mix(in srgb, var(--neu-sh) 60%, transparent); }
+:root[data-style="neu"] .tab-ind { background: var(--neu); box-shadow: 3px 3px 8px var(--neu-sh), -3px -3px 8px var(--neu-hi); }
+:root[data-style="neu"] .tab:active .ic { transform: scale(.92); }
+
+/* Listen auf der Übersicht (Verwalten, Favoriten, Zuletzt bewegt) + Hinweis-Karten:
+   gleiche Fläche wie der Hintergrund, erhaben statt weiß */
+:root[data-style="neu"] .dash-screen .ios-list,
+:root[data-style="neu"] .dash-screen .ios-list:has(.ios-row:active),
+:root[data-style="neu"] .dash-screen .demo-banner,
+:root[data-style="neu"] .dash-screen .backup-hint {
+  background: var(--neu); box-shadow: var(--raise); border-radius: 22px;
+}
+:root[data-style="neu"] .dash-screen .demo-banner:active { box-shadow: var(--press-s); }
+/* Trennlinie wie eingeritzt: dunkle Linie + helle Kante darunter */
+:root[data-style="neu"] .dash-screen .ios-row + .ios-row::before {
+  border-top: 1px solid color-mix(in srgb, var(--neu-sh) 75%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 80%, transparent);
+}
+/* gedrückte Zeile sinkt ein */
+:root[data-style="neu"] .dash-screen .ios-row:active { background: transparent; box-shadow: var(--press-s); border-radius: 16px; transform: scale(.99); }
+:root[data-style="neu"] .dash-screen .ios-row:active::before,
+:root[data-style="neu"] .dash-screen .ios-row:active + .ios-row::before { opacity: 0; }
+/* Symbole in kleinen runden Tasten (wie bei den Widgets) */
+:root[data-style="neu"] .dash-screen .r-ic { background: var(--neu); border-radius: 50%; box-shadow: 3px 3px 6px var(--neu-sh), -3px -3px 6px var(--neu-hi); }
+/* Vorschaubilder: leicht abgerundet, ohne weißen Kasten-Rand */
+:root[data-style="neu"] .dash-screen .ios-row .thumb { background: var(--neu); box-shadow: var(--press-s); border-radius: 12px; }
+:root[data-style="neu"] .dash-screen .ios-row .thumb img { border-radius: 12px; }
+/* Hell: weißer Foto-Hintergrund verschmilzt mit der Fläche (multiply), das Teil liegt „in der Mulde“ */
+:root[data-style="neu"]:not([data-theme="dark"]) .dash-screen .ios-row .thumb img { background: transparent; mix-blend-mode: multiply; }
+@media (prefers-color-scheme: dark) {
+  :root[data-style="neu"]:not([data-theme="light"]) .dash-screen .ios-row .thumb img { background: #fff; mix-blend-mode: normal; }
+}
