@@ -1747,3 +1747,20 @@ span.pv-btn { background: none; }
 .pv-chrome-off .pv-top { opacity: 0; transform: translateY(-10px); pointer-events: none; }
 .pv-chrome-off .pv-dots { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .photo-layer .pv-track { transform: none; } }
+
+/* =====================================================================
+   Schnellaktionen umsortieren (Wackel-Modus wie am iPhone-Homescreen)
+   ===================================================================== */
+.quick-grid .quick { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
+.quick-done { animation: detail-fade .25s ease both; }
+.quick-grid.jiggle .quick { touch-action: none; cursor: grab; animation: q-jiggle .28s ease-in-out infinite alternate; animation-delay: var(--jd, 0s); }
+.quick-grid.jiggle .quick:active { transform: none; }
+.quick-grid .quick.dragging {
+  position: relative; z-index: 5; cursor: grabbing; animation: none; scale: 1.07;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .22), 0 3px 8px rgba(0, 0, 0, .12);
+  transition: scale .2s cubic-bezier(.34,1.4,.64,1), box-shadow .2s;
+}
+@keyframes q-jiggle { from { rotate: -1.3deg; } to { rotate: 1.3deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .quick-grid.jiggle .quick { animation: none; outline: 2px dashed color-mix(in srgb, var(--primary) 45%, transparent); outline-offset: -2px; }
+}

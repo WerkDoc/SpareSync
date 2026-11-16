@@ -591,6 +591,14 @@ const QUICK = [
   { id: 'new', label: 'Teil anlegen', sub: 'Neues Ersatzteil', icon: 'plus', tone: 'primary', href: '/new?kind=part' },
   { id: 'inv', label: 'Inventur', sub: 'Bestand zählen', icon: 'tally', tone: 'primary', href: '/inventory' },
 ];
+// Eigene Reihenfolge der Schnellaktionen (langes Drücken → wackeln → verschieben)
+const QUICK_KEY = 'ss-quick-order';
+const quickOrdered = () => {
+  let ids = [];
+  try { ids = JSON.parse(localStorage.getItem(QUICK_KEY) || '[]'); } catch { /* egal */ }
+  const pos = (q) => { const i = ids.indexOf(q.id); return i < 0 ? 99 + QUICK.indexOf(q) : i; };
+  return [...QUICK].sort((a, b) => pos(a) - pos(b));
+};
 const MANAGE = [
   { label: 'Teil per Scan finden', icon: 'scan', tone: 'blue', href: '/pick?mode=info&scan=1' },
   { label: 'Werkzeug hinzufügen', icon: 'wrench', tone: 'indigo', href: '/new?kind=tool' },
@@ -927,9 +935,9 @@ async function viewFav() {
 
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
-      <h2 class="dash-sec">Schnellaktionen</h2>
+      <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
-        ${QUICK.map((q) => `<a class="quick" href="#${q.href}">
+        ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
             <span class="q-ic tone-${q.tone}">${icon(q.icon, 22, 2.2)}</span>
             <span class="q-text"><b>${q.label}</b><small>${q.sub}</small></span>
           </a>`).join('')}
@@ -974,6 +982,7 @@ async function viewFav() {
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
+  setupQuickReorder(root);
   on(root, 'backup-later', (el) => {
     try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
     const card = el.closest('.backup-hint'); card.style.height = `${card.offsetHeight}px`;
@@ -993,6 +1002,95 @@ async function viewFav() {
     if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
   });
+}
+
+/**
+ * Schnellaktionen umsortieren wie auf dem iPhone-Homescreen:
+ * lange drücken → Kacheln wackeln → (ohne loszulassen) an die neue Stelle ziehen.
+ * „Fertig“ oder ein Tipp daneben beendet den Modus. Die Reihenfolge bleibt auf diesem Gerät gespeichert.
+ */
+function setupQuickReorder(root) {
+  const grid = root.querySelector('.quick-grid'); if (!grid) return;
+  const done = root.querySelector('[data-a=quick-done]');
+  let editing = false; let timer = 0; let start = null; let drag = null;
+  const tiles = () => [...grid.querySelectorAll('.quick')];
+
+  const enter = (tile) => {
+    editing = true; haptic('medium');
+    grid.classList.add('jiggle'); done.hidden = false;
+    // Kacheln wackeln leicht versetzt (wirkt natürlicher)
+    tiles().forEach((t, i) => t.style.setProperty('--jd', `${(i % 3) * -0.09}s`));
+    document.addEventListener('pointerdown', outside, true);
+    if (tile && start) beginDrag(tile, start.x, start.y);
+  };
+  const exit = () => {
+    if (!editing) return;
+    editing = false; grid.classList.remove('jiggle'); done.hidden = true;
+    document.removeEventListener('pointerdown', outside, true);
+    haptic('light');
+  };
+  const outside = (e) => {
+    if (!grid.isConnected) { document.removeEventListener('pointerdown', outside, true); return; }
+    if (!grid.contains(e.target) && !done.contains(e.target)) exit();
+  };
+  done.onclick = exit;
+
+  function beginDrag(tile, x, y) {
+    drag = { el: tile, x, y, ox: tile.offsetLeft, oy: tile.offsetTop };
+    tile.classList.add('dragging'); haptic('light');
+  }
+  const save = () => { try { localStorage.setItem(QUICK_KEY, JSON.stringify(tiles().map((t) => t.dataset.q))); } catch { /* egal */ } };
+
+  grid.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const tile = e.target.closest('.quick'); if (!tile) return;
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    if (editing) { e.preventDefault(); beginDrag(tile, e.clientX, e.clientY); try { grid.setPointerCapture(e.pointerId); } catch { /* egal */ } return; }
+    clearTimeout(timer);
+    timer = setTimeout(() => { timer = 0; try { grid.setPointerCapture(e.pointerId); } catch { /* egal */ } enter(tile); }, 480);
+  });
+  grid.addEventListener('pointermove', (e) => {
+    if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) { clearTimeout(timer); timer = 0; }
+    if (!drag) return;
+    const vx = drag.ox + (e.clientX - drag.x); const vy = drag.oy + (e.clientY - drag.y);   // gewünschte Position
+    const el = drag.el;
+    // Platz mit der nächstgelegenen Kachelmitte suchen
+    const cx = vx + el.offsetWidth / 2; const cy = vy + el.offsetHeight / 2;
+    let best = el; let bd = Infinity;
+    tiles().forEach((t) => {
+      const d = Math.hypot(t.offsetLeft + t.offsetWidth / 2 - cx, t.offsetTop + t.offsetHeight / 2 - cy);
+      if (d < bd) { bd = d; best = t; }
+    });
+    if (best !== el && bd < el.offsetHeight * 0.6) {
+      // FLIP: andere Kacheln gleiten weich an ihren neuen Platz
+      const others = tiles().filter((t) => t !== el);
+      const before = new Map(others.map((t) => [t, [t.offsetLeft, t.offsetTop]]));
+      const list = tiles(); const from = list.indexOf(el); const to = list.indexOf(best);
+      grid.insertBefore(el, from < to ? best.nextSibling : best);
+      others.forEach((t) => {
+        const [x0, y0] = before.get(t); const dx = x0 - t.offsetLeft; const dy = y0 - t.offsetTop;
+        if ((dx || dy) && !reduceMotion.matches) t.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], { duration: 320, easing: MENU_EASE });
+      });
+      haptic('selection');
+    }
+    el.style.translate = `${vx - el.offsetLeft}px ${vy - el.offsetTop}px`;
+  });
+  const end = () => {
+    clearTimeout(timer); timer = 0; start = null;
+    if (!drag) return;
+    const el = drag.el; drag = null;
+    const [x, y] = (el.style.translate || '0px 0px').split(' ');
+    el.style.translate = '';
+    el.classList.remove('dragging');
+    if (!reduceMotion.matches) el.animate([{ translate: `${x} ${y || '0px'}` }, { translate: '0 0' }], { duration: 380, easing: 'cubic-bezier(.34,1.4,.64,1)' });
+    save();
+  };
+  grid.addEventListener('pointerup', end);
+  grid.addEventListener('pointercancel', end);
+  // Während des Ziehens nicht scrollen; im Bearbeiten-Modus keine Aktion öffnen; kein Kontextmenü
+  grid.addEventListener('touchmove', (e) => { if (drag || editing) e.preventDefault(); }, { passive: false });
+  grid.addEventListener('click', (e) => { if (editing) { e.preventDefault(); e.stopPropagation(); } }, true);
+  grid.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 // =====================================================================
