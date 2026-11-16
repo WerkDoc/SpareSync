@@ -16,6 +16,8 @@
     <script>
       // Gespeichertes Erscheinungsbild sofort setzen (vor dem ersten Bild)
       try { var t = localStorage.getItem('wl-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+      // Design: „plastisch“ (Standard) oder „klassisch“
+      try { document.documentElement.dataset.style = localStorage.getItem('ss-style') === 'classic' ? 'classic' : 'neu'; } catch (e) { document.documentElement.dataset.style = 'neu'; }
       // TEST „Vollbild“: App legt sich unter die Statusleiste (wird beim Start der Home-Bildschirm-App gelesen)
       try {
         if (localStorage.getItem('ss-fullbleed') === '1') {

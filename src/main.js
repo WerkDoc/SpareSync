@@ -80,18 +80,26 @@ const isLow = (m) => m.kind === 'part' && +m.min_stock > 0 && m.total <= +m.min_
 function applyTheme() {
   const t = localStorage.getItem('wl-theme') || '';
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  document.documentElement.dataset.style = designStyle();
+  lastThemeColor = '';
   syncThemeColor();
 }
+// Design „plastisch“ (Neumorph: Tasten wirken aus der Fläche geformt) oder „klassisch“ (glattes iOS)
+function designStyle() { try { return localStorage.getItem('ss-style') === 'classic' ? 'classic' : 'neu'; } catch { return 'neu'; } }
 // ---------- Dynamische Statusleisten-Farbe (theme-color) ----------
 // Folgt Hell/Dunkel, ganz oben vs. gescrollt (Milchglas-Leiste) und abgedunkelten Overlays.
 const THEME_COLORS = {
   light: { base: '#f2f2f7', bar: '#f9f9fb', dim: '#919194', spot: '#e4e4ea' },
   dark: { base: '#000000', bar: '#161618', dim: '#000000', spot: '#0d0d0f' },
+  neuLight: { base: '#e6eaf0', bar: '#eef1f5', dim: '#8b8d91', spot: '#dbe0e7' },
+  neuDark: { base: '#17191e', bar: '#1c1e23', dim: '#000000', spot: '#101115' },
 };
 let lastThemeColor = '';
 function syncThemeColor() {
   const t = document.documentElement.dataset.theme;
-  const c = THEME_COLORS[t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'];
+  const dark = t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
+  const neu = document.documentElement.dataset.style === 'neu';
+  const c = THEME_COLORS[neu ? (dark ? 'neuDark' : 'neuLight') : (dark ? 'dark' : 'light')];
   const scr = document.querySelector('#app > .screen:last-child');
   let col = c.base;
   if (document.querySelector('.spotlight.show')) col = c.spot;
@@ -3060,6 +3068,8 @@ async function viewSettings() {
       <div class="set-group">
         <label class="set-row"><i class="tone-indigo">${icon('moon', 19)}</i><span>Erscheinungsbild</span>
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
+        <label class="set-row"><i class="tone-primary">${icon('layers', 19)}</i><span>Design<small>Plastisch: Tasten wirken eingedrückt</small></span>
+          <select data-act-style><option value="neu" ${designStyle() === 'neu' ? 'selected' : ''}>Plastisch</option><option value="classic" ${designStyle() === 'classic' ? 'selected' : ''}>Klassisch</option></select></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
@@ -3073,6 +3083,13 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-style]').onchange = (e) => {
+    try { localStorage.setItem('ss-style', e.target.value); } catch { /* egal */ }
+    // weich überblenden statt hart umspringen
+    const swap = () => applyTheme();
+    if (document.startViewTransition && !reduceMotion.matches) document.startViewTransition(swap); else swap();
+    haptic('light');
+  };
   root.querySelector('[data-act-badge]')?.addEventListener('change', async (e) => {
     const on = e.target.checked;
     try { localStorage.setItem(BADGE_KEY, on ? '1' : '0'); } catch {}
