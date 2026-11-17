@@ -2054,3 +2054,26 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .as-group .as-btn:active::after { opacity: 1; }
 :root[data-style="neu"] .as-cancel { margin-top: 12px; color: var(--primary); transition: box-shadow .15s var(--neu-ease), transform .15s var(--neu-ease); }
 :root[data-style="neu"] .as-cancel:active { background: var(--neu); box-shadow: var(--press-s), 0 16px 40px rgba(0, 0, 0, .2); transform: scale(.99); }
+
+/* ---- 11. Plastisch: Formular-Gruppen (Filter, Bearbeiten …) und allgemeine Knöpfe ---- */
+:root[data-style="neu"] .form-group { background: var(--neu); border-radius: 22px; box-shadow: var(--raise); }
+:root[data-style="neu"] .frow { border-bottom-color: var(--sep); box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 70%, transparent); }
+:root[data-style="neu"] .frow:last-child { box-shadow: none; }
+:root[data-style="neu"] .frow select { color: var(--primary); font-weight: 500; }
+
+/* Zweitknöpfe (Zurücksetzen, Abbrechen …): erhaben; Hauptknopf (Anwenden, Speichern …): Pille mit Verlauf */
+:root[data-style="neu"] :is(.btn-gray, .btn-tinted, .btn-dark, .btn-outline) {
+  background: var(--neu); color: var(--primary); border-radius: 26px;
+  box-shadow: 5px 5px 12px var(--neu-sh), -5px -5px 12px var(--neu-hi);
+  transition: box-shadow .15s var(--neu-ease), transform .15s var(--neu-ease);
+}
+:root[data-style="neu"] .btn-gray { color: var(--text); }
+:root[data-style="neu"] .btn-gray.danger-text { color: var(--red); }
+:root[data-style="neu"] :is(.btn-gray, .btn-tinted, .btn-dark, .btn-outline):active { background: var(--neu); box-shadow: var(--press-s); transform: scale(.99); }
+:root[data-style="neu"] .btn-filled {
+  background: var(--neu-grad); border-radius: 26px;
+  box-shadow: 6px 6px 14px var(--neu-glow), -5px -5px 12px var(--neu-hi);
+  transition: box-shadow .15s var(--neu-ease), transform .15s var(--neu-ease);
+}
+:root[data-style="neu"] .btn-filled:active { filter: none; transform: scale(.99); box-shadow: inset 4px 4px 10px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
+:root[data-style="neu"] .btn-row { gap: 14px; }
