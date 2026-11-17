@@ -1934,7 +1934,7 @@ span.pv-btn { background: none; }
   box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 80%, transparent);
 }
 /* gedrückte Zeile sinkt ein */
-:root[data-style="neu"] .dash-screen .ios-row:active { background: transparent; box-shadow: var(--press-s); border-radius: 16px; transform: scale(.99); }
+
 :root[data-style="neu"] .dash-screen .ios-row:active::before,
 :root[data-style="neu"] .dash-screen .ios-row:active + .ios-row::before { opacity: 0; }
 /* Symbole in kleinen runden Tasten (wie bei den Widgets) */
@@ -1972,11 +1972,19 @@ span.pv-btn { background: none; }
 }
 
 /* Angetippte Zeilen sinken ein, statt grau zu werden */
-:root[data-style="neu"] .mrow:active, :root[data-style="neu"] .set-row:not(.static):active,
-:root[data-style="neu"] .ios-row:active, :root[data-style="neu"] .plain-row:active,
-:root[data-style="neu"] .loc-row:active, :root[data-style="neu"] .drow:not(:disabled):active, :root[data-style="neu"] .file-row:active {
-  background: transparent; box-shadow: var(--press-s); border-radius: 16px;
+/* Die Mulde wird als eigene Ebene (::after) gezeichnet und immer mittig in der Karte ausgerichtet –
+   manche Zeilen sind selbst eingerückt (Gruppen-Liste) oder haben keinen Innenabstand (Lagerorte) */
+:root[data-style="neu"] :is(.mrow, .set-row, .ios-row, .plain-row, .loc-row, .drow, .file-row) { position: relative; --pl: 6px; --pr: 6px; }
+:root[data-style="neu"] .plain-row { --pl: -10px; --pr: 6px; }       /* Zeile ist 16px eingerückt, rechts bündig */
+:root[data-style="neu"] .loc-row { --pl: -10px; --pr: -10px; }       /* Text sitzt ohne Abstand am Zeilenrand */
+:root[data-style="neu"] :is(.mrow, .set-row:not(.static), .ios-row, .plain-row, .loc-row, .drow:not(:disabled), .file-row)::after {
+  content: ""; position: absolute; top: 3px; bottom: 3px; left: var(--pl); right: var(--pr);
+  border-radius: 14px; box-shadow: var(--press-s); opacity: 0; pointer-events: none; transition: opacity .15s;
 }
+:root[data-style="neu"] :is(.mrow, .set-row:not(.static), .ios-row, .plain-row, .loc-row, .drow:not(:disabled), .file-row):active {
+  background: transparent; box-shadow: none; transform: none; border-bottom-color: transparent;
+}
+:root[data-style="neu"] :is(.mrow, .set-row:not(.static), .ios-row, .plain-row, .loc-row, .drow:not(:disabled), .file-row):active::after { opacity: 1; }
 
 /* Symbole in Menü und Listen: kleine runde erhabene Tasten */
 :root[data-style="neu"] .set-row > i, :root[data-style="neu"] .r-ic {
