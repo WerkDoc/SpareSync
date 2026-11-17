@@ -2006,3 +2006,51 @@ span.pv-btn { background: none; }
 }
 /* Das Detailbild liegt in einer eigenen Ebene (Scroll-Effekt) → dort muss die Fläche mitgemalt werden, sonst greift „multiply“ nicht */
 :root[data-style="neu"] .gal-slide { background: var(--neu); border-radius: 16px; }
+
+/* ---- 10. Plastisch: Dialoge (Eingabe/Bestätigen) und Aktionsmenü ---- */
+/* schwebende Flächen über dem abgedunkelten Hintergrund: weicher dunkler Schatten + feine Lichtkante oben links */
+:root[data-style="neu"] { --float: 0 24px 60px rgba(0, 0, 0, .28), inset 1px 1px 0 color-mix(in srgb, var(--neu-hi) 70%, transparent); }
+
+/* Dialog: Eingabefeld eingedrückt, Knöpfe als Pillen nebeneinander (Abbrechen erhaben, Bestätigen mit Verlauf) */
+:root[data-style="neu"] .alert {
+  background: var(--neu); border-radius: 26px; box-shadow: var(--float);
+  backdrop-filter: none; -webkit-backdrop-filter: none; max-width: 340px;
+}
+:root[data-style="neu"] .alert:not(.pp) { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 18px 18px; }
+:root[data-style="neu"] .alert:not(.pp) > .alert-body { grid-column: 1 / -1; padding: 24px 0 4px; }
+:root[data-style="neu"] .alert:not(.pp) > .alert-btn:only-of-type { grid-column: 1 / -1; }
+:root[data-style="neu"] .alert-input {
+  height: 52px; margin-top: 18px; padding: 0 16px; border: 0; border-radius: 16px;
+  background: var(--neu); box-shadow: var(--press-s); color: var(--text); font-size: 18px;
+}
+:root[data-style="neu"] .alert-input:focus { outline: none; box-shadow: var(--press-s), 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
+:root[data-style="neu"] .alert-btn {
+  height: 52px; border: 0; border-radius: 26px; background: var(--neu); color: var(--primary); font-size: 17px; font-weight: 600;
+  box-shadow: 4px 4px 10px var(--neu-sh), -4px -4px 10px var(--neu-hi);
+  transition: box-shadow .15s var(--neu-ease), transform .15s var(--neu-ease);
+}
+:root[data-style="neu"] .alert-btn.strong { background: var(--neu-grad); color: #fff; box-shadow: 5px 5px 12px var(--neu-glow), -4px -4px 10px var(--neu-hi); }
+:root[data-style="neu"] .alert-btn.strong.danger { background: var(--neu-grad-red); box-shadow: 5px 5px 12px color-mix(in srgb, var(--red) 35%, var(--neu-sh)), -4px -4px 10px var(--neu-hi); }
+:root[data-style="neu"] .alert-btn:active { background: var(--neu); box-shadow: var(--press-s); transform: scale(.98); }
+:root[data-style="neu"] .alert-btn.strong:active { background: var(--neu-grad); box-shadow: inset 4px 4px 9px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
+:root[data-style="neu"] .alert-btn.strong.danger:active { background: var(--neu-grad-red); }
+/* Fortschritts-Dialog (Import usw.): nur Fläche und Knöpfe angleichen */
+:root[data-style="neu"] .alert.pp .alert-btn { margin: 0 18px 14px; width: calc(100% - 36px); }
+
+/* Aktionsmenü (+, Lagerort, Gruppe …): erhabene Karte, Zeilen sinken mittig ein, „Abbrechen“ als erhabene Pille */
+:root[data-style="neu"] .as-group, :root[data-style="neu"] .as-cancel {
+  background: var(--neu); border-radius: 24px; box-shadow: var(--float);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+:root[data-style="neu"] .as-title { border-bottom-color: var(--sep); box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 70%, transparent); }
+:root[data-style="neu"] .as-btn { position: relative; color: var(--primary); border-bottom-color: var(--sep); box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 70%, transparent); }
+:root[data-style="neu"] .as-btn:last-child { box-shadow: none; }
+:root[data-style="neu"] .as-btn.danger { color: var(--red); }
+:root[data-style="neu"] .as-group .as-btn::after {
+  content: ""; position: absolute; inset: 4px 8px; border-radius: 16px; box-shadow: var(--press-s);
+  opacity: 0; pointer-events: none; transition: opacity .15s;
+}
+:root[data-style="neu"] .as-group .as-btn:active { background: transparent; }
+:root[data-style="neu"] .as-group .as-btn:active::after { opacity: 1; }
+:root[data-style="neu"] .as-cancel { margin-top: 12px; color: var(--primary); transition: box-shadow .15s var(--neu-ease), transform .15s var(--neu-ease); }
+:root[data-style="neu"] .as-cancel:active { background: var(--neu); box-shadow: var(--press-s), 0 16px 40px rgba(0, 0, 0, .2); transform: scale(.99); }
