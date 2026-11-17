@@ -343,6 +343,8 @@ function tabbar(active) {
 // Moment gemessen, der neue Indikator startet am alten Platz und gleitet – gedehnt wie ein Tropfen – an seinen.
 function placeTabIndicator(root) {
   const ind = root.querySelector('.tab.on .tab-ind');
+  // Eine aufbewahrte Seite (Teile-Liste) wurde beim Verlassen ausgeblendet → beim Zurückholen wieder sichtbar machen
+  if (ind) { ind.style.transition = ''; ind.style.opacity = ''; }
   const old = [...document.querySelectorAll('.tab.on .tab-ind')].find((el) => !root.contains(el));
   if (old) { old.style.transition = 'opacity .28s ease'; old.style.opacity = '0'; }
   if (!ind || !old || reduceMotion.matches || !ind.animate) return;
