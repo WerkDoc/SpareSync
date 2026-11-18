@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -273,6 +273,7 @@ async function route() {
     [/^\/groups$/, () => viewGroups()],
     [/^\/stats$/, () => viewStats()],
     [/^\/dupes$/, () => viewDupes()],
+    [/^\/prices$/, () => viewPrices()],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -904,7 +905,7 @@ function lagerHealth(parts) {
   const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
   return { ok, low, empty, total: parts.length, pct, state };
 }
-const recapThumb = (m) => (m?.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '');
+const recapThumb = (m) => (m?.images?.[0] ? (m.images[0].thumb || m.images[0].url) : '');
 
 // ---------- Lagerwert (Einkauf) ----------
 function lagerValue(parts) {
@@ -916,10 +917,11 @@ function lagerValue(parts) {
 }
 function valueCard(v, cu) {
   if (!(v.buy > 0)) return '';
-  return `<a class="value-card" href="#/stats" aria-label="Lagerwert im Einkauf">
+  return `<a class="value-card" href="#/${v.missing ? 'prices' : 'stats'}" aria-label="${v.missing ? 'Fehlende Einkaufspreise nachtragen' : 'Lagerwert im Einkauf'}">
       <span class="v-ic">${icon('euro', 22, 2.2)}</span>
       <div class="v-main"><small>Lagerwert (Einkauf)</small><b>${cu('value')} €</b>
-        <small>${v.missing ? `${fmtQty(v.missing)} ${v.missing === 1 ? 'Teil' : 'Teile'} noch ohne Einkaufspreis` : 'Alle Teile mit Einkaufspreis'}${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small></div>
+        <small>Bestand × Einkaufspreis${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small>
+        ${v.missing ? `<span class="v-todo">${icon('sparkle', 14, 2.2)} ${fmtQty(v.missing)} ${v.missing === 1 ? 'Preis' : 'Preise'} nachtragen</span>` : ''}</div>
       ${icon('chevR', 18)}
     </a>`;
 }
@@ -2093,7 +2095,7 @@ function flyToCart(m, onLand) {
     .map((q) => document.querySelector(q)).find(visible);
   const from = [document.querySelector('.gal-main .cur img'), document.querySelector('[data-act="cart"] i'), document.querySelector(`[data-m="${m.id}"] .thumb`)].find(visible)
     || { left: innerWidth / 2 - 30, top: innerHeight / 2 - 30, width: 60, height: 60 };
-  const img = m.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '';
+  const img = m.images?.[0] ? (m.images[0].thumb || m.images[0].url) : '';
   return flyTo({ from, to, img, onLand });
 }
 
@@ -2353,6 +2355,42 @@ function bookingTab(m, mov) {
     ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map((x, i) => movementRow(x, i, m.purchase_price)).join('')}</div>` : ''}`;
 }
 
+// ---------- Verkaufspreis-Rechner: Aufschlag auf den Einkaufspreis + Rundung ----------
+const MARKUP_KEY = 'ss-markup';
+const MARKUP_ROUND = { '0': 'nicht runden', '0.5': 'auf 0,50 €', '1': 'auf ganze Euro', '0.9': 'auf ,90 €' };
+function markupCfg() { try { return { pct: 40, round: '1', ...JSON.parse(localStorage.getItem(MARKUP_KEY) || '{}') }; } catch { return { pct: 40, round: '1' }; } }
+function setMarkup(patch) { try { localStorage.setItem(MARKUP_KEY, JSON.stringify({ ...markupCfg(), ...patch })); } catch { /* egal */ } }
+function suggestSale(ek) {
+  ek = +ek; if (!(ek > 0)) return null;
+  const { pct, round } = markupCfg();
+  let v = ek * (1 + (+pct || 0) / 100);
+  if (round === '1') v = Math.ceil(v - 1e-9);
+  else if (round === '0.5') v = Math.ceil(v * 2 - 1e-9) / 2;
+  else if (round === '0.9') { const f = Math.floor(v); v = v <= f + 0.9 + 1e-9 ? f + 0.9 : f + 1.9; }
+  return Math.round(v * 100) / 100;
+}
+function marginInfo(m) {
+  const sale = +m.sale_price; const buy = +m.purchase_price;
+  if (!(sale > 0 && buy > 0)) return null;
+  const d = sale - buy;
+  return { d, pct: Math.round((d / sale) * 100), neg: d < 0 };
+}
+/** Im Formular: Vorschlag für den Verkaufspreis direkt unter dem Einkaufspreis */
+function setupSaleSuggest(root) {
+  const ek = root.querySelector('input[name="purchase_price"]'); const vk = root.querySelector('input[name="sale_price"]');
+  if (!ek || !vk) return;
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sale-suggest'; btn.hidden = true;
+  ek.closest('.field').after(btn);
+  const upd = () => {
+    const v = suggestSale(ek.value);
+    btn.hidden = v == null || +vk.value === v;
+    if (v != null) btn.innerHTML = `${icon('sparkle', 16, 2.2)} VK-Vorschlag <b>${fmtEUR(v)}</b> <small>(+${markupCfg().pct} %)</small> übernehmen`;
+  };
+  ek.addEventListener('input', upd); vk.addEventListener('input', upd);
+  btn.onclick = () => { const v = suggestSale(ek.value); if (v == null) return; vk.value = v.toFixed(2); vk.dispatchEvent(new Event('input', { bubbles: true })); haptic('light'); pop(vk); upd(); };
+  upd();
+}
+
 function detailsTab(m, defs = []) {
   const row = (label, value, quick, extra = '') => `
     <button class="drow" ${quick ? `data-quick="${quick}"` : 'disabled'}>
@@ -2364,7 +2402,7 @@ function detailsTab(m, defs = []) {
       ${row('Artikelnummer', m.number, null)}
       ${row('Barcode', esc(m.barcode || '—'), 'barcode', m.barcode ? `<span class="icon-btn" data-act="copy-bc">${icon('copy', 22)}</span>` : '')}
       ${row('Einheit', esc(m.unit || '—'), 'unit')}
-      ${row('Verkaufspreis', fmtEUR(m.sale_price), 'sale_price')}
+      ${row('Verkaufspreis', fmtEUR(m.sale_price) + (() => { const g = marginInfo(m); return g ? ` <span class="margin-chip ${g.neg ? 'neg' : ''}">Marge ${fmtEUR(g.d)} · ${g.pct} %</span>` : ''; })(), 'sale_price')}
       ${row('Einkaufspreis', m.purchase_price != null ? fmtEUR(m.purchase_price) : '—', 'purchase_price')}
       ${row('Buchungsart', esc(m.booking_type || 'Einheit'), 'booking_type')}
       ${row(m.kind === 'tool' ? 'Gruppe' : 'Ersatzteil Gruppe', esc(m.group_name || '—'), 'group')}
@@ -2506,6 +2544,94 @@ function setupHeatmap(root, movs, mats) {
     info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
     info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
   }));
+}
+
+// =====================================================================
+//  PREISE NACHTRAGEN: ein Teil nach dem anderen, Einkaufspreis eintippen → weiter
+// =====================================================================
+const PRICE_SKIP = 'ss-price-skip';
+async function viewPrices() {
+  invalidate('materials');
+  const mats = await getMats();
+  let skipped = new Set(); try { skipped = new Set(JSON.parse(sessionStorage.getItem(PRICE_SKIP) || '[]')); } catch { /* egal */ }
+  // Teile mit Bestand zuerst (die zählen für den Lagerwert), dann nach Artikelnummer
+  const todo = mats.filter((m) => m.kind === 'part' && !(+m.purchase_price > 0))
+    .sort((a, b) => ((+b.total > 0) - (+a.total > 0)) || ((a.number ?? 1e9) - (b.number ?? 1e9)));
+  const queue = todo.filter((m) => !skipped.has(m.id)).concat(todo.filter((m) => skipped.has(m.id)));
+  const start = queue.length; let done = 0; let idx = 0;
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Preise nachtragen' }),
+    body: `<div class="pr-head"><b data-pr="left"></b><span class="pr-bar"><i data-pr="bar"></i></span></div>
+      <div class="pr-stage" data-pr="stage"></div>`,
+  });
+  const stage = root.querySelector('[data-pr=stage]');
+  const head = () => {
+    const left = queue.length - idx;
+    root.querySelector('[data-pr=left]').textContent = left ? `Noch ${fmtQty(left)} ${left === 1 ? 'Teil' : 'Teile'} ohne Einkaufspreis` : 'Fertig';
+    root.querySelector('[data-pr=bar]').style.width = `${start ? Math.round(((idx) / start) * 100) : 100}%`;
+  };
+  const card = (m) => {
+    const hasVk = +m.sale_price > 0;
+    return `<div class="pr-card">
+        <div class="pr-img">${thumb(m, 'md')}</div>
+        <div class="pr-name"><span class="nr">${m.number ?? ''}</span> ${esc(m.name)}</div>
+        <div class="pr-meta">Bestand ${fmtQty(Math.max(0, +m.total || 0))}${hasVk ? ` · VK ${fmtEUR(m.sale_price)}` : ''}${m.supplier ? ` · ${esc(m.supplier)}` : ''}</div>
+        <label class="pr-input"><span>Einkaufspreis</span><input type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" data-pr="ek" enterkeyhint="next"><em>€</em></label>
+        <label class="pr-vk ${hasVk ? 'keep' : ''}" data-pr="vkrow" hidden>
+          <span data-pr="vktext"></span>${hasVk ? '' : '<input type="checkbox" class="switch" data-pr="vk" checked>'}
+        </label>
+        <div class="pr-btns"><button class="btn-gray" data-pr="skip">Überspringen</button><button class="btn-filled" data-pr="save" disabled>Speichern ${icon('chevR', 18)}</button></div>
+      </div>`;
+  };
+  const show = (dir = 1) => {
+    head();
+    const m = queue[idx];
+    if (!m) {
+      const open = queue.length - done;                  // übersprungen und noch ohne Preis
+      stage.innerHTML = `<div class="pr-done">${icon('check', 46, 2.4)}<h2>${open ? 'Runde geschafft' : 'Alle Preise eingetragen'}</h2>
+        <p>${done ? `${fmtQty(done)} ${done === 1 ? 'Preis' : 'Preise'} eingetragen` : 'Kein Preis eingetragen'}${open ? ` · ${fmtQty(open)} übersprungen` : ''}</p>
+        ${open ? '<button class="btn-gray" data-pr="again">Übersprungene nochmal</button>' : ''}<a class="btn-filled" href="#/fav">Zur Übersicht</a></div>`;
+      if (done) { confetti(); haptic('success'); }
+      try { sessionStorage.removeItem(PRICE_SKIP); } catch { /* egal */ }
+      stage.querySelector('[data-pr=again]')?.addEventListener('click', () => viewPrices());
+      return;
+    }
+    const old = stage.firstElementChild;
+    const wrap = document.createElement('div'); wrap.className = 'pr-slide'; wrap.innerHTML = card(m);
+    stage.appendChild(wrap);
+    if (old && !reduceMotion.matches) {
+      old.animate([{ transform: 'none', opacity: 1 }, { transform: `translateX(${-40 * dir}%) scale(.94)`, opacity: 0 }], { duration: 320, easing: MENU_EASE }).onfinish = () => old.remove();
+      wrap.animate([{ transform: `translateX(${50 * dir}%) scale(.96)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 380, easing: MENU_EASE });
+    } else old?.remove();
+    const ek = wrap.querySelector('[data-pr=ek]'); const save = wrap.querySelector('[data-pr=save]');
+    const vkRow = wrap.querySelector('[data-pr=vkrow]'); const vkText = wrap.querySelector('[data-pr=vktext]'); const vkOn = wrap.querySelector('[data-pr=vk]');
+    const upd = () => {
+      const v = +ek.value; save.disabled = !(v > 0);
+      vkRow.hidden = !(v > 0);
+      if (!(v > 0)) return;
+      if (+m.sale_price > 0) { const d = +m.sale_price - v; vkText.innerHTML = `VK bleibt ${fmtEUR(m.sale_price)} · <b class="${d < 0 ? 'red' : 'green'}-text">Marge ${fmtEUR(d)}</b>`; }
+      else vkText.innerHTML = `Verkaufspreis ${fmtEUR(suggestSale(v))} setzen <small>(+${markupCfg().pct} %)</small>`;
+    };
+    ek.addEventListener('input', upd);
+    ek.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !save.disabled) { e.preventDefault(); save.click(); } });
+    wrap.querySelector('[data-pr=skip]').onclick = () => {
+      skipped.add(m.id); try { sessionStorage.setItem(PRICE_SKIP, JSON.stringify([...skipped])); } catch { /* egal */ }
+      idx++; haptic('light'); show(1);
+    };
+    save.onclick = async () => {
+      const v = Math.round(+ek.value * 100) / 100; if (!(v > 0)) return;
+      const data = { purchase_price: v };
+      if (!(+m.sale_price > 0) && vkOn?.checked) data.sale_price = suggestSale(v);
+      save.disabled = true;
+      try {
+        await db.saveMaterial(m.id, data); invalidate('materials');
+        done++; idx++; haptic('success'); show(1);
+      } catch (e) { save.disabled = false; errToast(e); }
+    };
+    setTimeout(() => { try { ek.focus({ preventScroll: true }); } catch { /* egal */ } }, reduceMotion.matches ? 0 : 200);
+  };
+  show();
+  return root;
 }
 
 async function viewStats() {
@@ -2816,6 +2942,7 @@ async function viewForm(id, q) {
   };
   renderDefs();
   setupFitsInput(root, st);
+  setupSaleSuggest(root);
   const renderCF = () => {
     root.querySelector('#cf').innerHTML = st.custom.map(([k, val], i) => `
       <div class="field cf-row"><label><small>${esc(k)}</small><input data-cf="${i}" value="${esc(val)}" placeholder="${esc(k)}"></label>
@@ -3067,6 +3194,33 @@ function shelfCard(l, st, i) {
     </button>`;
 }
 
+/**
+ * 3D-Regal: die Fächer liegen wie auf einer Walze – beim Scrollen kippen sie oben nach hinten und unten nach vorn,
+ * das Fach in der Bildschirmmitte steht gerade. Ändert nur eine CSS-Variable pro Karte (läuft auf der GPU).
+ */
+function setupShelf3D(root) {
+  const list = root.querySelector('.shelf-list'); if (!list || reduceMotion.matches) return;
+  list.classList.add('shelf-3d');
+  const cards = [...list.querySelectorAll('.shelf-card')];
+  let raf = 0;
+  const tick = () => {
+    raf = 0;
+    if (!list.isConnected) { removeEventListener('scroll', onScroll); return; }
+    const mid = innerHeight * 0.52;
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      if (r.bottom < -100 || r.top > innerHeight + 100) continue;
+      const d = Math.max(-1, Math.min(1, (r.top + r.height / 2 - mid) / (innerHeight * 0.75)));
+      c.style.setProperty('--rx', `${(-d * 16).toFixed(2)}deg`);
+      c.style.setProperty('--tz', `${(-Math.abs(d) * 40).toFixed(1)}px`);
+    }
+  };
+  const onScroll = () => { if (!raf) raf = requestAnimationFrame(tick); };
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll, { passive: true });
+  tick();
+}
+
 async function viewLocations() {
   const [locs, mats] = await Promise.all([getLocs(), getMats()]);
   const stats = new Map(locs.map((l) => [l.id, shelfStats(l, mats)]));
@@ -3079,6 +3233,7 @@ async function viewLocations() {
         : empty('shelf', 'Noch keine Lagerorte')}`,
     footer: `<footer class="bottom-bar"><button class="icon-btn blue" data-act="add" aria-label="Neuer Lagerort">${icon('plusCircle', 34, 1.8)}</button></footer>`,
   });
+  setupShelf3D(root);
   on(root, 'refresh', () => { invalidate('locations'); viewLocations(); });
   on(root, 'add', async () => {
     const n = await prompt({ title: 'Neuer Lagerort', placeholder: 'z.B. Kleinteilemagazin, Regal A3' }); if (!n) return;
@@ -3255,6 +3410,7 @@ async function viewSettings() {
       <div class="set-group">
         ${item('refresh', 'Neu laden', 'reload', '', '', 'blue')}
         ${item('info', 'Lager Informationen', 'stock-info')}
+        ${item('euro', 'Preise nachtragen', 'go:/prices', '', '', 'green')}
       </div>
       <div class="set-group">
         ${item('list', 'Alle Ersatzteile', 'go:/list?tab=part')}
@@ -3284,6 +3440,10 @@ async function viewSettings() {
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
         <label class="set-row"><i class="tone-primary">${icon('layers', 19)}</i><span>Design<small>Plastisch: Tasten wirken eingedrückt</small></span>
           <select data-act-style><option value="neu" ${designStyle() === 'neu' ? 'selected' : ''}>Plastisch</option><option value="classic" ${designStyle() === 'classic' ? 'selected' : ''}>Klassisch</option></select></label>
+        <label class="set-row"><i class="tone-green">${icon('euro', 19)}</i><span>Aufschlag Verkaufspreis<small>Vorschlag aus dem Einkaufspreis</small></span>
+          <select data-act-markup>${[20, 25, 30, 40, 50, 60, 75, 100, 150].concat([markupCfg().pct]).filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map((v) => `<option value="${v}" ${+markupCfg().pct === v ? 'selected' : ''}>+${v} %</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-green">${icon('tag', 19)}</i><span>Verkaufspreis runden</span>
+          <select data-act-round>${Object.entries(MARKUP_ROUND).map(([k, t]) => `<option value="${k}" ${markupCfg().round === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
@@ -3297,6 +3457,8 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-markup]').onchange = (e) => { setMarkup({ pct: +e.target.value }); haptic('light'); };
+  root.querySelector('[data-act-round]').onchange = (e) => { setMarkup({ round: e.target.value }); haptic('light'); };
   root.querySelector('[data-act-style]').onchange = (e) => {
     try { localStorage.setItem('ss-style', e.target.value); } catch { /* egal */ }
     // weich überblenden statt hart umspringen

@@ -2300,3 +2300,70 @@ span.pv-btn { background: none; }
 @media (prefers-reduced-motion: reduce) { .ir-fill { transition: none; } .inv-progress.done-pop .inv-ring { animation: none; } }
 :root[data-style="neu"] .inv-row input { background: var(--neu); border: 0; border-radius: 16px; box-shadow: var(--press-s); }
 :root[data-style="neu"] .inv-row input:focus { outline: none; box-shadow: var(--press-s), 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
+
+/* Verkaufspreis-Vorschlag (Formular) + Marge (Details) */
+.sale-suggest { display: flex; align-items: center; gap: 6px; width: 100%; margin: -2px 0 10px; padding: 10px 14px; border-radius: 12px; font-size: 14.5px; color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent); text-align: left; animation: detail-fade .25s ease both; }
+.sale-suggest small { color: var(--text-2); }
+.sale-suggest:active { transform: scale(.98); }
+.margin-chip { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 9px; font-size: 13px; font-weight: 600; vertical-align: 2px;
+  color: #1f9d55; background: color-mix(in srgb, #34c759 15%, transparent); }
+.margin-chip.neg { color: var(--red); background: color-mix(in srgb, var(--red) 13%, transparent); }
+:root[data-style="neu"] .sale-suggest { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); border-radius: 16px; }
+:root[data-style="neu"] .sale-suggest:active { box-shadow: var(--press-s); }
+
+/* =====================================================================
+   Preise nachtragen
+   ===================================================================== */
+.v-todo { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 4px 10px; border-radius: 11px; font-size: 13px; font-weight: 600;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); }
+:root[data-style="neu"] .v-todo { background: var(--neu); box-shadow: 2px 2px 5px var(--neu-sh), -2px -2px 5px var(--neu-hi); }
+.pr-head { display: flex; flex-direction: column; gap: 8px; margin: 4px 2px 16px; }
+.pr-head b { font-size: 15px; color: var(--text-2); font-weight: 600; }
+.pr-bar { display: block; height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.pr-bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: linear-gradient(90deg, var(--brand-blue), var(--primary)); transition: width .5s cubic-bezier(.22, 1, .36, 1); }
+.pr-stage { position: relative; display: grid; }
+.pr-slide { grid-area: 1 / 1; }
+.pr-card { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 18px 18px; border-radius: 24px; background: var(--surface); box-shadow: var(--card-shadow); text-align: center; }
+.pr-img .thumb.md { width: 120px; height: 120px; border-radius: 22px; }
+.pr-name { font-size: 19px; font-weight: 700; line-height: 1.25; }
+.pr-name .nr { color: var(--text-3); font-weight: 600; margin-right: 4px; }
+.pr-meta { font-size: 14px; color: var(--text-2); }
+.pr-input { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 8px; padding: 0 18px; height: 64px; border-radius: 18px; background: var(--fill); }
+.pr-input span { font-size: 14px; color: var(--text-2); white-space: nowrap; }
+.pr-input input { flex: 1; min-width: 0; border: 0; background: none; outline: none; text-align: right; font-size: 28px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.pr-input em { font-style: normal; font-size: 22px; font-weight: 600; color: var(--text-2); }
+.pr-vk { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 6px 4px; font-size: 15px; text-align: left; animation: detail-fade .25s ease both; }
+.pr-vk small { color: var(--text-2); }
+.pr-btns { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; width: 100%; margin-top: 8px; }
+.pr-btns button { height: 54px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.pr-done { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 20px; text-align: center; color: var(--text); }
+.pr-done > svg { color: #1f9d55; width: 92px; height: 92px; padding: 22px; border-radius: 50%; background: color-mix(in srgb, #34c759 14%, transparent); }
+.pr-done h2 { margin: 6px 0 0; } .pr-done p { margin: 0 0 12px; color: var(--text-2); }
+:root[data-style="neu"] .pr-card { background: var(--neu); box-shadow: var(--raise); }
+:root[data-style="neu"] .pr-input { background: var(--neu); box-shadow: var(--sink); }
+:root[data-style="neu"] .pr-bar { background: var(--neu); box-shadow: inset 2px 2px 4px var(--neu-sh), inset -2px -2px 4px var(--neu-hi); }
+:root[data-style="neu"] .pr-done > svg { background: var(--neu); box-shadow: var(--raise); }
+.pr-done .btn-gray, .pr-done .btn-filled { min-width: 220px; height: 52px; display: inline-flex; align-items: center; justify-content: center; }
+.pr-stage { grid-template-columns: minmax(0, 1fr); }
+.pr-slide { min-width: 0; }
+.pr-name { max-width: 100%; overflow-wrap: anywhere; }
+
+/* =====================================================================
+   3D-Regal: Fächer auf einer „Walze“ + Teile als kleine Kisten auf Regalbrettern
+   ===================================================================== */
+.shelf-list.shelf-3d { perspective: 900px; perspective-origin: 50% 50vh; }
+.shelf-3d .shelf-card { transform: translateZ(var(--tz, 0)) rotateX(var(--rx, 0deg)); transform-origin: 50% 50%; will-change: transform; transition: transform .08s linear; }
+.shelf-3d .shelf-card:active { transform: translateZ(var(--tz, 0)) rotateX(var(--rx, 0deg)) scale(.985); }
+/* Kisten: Vorderseite + helle Oberseite + dunkle Seite = kleiner Würfel */
+.shelf-boxes { --pitch: 24px; row-gap: 6px; column-gap: 7px; padding: 0 2px;
+  background: repeating-linear-gradient(to bottom, transparent 0 18px, var(--plank, #c9cfd8) 18px 21px, transparent 21px var(--pitch)); }
+.shelf-boxes .sb { position: relative; margin-top: 4px; border-radius: 2px 2px 1px 1px; box-shadow: 0 2px 2px rgba(0, 0, 0, .18); }
+.shelf-boxes .sb::before { content: ''; position: absolute; left: 2px; right: -4px; top: -4px; height: 4px; background: inherit; filter: brightness(1.28); transform: skewX(-45deg); transform-origin: bottom left; border-radius: 1px 1px 0 0; }
+.shelf-boxes .sb::after { content: ''; position: absolute; top: -2px; right: -4px; width: 4px; height: 100%; background: inherit; filter: brightness(.72); transform: skewY(-45deg); transform-origin: top left; }
+.shelf-boxes .sb.s-empty { box-shadow: none; }
+.shelf-boxes .sb.s-empty::before, .shelf-boxes .sb.s-empty::after { display: none; }
+.sb-more { margin-top: 4px; }
+:root[data-theme="dark"] .shelf-boxes { --plank: #3a3d45; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .shelf-boxes { --plank: #3a3d45; } }
+:root[data-style="neu"] .shelf-boxes { --plank: color-mix(in srgb, var(--neu-sh) 85%, #8a7a60); }
