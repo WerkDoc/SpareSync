@@ -280,6 +280,7 @@ async function route() {
     [/^\/stats$/, () => viewStats()],
     [/^\/dupes$/, () => viewDupes()],
     [/^\/prices$/, () => viewPrices()],
+    [/^\/device$/, () => viewDevice(q)],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -1407,7 +1408,10 @@ async function viewList(q) {
     else if (s === 'charge') f.sort((a, b) => { const x = chargeOf(a); const y = chargeOf(b); return (!x) - (!y) || natCmp(x, y) || a.number - b.number; });
     else f.sort((a, b) => a.number - b.number);
     visible = f;
+    const dev = listState.q && listState.tab === 'part' && f.length >= 2 ? deviceGroups(f) : null;
     rows.innerHTML = f.length ? `
+      ${dev && dev.groups.length >= 2 ? `<a class="device-chip" href="#/device?q=${encodeURIComponent(listState.q)}">
+        <span class="dc-ic">${icon('device', 20, 2)}</span><span class="dc-text"><b>Geräte-Ansicht: ${esc(listState.q)}</b><small>${f.length} Teile in ${dev.groups.length} Bereichen${dev.missing.length ? ` · fehlt: ${dev.missing.join(', ')}` : ''}</small></span>${icon('chevR', 18)}</a>` : ''}
       <div class="list-tools">
         ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.fuzzy ? `<span class="fuzzy-hint">${icon('sparkle', 13, 2.2)} Ähnliche Treffer</span> · ` : ''}${f.length} Einträge</span>`}
         <button class="text-btn strong" data-act="sel-toggle">${sel.on ? 'Fertig' : 'Auswählen'}</button>
@@ -2697,6 +2701,60 @@ function setupHeatmap(root, movs, mats) {
     info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
     info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
   }));
+}
+
+// =====================================================================
+//  GERÄTE-ANSICHT: alle Teile zu einem Gerät, sortiert nach Bauteil (Display, Akku, Kamera …)
+// =====================================================================
+const DEVICE_CATS = [
+  { id: 'display', label: 'Display & Glas', icon: 'phone', rx: /display|lcd|oled|touch|digitizer|glas|glass|oca|screen|bildschirm/i, main: true },
+  { id: 'akku', label: 'Akku', icon: 'battery', rx: /akku|batter|accu/i, main: true },
+  { id: 'kamera', label: 'Kamera', icon: 'camera', rx: /kamera|camera|linse|lens|objektiv/i, main: true },
+  { id: 'port', label: 'Ladebuchse & Flex', icon: 'plug', rx: /lade|charg|buchse|port|dock|connector|stecker|flex|kabel|cable/i, main: true },
+  { id: 'gehaeuse', label: 'Gehäuse & Rückseite', icon: 'device', rx: /back|rück|gehäuse|gehaeuse|housing|rahmen|frame|cover|deckel/i },
+  { id: 'ton', label: 'Ton & Vibration', icon: 'speaker', rx: /lautsprecher|speaker|hörmuschel|earpiece|mikro|mic|taptic|vibra|buzzer/i },
+  { id: 'klein', label: 'Kleber & Kleinteile', icon: 'screw', rx: /kleb|adhes|sticker|tape|schraube|screw|dichtung|gasket|aufkleber|pad/i },
+];
+// Erkennung von genau nach grob: „LCD Flex Kabel“ ist ein Flex, „LCD Kleber“ ein Kleinteil, erst dann „LCD“ = Display
+const DETECT_ORDER = ['klein', 'port', 'akku', 'kamera', 'ton', 'gehaeuse', 'display'];
+function deviceCat(m) {
+  const txt = `${m.name} ${m.group_name || ''}`;
+  for (const id of DETECT_ORDER) { const c = DEVICE_CATS.find((x) => x.id === id); if (c.rx.test(txt)) return c; }
+  return { id: 'sonst', label: 'Sonstiges', icon: 'box' };
+}
+function deviceGroups(mats) {
+  const map = new Map();
+  for (const m of mats) { const c = deviceCat(m); if (!map.has(c.id)) map.set(c.id, { cat: c, items: [] }); map.get(c.id).items.push(m); }
+  const order = [...DEVICE_CATS.map((c) => c.id), 'sonst'];
+  const groups = [...map.values()].sort((a, b) => order.indexOf(a.cat.id) - order.indexOf(b.cat.id));
+  const missing = DEVICE_CATS.filter((c) => c.main && !map.has(c.id)).map((c) => c.label.split(' ')[0]);
+  return { groups, missing };
+}
+async function viewDevice(q) {
+  const term = String(q?.q || '').trim();
+  const mats = (await getMats()).filter((m) => m.kind === 'part');
+  const f = filterMats(mats, { q: term });
+  const { groups, missing } = deviceGroups(f);
+  const stockOf = (arr) => arr.reduce((a, m) => a + Math.max(0, +m.total || 0), 0);
+  const root = screen({
+    header: navbar({ left: backBtn(), title: esc(term || 'Gerät') }),
+    body: `<div class="dev-hero">
+        <span class="dev-ic">${icon('device', 34, 1.8)}</span>
+        <div><h2>${esc(term)}</h2><p>${fmtQty(f.length)} ${f.length === 1 ? 'Teil' : 'Teile'} · ${fmtQty(stockOf(f))} Stück auf Lager${f.fuzzy ? ' · ähnliche Treffer' : ''}</p></div>
+      </div>
+      <div class="dev-chips">${groups.map((g) => `<a class="dev-chip ${stockOf(g.items) ? '' : 'empty'}" href="#dev-${g.cat.id}" data-jump="${g.cat.id}">${icon(g.cat.icon, 16, 2)} ${esc(g.cat.label.split(' ')[0])} <b>${fmtQty(stockOf(g.items))}</b></a>`).join('')}
+        ${missing.map((x) => `<span class="dev-chip missing">${icon('x', 14, 2.4)} ${esc(x)}</span>`).join('')}</div>
+      ${groups.map((g, gi) => `<section class="dev-sec" id="dev-${g.cat.id}" style="--gi:${gi}">
+          <h2 class="dash-sec">${icon(g.cat.icon, 20, 2)} ${esc(g.cat.label)} <small>${fmtQty(g.items.length)}</small></h2>
+          <div class="mlist">${g.items.sort((a, b) => a.number - b.number).map((m) => materialRow(m)).join('')}</div>
+        </section>`).join('') || empty('search', `Nichts gefunden für „${esc(term)}“`)}
+      ${missing.length ? `<p class="muted small center pad">Nicht im Lager für dieses Gerät: ${missing.map(esc).join(', ')}</p>` : ''}`,
+  });
+  root.querySelectorAll('[data-jump]').forEach((a) => (a.onclick = (e) => {
+    e.preventDefault(); haptic('light');
+    const t = root.querySelector(`#dev-${a.dataset.jump}`); if (t) window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 110, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+  }));
+  return root;
 }
 
 // =====================================================================

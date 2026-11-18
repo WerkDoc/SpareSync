@@ -2479,3 +2479,34 @@ span.pv-btn { background: none; }
 .live-flash { animation: live-flash 1.6s ease-out; }
 @keyframes live-flash { 0%, 30% { background-color: color-mix(in srgb, var(--primary) 18%, transparent); box-shadow: inset 3px 0 0 var(--primary); } 100% { background-color: transparent; } }
 .fuzzy-hint { display: inline-flex; align-items: center; gap: 3px; color: var(--primary); font-weight: 600; }
+
+/* =====================================================================
+   Geräte-Ansicht
+   ===================================================================== */
+.device-chip { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 12px 14px; border-radius: var(--r); color: var(--text);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface)); box-shadow: var(--card-shadow); animation: detail-fade .3s ease both; }
+.device-chip > svg { color: var(--text-3); flex-shrink: 0; }
+.dc-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; color: var(--primary); background: var(--surface); }
+.dc-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dc-text b { font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-text small { font-size: 13px; color: var(--text-2); }
+:root[data-style="neu"] .device-chip { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .device-chip:active { box-shadow: var(--sink); }
+:root[data-style="neu"] .dc-ic { background: var(--neu); box-shadow: var(--raise-xs); }
+.dev-hero { display: flex; align-items: center; gap: 16px; margin: 6px 2px 14px; }
+.dev-hero h2 { margin: 0; font-size: 28px; line-height: 1.1; }
+.dev-hero p { margin: 4px 0 0; color: var(--text-2); font-size: 14.5px; }
+.dev-ic { width: 64px; height: 64px; flex-shrink: 0; border-radius: 20px; display: grid; place-items: center; color: var(--primary); background: var(--surface); box-shadow: var(--card-shadow); }
+:root[data-style="neu"] .dev-ic { background: var(--neu); box-shadow: var(--raise); }
+.dev-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.dev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 16px; font-size: 14px; font-weight: 600; color: var(--text); background: var(--surface); box-shadow: var(--card-shadow); }
+.dev-chip b { color: var(--primary); }
+.dev-chip.empty b { color: var(--red); }
+.dev-chip.missing { color: var(--text-3); background: transparent; box-shadow: inset 0 0 0 1.5px var(--sep); }
+:root[data-style="neu"] .dev-chip { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); }
+:root[data-style="neu"] .dev-chip:active { box-shadow: var(--press-s); }
+:root[data-style="neu"] .dev-chip.missing { background: transparent; box-shadow: var(--press-s); }
+.dev-sec { animation: detail-fade .4s ease both; animation-delay: calc(var(--gi) * 70ms); }
+.dev-sec .dash-sec { display: flex; align-items: center; gap: 8px; }
+.dev-sec .dash-sec small { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--text-3); }
+@media (prefers-reduced-motion: reduce) { .dev-sec, .device-chip { animation: none; } }
