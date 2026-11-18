@@ -2276,3 +2276,27 @@ span.pv-btn { background: none; }
 .recap-slide { grid-template-columns: minmax(0, 1fr); justify-items: center; }
 .rs-list li span { flex: 1; text-align: left; }
 .rs-outro h2 { font-size: 42px; }
+
+/* =====================================================================
+   Inventur: großer Fortschritts-Ring, bei 100 % Konfetti
+   ===================================================================== */
+.inv-ring-card { display: flex; align-items: center; gap: 18px; padding: 16px 18px; }
+.inv-ring { position: relative; width: 104px; height: 104px; flex-shrink: 0; border-radius: 50%; }
+.inv-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ir-track { fill: none; stroke: var(--fill); stroke-width: 10; }
+.ir-fill { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset .8s cubic-bezier(.22, 1, .36, 1); }
+.ig1 { stop-color: var(--brand-blue); } .ig2 { stop-color: var(--primary); }
+.inv-progress.complete .ig1 { stop-color: #34c759; } .inv-progress.complete .ig2 { stop-color: #1f9d55; }
+.ir-val { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ir-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ir-text b { font-size: 18px; }
+.ir-text small { font-size: 14px; color: var(--text-2); }
+.inv-progress.complete .ir-text b, .inv-progress.complete .ir-val { color: var(--green); }
+.inv-progress.done-pop .inv-ring { animation: ir-pop .6s cubic-bezier(.34, 1.6, .64, 1); }
+@keyframes ir-pop { 40% { transform: scale(1.12); } }
+:root[data-style="neu"] .inv-ring-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .inv-ring { box-shadow: var(--press-s); }
+:root[data-style="neu"] .ir-track { stroke: transparent; }
+@media (prefers-reduced-motion: reduce) { .ir-fill { transition: none; } .inv-progress.done-pop .inv-ring { animation: none; } }
+:root[data-style="neu"] .inv-row input { background: var(--neu); border: 0; border-radius: 16px; box-shadow: var(--press-s); }
+:root[data-style="neu"] .inv-row input:focus { outline: none; box-shadow: var(--press-s), 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }

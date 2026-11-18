@@ -3129,9 +3129,14 @@ async function viewInventory(q) {
 
   const root = screen({
     header: navbar({ left: backBtn(), title: `<div class="two-line">Inventur<br><small>${esc(loc.name)}</small></div>`, right: btn('scan', 'scan', 'Scannen') }),
-    body: `<div class="inv-progress" aria-live="polite">
-        <div class="ip-head"><b data-ip="text">0 von 0 gezählt</b><span data-ip="pct">0 %</span></div>
-        <div class="ip-bar"><i data-ip="bar"></i></div>
+    body: `<div class="inv-progress inv-ring-card" aria-live="polite">
+        <div class="inv-ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="ig" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="ig1"/><stop offset="1" class="ig2"/></linearGradient></defs>
+            <circle class="ir-track" cx="50" cy="50" r="42"/>
+            <circle class="ir-fill" data-ip="bar" cx="50" cy="50" r="42" stroke="url(#ig)" style="stroke-dasharray:263.89;stroke-dashoffset:263.89"/></svg>
+          <span class="ir-val" data-ip="pct">0 %</span>
+        </div>
+        <div class="ir-text"><b data-ip="text">0 von 0 gezählt</b><small data-ip="sub">Ist-Menge eintragen oder scannen</small></div>
       </div>
       <label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
       <div id="irows" class="inv-list mt"></div>
@@ -3140,15 +3145,21 @@ async function viewInventory(q) {
   });
   const box = root.querySelector('#irows');
   let justCounted = null;                  // diese Zeile bekommt beim nächsten Aufbau das kurze Häkchen
+  let wasComplete = false; let progressReady = false;   // Konfetti nur beim Übergang auf 100 %, nicht beim Öffnen
   const updateProgress = () => {
     const done = rows.filter((m) => (counts.get(m.id) ?? '') !== '').length;
     const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
     const ip = (k) => root.querySelector(`[data-ip=${k}]`);
     ip('text').textContent = `${done} von ${rows.length} gezählt`;
     ip('pct').textContent = `${pct} %`;
-    ip('bar').style.width = `${pct}%`;
-    root.querySelector('.inv-progress').classList.toggle('complete', !!rows.length && done === rows.length);
-    root.querySelector('.inv-progress').hidden = !rows.length;
+    ip('bar').style.strokeDashoffset = (263.89 * (1 - pct / 100)).toFixed(2);
+    const complete = !!rows.length && done === rows.length;
+    ip('sub').textContent = complete ? 'Alles gezählt – jetzt unten buchen' : `Noch ${rows.length - done} ${rows.length - done === 1 ? 'Teil' : 'Teile'} offen`;
+    const card = root.querySelector('.inv-progress');
+    if (complete && !wasComplete && progressReady) { confetti(); haptic('success'); card.classList.remove('done-pop'); void card.offsetWidth; card.classList.add('done-pop'); }
+    wasComplete = complete; progressReady = true;
+    card.classList.toggle('complete', complete);
+    card.hidden = !rows.length;
   };
   const updateCommit = () => {
     const n = [...counts].filter(([mid, v]) => v !== '' && +v !== soll(rows.find((m) => m.id === mid) || { locations: [] })).length;
