@@ -8,6 +8,7 @@ import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
   countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto, flipCard,
+  layer,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -281,6 +282,8 @@ async function route() {
     [/^\/dupes$/, () => viewDupes()],
     [/^\/prices$/, () => viewPrices()],
     [/^\/device$/, () => viewDevice(q)],
+    [/^\/counter$/, () => viewCounter()],
+    [/^\/map$/, () => viewMap(q)],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -645,7 +648,7 @@ function filterMatsExact(mats, { q = '', group = '', low = false, loc = '', char
     if (loc && !m.locations.some((l) => l.location_id === loc)) return false;
     if (ch && chargeOf(m).toLowerCase() !== ch) return false;
     if (!words.length) return true;
-    const hay = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${(m.fits || []).join(' ')} ${Object.values(m.custom_fields || {}).join(' ')}`.toLowerCase();
+    const hay = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${(m.fits || []).join(' ')} ${Object.entries(m.custom_fields || {}).filter(([k]) => k !== SHOP_KEY).map(([, v]) => v).join(' ')}`.toLowerCase();
     if (words.every((w) => hay.includes(w))) return true;
     // „iphone13“ findet auch „iPhone 13“ (und umgekehrt): ohne Leerzeichen/Bindestriche vergleichen
     const compact = (x) => x.replace(/[\s\-_/]+/g, '');
@@ -1588,6 +1591,7 @@ function renderCart(rows, mats, cart) {
       <a href="#/m/${m.id}" class="crow-link">${thumb(m, 'sm')}<div class="crow-main"><div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div>
         <div class="small muted">Bestand ${fmtQty(m.total)}${+m.min_stock ? ` · Meb ${fmtQty(m.min_stock)}` : ''}</div></div></a>
       <div class="stepper sm"><button data-cq="-1">${icon('minus', 16, 2.4)}</button><span>${fmtQty(c.qty)}</span><button data-cq="1">${icon('plus', 16, 2.4)}</button></div>
+      ${shopUrl(m) ? `<a class="icon-btn shop-ic" href="${esc(shopUrl(m))}" target="_blank" rel="noopener" aria-label="Im Shop öffnen" title="${esc(shopHost(shopUrl(m)))}">${icon('external', 19)}</a>` : ''}
       <button class="icon-btn more" data-cmore>${icon('chevD', 20)}</button>
     </div>`;
   };
@@ -1642,7 +1646,7 @@ function renderCart(rows, mats, cart) {
   };
   const share = rows.querySelector('[data-act=share]');
   if (share) share.onclick = async () => {
-    const text = 'Bestellliste\n\n' + order.map((c) => { const m = byId[c.material_id]; return `${fmtQty(c.qty)} × ${m.name}${m.barcode && m.barcode !== m.name ? ` (${m.barcode})` : ''}${m.supplier ? ` – ${m.supplier}` : ''}`; }).join('\n');
+    const text = 'Bestellliste\n\n' + order.map((c) => { const m = byId[c.material_id]; return `${fmtQty(c.qty)} × ${m.name}${m.barcode && m.barcode !== m.name ? ` (${m.barcode})` : ''}${m.supplier ? ` – ${m.supplier}` : ''}${shopUrl(m) ? `\n   ${shopUrl(m)}` : ''}`; }).join('\n');
     if (navigator.share) navigator.share({ title: 'Bestellliste', text }).catch(() => {}); else copyText(text);
   };
   rows.querySelectorAll('[data-comm]').forEach((box) => {
@@ -1801,6 +1805,7 @@ async function openBooking(m, type, onDone, preset = {}) {
             onTimeout: lowWarn,                      // Meldebestand-Hinweis erst, wenn nicht rückgängig gemacht
           });
           await onDone?.(total);
+          if (type === 'out' && m.kind === 'part') setTimeout(() => offerPairs(m), 700);
           if (type === 'out' || type === 'in') {
             const vis = (el) => { if (!el) return false; const q = el.getBoundingClientRect(); return q.width > 0 && q.top > 0 && q.bottom < innerHeight; };
             const anchor = ['.stock-ring-card .sr-val', '.total-row [data-pop]', '.mov-list .mov:first-child .mov-right b'].map((q) => document.querySelector(q)).find(vis);
@@ -1896,7 +1901,7 @@ async function viewMaterial(id, q) {
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
   setupHeroScroll(root);
-  if (tab === 'infos') fillReach(root, m);
+  if (tab === 'infos') { fillReach(root, m); fillPairs(root, m); }
 
   // Im Hintergrund frischen Stand holen; nur wenn sich etwas geändert hat, wird die Seite (ohne Animation) neu gezeichnet
   if (!q.fresh) {
@@ -1989,6 +1994,7 @@ async function viewMaterial(id, q) {
       try { await db.addToCart('commission', id, +n, name); invalidate('cart'); toast(`Zu Kommission „${name}“ hinzugefügt`); } catch (e) { errToast(e); }
     });
     on(root, 'cart', () => addToCartFlow(m));
+    on(root, 'on-map', () => go(`/map?find=${m.id}`));
     // Aufgaben
     const tasksOpen = localStorage.getItem('wl-tasks-open') !== '0';
     on(root, 'tasks-toggle', () => { localStorage.setItem('wl-tasks-open', tasksOpen ? '0' : '1'); viewMaterial(id, { tab, fresh: !!tasks }); });
@@ -2052,8 +2058,9 @@ async function viewMaterial(id, q) {
             return;
           }
           const type = def?.type === 'number' ? 'number' : def?.type === 'date' ? 'date' : 'text';
-          let v = await prompt({ title: key, value: cur ?? '', type });
+          let v = await prompt({ title: key, value: cur ?? '', type, ...(key === SHOP_KEY ? { placeholder: 'https://shop.de/artikel …' } : {}) });
           if (v === null) return;
+          if (key === SHOP_KEY && v.trim()) { const u = normUrl(v); if (!u) { toast('Das ist kein gültiger Link', 'err'); return; } v = u; }
           if (type === 'number' && v !== '') v = v.replace(',', '.');
           await put(v);
           return;
@@ -2462,6 +2469,9 @@ function infosTab(m, tasks) {
     ${stockRing(m)}
     ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) + agingHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
     ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
+    ${m.kind === 'part' ? `<div class="pairs-slot" data-pairs>${pairsHtml(m)}</div>` : ''}
+    ${shopUrl(m) ? `<a class="card-btn shop-btn" href="${esc(shopUrl(m))}" target="_blank" rel="noopener"><i>${icon('external', 24)}</i><span>Im Shop öffnen<small>${esc(shopHost(shopUrl(m)))}</small></span></a>` : ''}
+    ${m.locations.length ? `<button class="card-btn" data-act="on-map"><i>${icon('map', 24)}</i><span>Im Grundriss zeigen</span></button>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
     <button class="card-btn red" data-act="cart"><i>${icon('cart', 26)}</i><span>In den Warenkorb legen</span></button>
@@ -2485,6 +2495,103 @@ function odometer(input, oldValue, dir) {
   const opts = { duration: 260, easing: 'cubic-bezier(.22, 1, .36, 1)' };
   ghost.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: `translateY(${-dir * 70}%)`, opacity: 0 }], opts).onfinish = () => ghost.remove();
   input.animate([{ transform: `translateY(${dir * 70}%)`, opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], opts);
+}
+
+// =====================================================================
+//  PASST DAZU: Teile, die oft kurz hintereinander entnommen werden (z. B. Display + Kleber)
+// =====================================================================
+const PAIR_GAP = 30 * 60e3;             // Entnahmen mit höchstens 30 Min. Abstand gehören zu einer Reparatur
+const PAIR_MIN = 2;                     // erst ab 2 gemeinsamen Reparaturen vorschlagen
+let pairMemo = null;                    // { at, map: Map(id → Map(partnerId → Anzahl)) }
+async function loadPairs(force = false) {
+  if (!force && pairMemo && Date.now() - pairMemo.at < 5 * 60e3) return pairMemo.map;
+  const all = (await db.listMovementsSince(365)).slice().sort((a, b) => a.created_at.localeCompare(b.created_at));
+  // Rückgängig gemachte Entnahmen nicht mitzählen
+  const undone = new Set();
+  all.forEach((u, i) => {
+    if (u.type !== 'in' || !/^Rückgängig/.test(u.note || '')) return;
+    for (let j = i - 1; j >= 0; j--) {
+      const x = all[j];
+      if (Date.parse(u.created_at) - Date.parse(x.created_at) > 15 * 60e3) break;
+      if (x.type === 'out' && x.material_id === u.material_id && !undone.has(x.id)) { undone.add(x.id); break; }
+    }
+  });
+  const outs = all.filter((x) => x.type === 'out' && !undone.has(x.id));
+  const map = new Map();
+  let sess = []; let last = 0;
+  const flush = () => {
+    const ids = [...new Set(sess)];
+    for (const a of ids) for (const b of ids) {
+      if (a === b) continue;
+      let mm = map.get(a); if (!mm) map.set(a, (mm = new Map()));
+      mm.set(b, (mm.get(b) || 0) + 1);
+    }
+    sess = [];
+  };
+  for (const x of outs) { const t = Date.parse(x.created_at); if (t - last > PAIR_GAP) flush(); sess.push(x.material_id); last = t; }
+  flush();
+  pairMemo = { at: Date.now(), map };
+  return map;
+}
+function pairsFor(id, n = 3) {
+  const mm = pairMemo?.map.get(id); if (!mm) return [];
+  const byId = new Map((cache.materials || []).map((m) => [m.id, m]));
+  return [...mm].filter(([k, c]) => c >= PAIR_MIN && byId.has(k)).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, c]) => ({ m: byId.get(k), c }));
+}
+function pairsHtml(m) {
+  const list = pairsFor(m.id);
+  if (!list.length) return '';
+  return `<div class="pairs-card"><div class="pairs-head">${icon('layers', 18, 2.2)}<b>Wird oft zusammen gebraucht</b></div>
+    <div class="pairs-row">${list.map(({ m: p, c }) => `<a class="pair-chip" href="#/m/${p.id}">${thumb(p, 'sm')}<span><b>${esc(p.name)}</b><small>${c}× zusammen · Bestand ${fmtQty(p.total)}</small></span></a>`).join('')}</div></div>`;
+}
+async function fillPairs(root, m) {
+  const slot = root.querySelector('[data-pairs]'); if (!slot) return;
+  try {
+    await Promise.all([loadPairs(), getMats()]);
+    if (!slot.isConnected) return;
+    const html = pairsHtml(m);
+    if (slot.innerHTML.trim() !== html.trim()) { slot.innerHTML = html; slot.firstElementChild?.classList.add('reach-in'); }
+  } catch { /* offline: weglassen */ }
+}
+/** Nach dem Entnehmen: „Dazu auch?“ – ein Tipp bucht 1 Stück der passenden Teile aus */
+async function offerPairs(m) {
+  let list;
+  try { await loadPairs(true); await getMats(); list = pairsFor(m.id).filter(({ m: p }) => +p.total > 0); } catch { return; }
+  if (!list.length) return;
+  document.querySelector('.pair-offer')?.remove();
+  const el = document.createElement('div');
+  el.className = 'pair-offer'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Dazu auch entnehmen?');
+  el.innerHTML = `<div class="po-head"><span class="po-ic">${icon('sparkle', 17, 2.2)}</span><span class="po-t"><b>Dazu auch?</b><small>Wird oft mit „${esc(m.name)}“ gebraucht</small></span>
+      <button class="po-x" aria-label="Schließen">${icon('x', 18, 2.4)}</button></div>
+    <div class="po-list">${list.map(({ m: p }) => `<button class="po-item" data-pid="${p.id}">${thumb(p, 'sm')}<span class="po-name"><b>${esc(p.name)}</b><small>Bestand ${fmtQty(p.total)}</small></span><i class="po-btn">−1</i></button>`).join('')}</div>
+    <span class="po-timer"></span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  let timer; let touched = false;
+  const close = () => { clearTimeout(timer); el.classList.remove('show'); el.classList.add('hide'); setTimeout(() => el.remove(), 400); };
+  const arm = (ms) => { clearTimeout(timer); timer = setTimeout(close, ms); };
+  arm(9000);
+  el.querySelector('.po-x').onclick = close;
+  el.addEventListener('pointerdown', () => { if (!touched) { touched = true; el.classList.add('touched'); } arm(12000); });
+  window.addEventListener('hashchange', close, { once: true });
+  el.querySelectorAll('[data-pid]').forEach((b) => (b.onclick = async () => {
+    if (b.classList.contains('done') || b.classList.contains('busy')) return;
+    const p = list.find((x) => x.m.id === b.dataset.pid).m;
+    const loc = p.locations.find((l) => l.location_id === p.default_location_id && l.qty > 0) || p.locations.filter((l) => l.qty > 0).sort((a, c) => c.qty - a.qty)[0];
+    if (!loc) { toast('Kein Bestand', 'err'); return; }
+    b.classList.add('busy');
+    try {
+      const total = await db.book({ material_id: p.id, type: 'out', qty: 1, location_id: loc.location_id, note: `Zusammen mit ${m.name}`.slice(0, 120) });
+      b.classList.remove('busy');
+      invalidate('materials', 'locations'); haptic('success'); sfx.tick();
+      b.classList.add('done'); b.querySelector('.po-btn').innerHTML = icon('check', 16, 3);
+      b.querySelector('small').textContent = `Entnommen · Bestand ${fmtQty(total)}`;
+      const booked = { material_id: p.id, type: 'out', qty: 1, location_id: loc.location_id };
+      toast('1 Stück entnommen', 'ok', { sub: `${p.name} · Bestand ${fmtQty(total)}`, action: { label: 'Rückgängig', onClick: () => { undoBooking(booked, 'Entnehmen'); b.classList.remove('done'); b.querySelector('.po-btn').textContent = '−1'; b.querySelector('small').textContent = `Bestand ${fmtQty(total + 1)}`; } } });
+      if (+p.min_stock > 0 && total <= +p.min_stock) b.querySelector('small').textContent += ' · Meldebestand!';
+      if ([...el.querySelectorAll('[data-pid]')].every((x) => x.classList.contains('done'))) arm(1800);
+    } catch (e) { errToast(e); b.classList.remove('busy'); }
+  }));
 }
 
 // Zuletzt verwendete Buchungs-Notizen (pro Gerät gemerkt) → als Vorschläge zum Antippen
@@ -2537,6 +2644,16 @@ function bookingTab(m, mov) {
 // ---------- Verkaufspreis-Rechner: Aufschlag auf den Einkaufspreis + Rundung ----------
 const MARKUP_KEY = 'ss-markup';
 const MARKUP_ROUND = { '0': 'nicht runden', '0.5': 'auf 0,50 €', '1': 'auf ganze Euro', '0.9': 'auf ,90 €' };
+// ---------- Shop-Link: Bestellseite beim Lieferanten (liegt bei den eigenen Feldern → keine Datenbank-Änderung) ----------
+const SHOP_KEY = 'Shop-Link';
+function normUrl(v) {
+  v = String(v || '').trim(); if (!v) return '';
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v.replace(/^\/+/, '');
+  try { const u = new URL(v); return /^https?:$/.test(u.protocol) && u.hostname.includes('.') ? u.href : ''; } catch { return ''; }
+}
+const shopUrl = (m) => normUrl(m?.custom_fields?.[SHOP_KEY]);
+const shopHost = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+
 function markupCfg() { try { return { pct: 40, round: '1', ...JSON.parse(localStorage.getItem(MARKUP_KEY) || '{}') }; } catch { return { pct: 40, round: '1' }; } }
 function setMarkup(patch) { try { localStorage.setItem(MARKUP_KEY, JSON.stringify({ ...markupCfg(), ...patch })); } catch { /* egal */ } }
 function suggestSale(ek) {
@@ -2588,6 +2705,7 @@ function detailsTab(m, defs = []) {
       ${row('Meldebestand', fmtQty(m.min_stock), 'min_stock')}
       ${row('Maximalbestand', fmtQty(m.max_stock), 'max_stock')}
       ${row('Lieferant', esc(m.supplier || '—'), 'supplier')}
+      ${row('Shop-Link', shopUrl(m) ? esc(shopHost(shopUrl(m))) : '—', `cf:${SHOP_KEY}`)}
       ${row('Notizen', esc(m.notes || '—'), 'notes')}
     </div>
     <div class="sec-title gray"><span>DATEIEN</span><button class="icon-btn" data-act="add-file" aria-label="Datei hinzufügen">${icon('plus', 24)}</button></div>
@@ -2604,7 +2722,7 @@ function detailsTab(m, defs = []) {
         const names = new Set(defs.map((d) => d.name));
         const rows = [
           ...defs.map((d) => row(esc(d.name), esc(fieldDisplay(d, cf[d.name])), `cf:${esc(d.name)}`)),
-          ...Object.entries(cf).filter(([k]) => !names.has(k)).map(([k, v]) => row(esc(k), esc(v === '' || v == null ? '—' : String(v)), `cf:${esc(k)}`)),
+          ...Object.entries(cf).filter(([k]) => !names.has(k) && k !== SHOP_KEY).map(([k, v]) => row(esc(k), esc(v === '' || v == null ? '—' : String(v)), `cf:${esc(k)}`)),
         ];
         return rows.join('') || '<p class="muted small pad-s">Keine eigenen Felder – unter Menü → Eigene Felder anlegen</p>';
       })()}
@@ -3101,7 +3219,7 @@ async function viewForm(id, q) {
     const cf = m?.custom_fields || {};
     const names = new Set(st.defs.map((d) => d.name));
     st.defs.forEach((d) => { st.defVals[d.name] = d.type === 'bool' ? (cf[d.name] === true || cf[d.name] === 'true' || cf[d.name] === 'Ja') : (cf[d.name] ?? ''); });
-    st.custom = Object.entries(cf).filter(([k]) => !names.has(k)).map(([k, v]) => [k, v == null ? '' : String(v)]);
+    st.custom = Object.entries(cf).filter(([k]) => !names.has(k) && k !== SHOP_KEY).map(([k, v]) => [k, v == null ? '' : String(v)]);
   }
   const title = id ? (kind === 'tool' ? 'Werkzeug bearbeiten' : 'Ersatzteil bearbeiten') : (kind === 'tool' ? 'Werkzeug anlegen' : 'Ersatzteil anlegen');
   const v = (k, d = '') => esc(m?.[k] ?? d);
@@ -3139,6 +3257,7 @@ async function viewForm(id, q) {
         <label class="field"><small>Verkaufspreis (€)</small><input name="sale_price" type="number" inputmode="decimal" step="0.01" placeholder="0,00" value="${m && +m.sale_price ? v('sale_price') : ''}"></label>
         <label class="field"><small>Einkaufspreis (€)</small><input name="purchase_price" type="number" inputmode="decimal" step="0.01" placeholder="0,00" value="${v('purchase_price')}"></label>
         <label class="field"><small>Lieferant</small><input name="supplier" placeholder="z.B. Partsdepot" value="${v('supplier')}"></label>
+        <label class="field"><small>Shop-Link</small><input name="shop_url" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Link zum Artikel beim Lieferanten" value="${esc(m?.custom_fields?.[SHOP_KEY] || '')}"></label>
         <label class="field"><small>Notizen</small><textarea name="notes" rows="2" placeholder="Notizen">${v('notes')}</textarea></label>
         </div>
         <div class="sec-title gray"><span>WEITERE FELDER</span><button type="button" class="icon-btn" data-act="cf-add" aria-label="Feld nur für diesen Artikel">${icon('plus', 24)}</button></div>
@@ -3252,7 +3371,9 @@ async function viewForm(id, q) {
           if (d.type === 'number') v = v.replace(',', '.');
           if (v !== '') out[d.name] = v;
         });
-        st.custom.filter(([k]) => k.trim()).forEach(([k, val]) => { out[k.trim()] = val; });
+        st.custom.filter(([k]) => k.trim() && k.trim() !== SHOP_KEY).forEach(([k, val]) => { out[k.trim()] = val; });
+        const shop = normUrl(fd.shop_url);
+        if (shop) out[SHOP_KEY] = shop;
         return out;
       })(),
     };
@@ -3458,7 +3579,7 @@ async function viewLocations() {
   const [locs, mats] = await Promise.all([getLocs(), getMats()]);
   const stats = new Map(locs.map((l) => [l.id, shelfStats(l, mats)]));
   const root = screen({
-    header: navbar({ left: backBtn(), right: btn('refresh', 'refresh', 'Aktualisieren') }),
+    header: navbar({ left: backBtn(), right: btn('map', 'map', 'Grundriss') + btn('refresh', 'refresh', 'Aktualisieren') }),
     cls: 'large-title-screen shelf-screen',
     body: `<h1 class="large-title">Lagerorte</h1>
       ${locs.length ? `<div class="shelf-legend"><span class="s-ok">genug</span><span class="s-warn">bald nachbestellen</span><span class="s-low">nachbestellen</span><span class="s-empty">leer</span></div>
@@ -3467,6 +3588,7 @@ async function viewLocations() {
     footer: `<footer class="bottom-bar"><button class="icon-btn blue" data-act="add" aria-label="Neuer Lagerort">${icon('plusCircle', 34, 1.8)}</button></footer>`,
   });
   setupShelf3D(root);
+  on(root, 'map', () => go('/map'));
   on(root, 'refresh', () => { invalidate('locations'); viewLocations(); });
   on(root, 'add', async () => {
     const n = await prompt({ title: 'Neuer Lagerort', placeholder: 'z.B. Kleinteilemagazin, Regal A3' }); if (!n) return;
@@ -3727,6 +3849,8 @@ async function viewSettings() {
         ${item('tag', 'Eigene Felder', 'go:/fields')}
         ${item('tally', 'Inventur', 'go:/inventory')}
         ${item('copy', 'Doppelte Teile finden', 'go:/dupes')}
+        ${item('map', 'Werkstatt-Grundriss', 'go:/map', '', '', 'teal')}
+        ${item('store', 'Thekenmodus<small>Teile & Preise für Kunden zeigen</small>', 'go:/counter', '', '', 'indigo')}
         ${db.isDemo ? '' : item('camera', 'Vorschaubilder erzeugen', 'thumbs', '', '', 'teal').replace('<span>Vorschaubilder erzeugen</span>', '<span>Vorschaubilder erzeugen<small>Kleine Bilder für schnellere Listen</small></span>')}
       </div>
       <div class="set-group">
@@ -3908,6 +4032,221 @@ async function viewSettings() {
   on(root, 'logout', async () => { await db.signOut(); invalidate(); go('/login', true); });
   on(root, 'guest-register', () => leaveGuest('register'));
   on(root, 'guest-exit', () => leaveGuest('login'));
+}
+
+// =====================================================================
+//  THEKENMODUS: Ansicht für Kunden – nur Verkaufspreis & Verfügbarkeit
+// =====================================================================
+let counterLock = null;
+async function keepAwake(root) {
+  try { counterLock = await navigator.wakeLock?.request('screen'); } catch { counterLock = null; }
+  const again = () => { if (!root.isConnected) return document.removeEventListener('visibilitychange', again); if (document.visibilityState === 'visible') keepAwake(root); };
+  document.addEventListener('visibilitychange', again, { once: true });
+  const watch = setInterval(() => { if (!root.isConnected) { clearInterval(watch); counterLock?.release?.().catch(() => {}); counterLock = null; } }, 1000);
+}
+function counterAvail(m) {
+  const t = +m.total || 0;
+  if (t <= 0) return { cls: 'order', text: 'Auf Bestellung' };
+  if (+m.min_stock > 0 && t <= +m.min_stock) return { cls: 'few', text: 'Nur noch wenige' };
+  return { cls: 'ok', text: 'Sofort verfügbar' };
+}
+const counterPrice = (m) => (+m.sale_price > 0 ? fmtEUR(m.sale_price) : '');
+async function viewCounter() {
+  const all = (await getMats()).filter((m) => m.kind === 'part' && deviceCat(m).id !== 'klein');
+  const cats = DEVICE_CATS.filter((c) => c.id !== 'klein' && all.some((m) => deviceCat(m).id === c.id));
+  const st = { q: '', cat: '' };
+  const root = screen({
+    header: '',
+    cls: 'counter-screen',
+    body: `
+      <div class="ct-top">
+        ${brandLogo('ct-logo')}
+        <button type="button" class="ct-exit" aria-label="Thekenmodus beenden – gedrückt halten">
+          <svg class="ct-ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18"/></svg>${icon('x', 18, 2.4)}</button>
+      </div>
+      <h1 class="ct-title">Ersatzteile &amp; Preise</h1>
+      <p class="ct-sub">Suche nach deinem Gerät oder Teil</p>
+      <label class="ct-search">${icon('search', 22, 2.2)}<input type="search" placeholder="z. B. iPhone 13 Display" autocomplete="off" enterkeyhint="search" aria-label="Suchen"></label>
+      <div class="ct-chips" role="tablist">
+        <button class="ct-chip on" data-cat="">Alle</button>
+        ${cats.map((c) => `<button class="ct-chip" data-cat="${c.id}">${icon(c.icon, 16, 2.2)}${esc(c.label)}</button>`).join('')}
+      </div>
+      <div class="ct-grid" aria-live="polite"></div>
+      <p class="ct-foot">Alle Teile werden von uns fachgerecht eingebaut. Fragen Sie uns gern.</p>`,
+  });
+  keepAwake(root);
+  const grid = root.querySelector('.ct-grid');
+  const render = () => {
+    let list = st.q ? filterMats(all, { q: st.q }) : all.slice();
+    if (st.cat) list = list.filter((m) => deviceCat(m).id === st.cat);
+    list.sort((a, b) => (+(b.total > 0) - +(a.total > 0)) || a.name.localeCompare(b.name, 'de'));
+    grid.innerHTML = list.slice(0, 120).map((m, i) => {
+      const a = counterAvail(m); const im = m.images?.[0];
+      return `<button class="ct-card" data-id="${m.id}" style="--i:${Math.min(i, 12)}">
+        <span class="ct-img">${im ? `<img src="${esc(im.thumb || im.url)}" alt="" loading="lazy" decoding="async">` : icon(deviceCat(m).icon, 40, 1.5)}</span>
+        <span class="ct-av ${a.cls}"><i></i>${a.text}</span>
+        <b class="ct-name">${esc(m.name)}</b>
+        <span class="ct-price">${counterPrice(m) || '<small>Preis auf Anfrage</small>'}</span>
+      </button>`;
+    }).join('') || `<div class="ct-empty">${icon('search', 44, 1.6)}<b>Nichts gefunden</b><span>Fragen Sie uns – wir bestellen das Teil gern für Sie.</span></div>`;
+  };
+  render();
+  let tmr;
+  root.querySelector('.ct-search input').oninput = (e) => { clearTimeout(tmr); tmr = setTimeout(() => { st.q = e.target.value.trim(); render(); }, 120); };
+  root.querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => {
+    st.cat = b.dataset.cat; haptic('selection');
+    root.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('on', x === b));
+    render();
+  }));
+  grid.onclick = (e) => {
+    const c = e.target.closest('[data-id]'); if (!c) return;
+    const m = all.find((x) => x.id === c.dataset.id); const a = counterAvail(m); const im = m.images?.[0];
+    haptic('light');
+    const { el, close } = layer('ct-detail-layer', `<div class="backdrop" data-x></div>
+      <div class="ct-detail" role="dialog" aria-label="${esc(m.name)}">
+        <button class="ct-dx" data-x aria-label="Schließen">${icon('x', 22, 2.4)}</button>
+        <div class="ct-dimg">${im ? `<img src="${esc(im.url)}" alt="">` : icon(deviceCat(m).icon, 70, 1.3)}</div>
+        <span class="ct-av ${a.cls}"><i></i>${a.text}</span>
+        <h2>${esc(m.name)}</h2>
+        ${(m.fits || []).length ? `<p class="ct-fits">Passt für: ${m.fits.map(esc).join(', ')}</p>` : ''}
+        <div class="ct-dprice">${counterPrice(m) || 'Preis auf Anfrage'}</div>
+        ${a.cls === 'order' ? '<p class="ct-note">Wir bestellen das Teil für Sie – meist in 1–3 Werktagen da.</p>' : ''}
+      </div>`);
+    el.querySelectorAll('[data-x]').forEach((x) => (x.onclick = close));
+  };
+  // Beenden nur mit Gedrückthalten – Kunden kommen nicht aus Versehen raus
+  const ex = root.querySelector('.ct-exit'); let hold;
+  const cancel = () => { clearTimeout(hold); ex.classList.remove('holding'); };
+  ex.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); ex.classList.add('holding'); haptic('light');
+    hold = setTimeout(() => { ex.classList.remove('holding'); haptic('success'); counterLock?.release?.().catch(() => {}); go('/settings', true); }, 900);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => ex.addEventListener(t, cancel));
+  ex.onclick = () => { if (!ex.classList.contains('holding')) toast('Zum Beenden gedrückt halten', 'info', { icon: 'x' }); };
+  ex.oncontextmenu = (e) => e.preventDefault();
+}
+
+// =====================================================================
+//  WERKSTATT-GRUNDRISS: Lagerorte als Regal-Blöcke auf einem Raster
+// =====================================================================
+const FP_COLS = 12;
+const fpOverlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+function fpFreeSpot(layout, w, h, skip) {
+  const boxes = Object.entries(layout).filter(([k]) => k !== skip).map(([, v]) => v);
+  for (let y = 0; y < 200; y++) for (let x = 0; x + w <= FP_COLS; x++) {
+    const c = { x, y, w, h };
+    if (!boxes.some((b) => fpOverlap(c, b))) return c;
+  }
+  return { x: 0, y: 0, w, h };
+}
+const fpRows = (layout) => Math.max(8, ...Object.values(layout).map((b) => b.y + b.h + 1));
+async function viewMap(q = {}) {
+  const [locs, mats, fp] = await Promise.all([getLocs(), getMats(), db.loadFloorplan().catch(() => ({ layout: {}, cloud: false }))]);
+  const saved = {};
+  locs.forEach((l) => { const b = fp.layout?.[l.id]; if (b && [b.x, b.y, b.w, b.h].every(Number.isFinite)) saved[l.id] = { x: b.x, y: b.y, w: b.w, h: b.h }; });
+  const layout = JSON.parse(JSON.stringify(saved));
+  // Neue Lagerorte bekommen automatisch einen freien Platz
+  let auto = 0;
+  locs.forEach((l) => { if (!layout[l.id]) { layout[l.id] = fpFreeSpot(layout, 4, 3); auto++; } });
+  const find = q.find ? mats.find((m) => m.id === q.find) : null;
+  const hits = new Map((find?.locations || []).map((l) => [l.location_id, l.qty]));
+  const stats = new Map(locs.map((l) => [l.id, shelfStats(l, mats)]));
+  let editing = !!q.edit;
+
+  const block = (l) => {
+    const b = layout[l.id]; const s = stats.get(l.id);
+    const hit = hits.has(l.id);
+    return `<button class="fp-block ${s.low ? 'has-low' : ''} ${hit ? 'hit' : ''}" data-id="${l.id}" style="--x:${b.x};--y:${b.y};--w:${b.w};--h:${b.h}">
+      <span class="fp-in"><b>${esc(l.name)}</b><small>${s.items.length} ${s.items.length === 1 ? 'Teil' : 'Teile'}${s.low ? ` · <em>${s.low} knapp</em>` : ''}</small></span>
+      ${hit ? `<span class="fp-pin">${icon('box', 13, 2.4)} ${fmtQty(hits.get(l.id))}</span>` : ''}
+      <span class="fp-handle" aria-hidden="true"></span>
+    </button>`;
+  };
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Grundriss', right: `<button class="text-btn fp-edit" data-act="edit">${editing ? 'Fertig' : 'Bearbeiten'}</button>` }),
+    cls: `map-screen ${editing ? 'editing' : ''} ${find ? 'finding' : ''}`,
+    body: `
+      <label class="fp-search">${icon('search', 19, 2.2)}<input type="search" placeholder="Wo liegt …?" autocomplete="off" aria-label="Teil suchen"><span class="fp-res"></span></label>
+      ${find ? `<div class="fp-find">${thumb(find, 'sm')}<span><b>${esc(find.name)}</b><small>${hits.size ? `Liegt in ${[...hits.keys()].map((id) => esc(locs.find((l) => l.id === id)?.name || '')).join(', ')}` : 'Noch keinem Lagerort zugeordnet'}</small></span><button class="icon-btn" data-act="unfind" aria-label="Markierung aufheben">${icon('x', 20, 2.4)}</button></div>` : ''}
+      ${locs.length ? `<div class="fp-room" style="--rows:${fpRows(layout)}"><div class="fp-floor"></div>${locs.map(block).join('')}</div>`
+        : empty('shelf', 'Noch keine Lagerorte', '<a class="btn-tinted" href="#/locations">Lagerorte anlegen</a>')}
+      <p class="fp-hint">${editing ? 'Regal ziehen zum Verschieben · Ecke unten rechts ziehen für die Größe.' : auto && !Object.keys(saved).length ? 'Deine Lagerorte wurden automatisch angeordnet. Tippe auf <b>Bearbeiten</b> und schiebe sie dahin, wo sie in deiner Werkstatt stehen.' : 'Tippe auf ein Regal, um den Inhalt zu sehen.'}</p>`,
+  });
+  const room = root.querySelector('.fp-room');
+  const place = (el) => { const b = layout[el.dataset.id]; el.style.cssText = `--x:${b.x};--y:${b.y};--w:${b.w};--h:${b.h}`; };
+  const grow = () => room && room.style.setProperty('--rows', fpRows(layout));
+
+  on(root, 'unfind', () => { replaceHash('#/map'); viewMap({}); });
+  on(root, 'edit', async () => {
+    if (!editing) { editing = true; root.classList.add('editing'); root.querySelector('.fp-edit').textContent = 'Fertig'; root.querySelector('.fp-hint').innerHTML = 'Regal ziehen zum Verschieben · Ecke unten rechts ziehen für die Größe.'; haptic('light'); return; }
+    const changed = locs.map((l) => l.id).filter((id) => JSON.stringify(layout[id]) !== JSON.stringify(saved[id]));
+    try {
+      const res = changed.length || fp.pending ? await db.saveFloorplan(layout, fp.pending ? locs.map((l) => l.id) : changed) : { cloud: fp.cloud };
+      changed.forEach((id) => (saved[id] = { ...layout[id] })); fp.pending = false;
+      editing = false; root.classList.remove('editing'); root.querySelector('.fp-edit').textContent = 'Bearbeiten';
+      root.querySelector('.fp-hint').textContent = 'Tippe auf ein Regal, um den Inhalt zu sehen.';
+      haptic('success');
+      if (changed.length) toast('Grundriss gespeichert', 'ok', !res.cloud && !db.isDemo ? { sub: 'Nur auf diesem Gerät – für alle Geräte die Grundriss-Migration ausführen', duration: 4200 } : {});
+    } catch (e) { errToast(e); }
+  });
+
+  // Ziehen & Größe ändern (im Bearbeiten-Modus), Antippen zeigt den Inhalt
+  root.querySelectorAll('.fp-block').forEach((el) => {
+    let drag = null;
+    el.addEventListener('pointerdown', (e) => {
+      if (!editing || e.button > 0) return;
+      e.preventDefault();
+      const id = el.dataset.id; const b = layout[id];
+      const cell = room.clientWidth / FP_COLS;
+      drag = { id, sx: e.clientX, sy: e.clientY, cell, start: { ...b }, mode: e.target.closest('.fp-handle') ? 'size' : 'move', pid: e.pointerId };
+      el.setPointerCapture(e.pointerId); el.classList.add('dragging'); haptic('light');
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.pid) return;
+      const dx = Math.round((e.clientX - drag.sx) / drag.cell); const dy = Math.round((e.clientY - drag.sy) / drag.cell);
+      const s = drag.start; const b = layout[drag.id]; const prev = JSON.stringify(b);
+      if (drag.mode === 'move') { b.x = Math.max(0, Math.min(FP_COLS - s.w, s.x + dx)); b.y = Math.max(0, s.y + dy); }
+      else { b.w = Math.max(1, Math.min(FP_COLS - s.x, s.w + dx)); b.h = Math.max(1, Math.min(12, s.h + dy)); }
+      if (JSON.stringify(b) !== prev) {
+        place(el); grow(); haptic('selection');
+        const bad = Object.entries(layout).some(([k, o]) => k !== drag.id && fpOverlap(b, o));
+        el.classList.toggle('bad', bad);
+      }
+    });
+    const end = () => {
+      if (!drag) return;
+      const b = layout[drag.id];
+      if (Object.entries(layout).some(([k, o]) => k !== drag.id && fpOverlap(b, o))) {
+        layout[drag.id] = { ...drag.start }; place(el); grow();
+        el.animate?.([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 260 });
+        haptic('error');
+      }
+      el.classList.remove('dragging', 'bad'); drag = null;
+    };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    el.addEventListener('click', () => {
+      if (editing) return;
+      const l = locs.find((x) => x.id === el.dataset.id); const s = stats.get(l.id);
+      haptic('light');
+      sheet(`<div class="fp-sheet">
+          <div class="fp-sum"><span><b>${s.items.length}</b><small>Teile</small></span><span><b>${fmtQty(s.units)}</b><small>Stück</small></span><span class="${s.low ? 'red' : ''}"><b>${s.low}</b><small>knapp</small></span></div>
+          <div class="fp-items">${s.items.slice(0, 40).map((x) => `<a class="fp-item s-${x.state} ${hits.has(l.id) && x.m.id === find?.id ? 'hit' : ''}" href="#/m/${x.m.id}">${thumb(x.m, 'sm')}<span>${esc(x.m.name)}</span><b>${fmtQty(x.qty)}</b></a>`).join('') || '<p class="muted center pad">Hier liegt noch nichts</p>'}</div>
+          ${s.items.length > 40 ? `<p class="muted small center">… und ${s.items.length - 40} weitere</p>` : ''}
+          <div class="fp-acts"><a class="btn-tinted" href="#/list?tab=part&loc=${l.id}">${icon('list', 18)} Alle Teile</a><a class="btn-tinted" href="#/inventory?loc=${l.id}">${icon('tally', 18)} Inventur</a></div>
+        </div>`, { title: l.name, onMount: (sh, close) => sh.querySelectorAll('a').forEach((a) => a.addEventListener('click', close)) });
+    });
+  });
+
+  // „Wo liegt …?“ – Teil suchen, Regal leuchtet auf
+  const inp = root.querySelector('.fp-search input'); const res = root.querySelector('.fp-res');
+  inp.oninput = () => {
+    const v = inp.value.trim();
+    const list = v.length < 2 ? [] : filterMats(mats.filter((m) => m.locations.length), { q: v }).slice(0, 6);
+    res.innerHTML = list.map((m) => `<button type="button" data-f="${m.id}">${thumb(m, 'sm')}<span>${esc(m.name)}</span></button>`).join('');
+    res.classList.toggle('open', list.length > 0);
+  };
+  res.onclick = (e) => { const b = e.target.closest('[data-f]'); if (!b) return; inp.blur(); replaceHash(`#/map?find=${b.dataset.f}`); viewMap({ find: b.dataset.f }); };
+  if (find && hits.size) requestAnimationFrame(() => root.querySelector('.fp-block.hit')?.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' }));
 }
 
 // =====================================================================

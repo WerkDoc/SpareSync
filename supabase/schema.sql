@@ -336,3 +336,7 @@ begin
     alter publication supabase_realtime add table public.lager_movements;
   end if;
 end $$;
+
+-- ---------- Werkstatt-Grundriss: Position der Lagerorte ----------
+-- (siehe migration-grundriss.sql)
+alter table public.lager_locations add column if not exists map jsonb;

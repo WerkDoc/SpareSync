@@ -584,6 +584,33 @@ export async function book({ material_id, type, qty, location_id, to_location_id
   try { demoLive?.postMessage({ type: 'movement', row: s.movements[s.movements.length - 1] }); } catch { /* egal */ }
   return total;
 }
+// ---------- Werkstatt-Grundriss: Position der Lagerorte (Spalte lager_locations.map) ----------
+// Fehlt die Spalte noch (Migration nicht ausgeführt) oder ist man offline, bleibt der Grundriss auf diesem Gerät.
+const MAP_LS = 'ss-floorplan';
+let mapCloud = null;
+const mapLocal = () => { try { return JSON.parse(localStorage.getItem(MAP_LS) || '{}') || {}; } catch { return {}; } };
+export async function loadFloorplan() {
+  if (isDemo) return { layout: load().floorplan || {}, cloud: false };
+  const { data, error } = await sb.from(T.loc).select('id, map');
+  if (error) { mapCloud = false; return { layout: mapLocal(), cloud: false }; }
+  mapCloud = true;
+  const layout = {};
+  data.forEach((r) => { if (r.map) layout[r.id] = r.map; });
+  // Vorher nur auf dem Gerät gespeichert? Dann diesen Stand übernehmen – wird beim nächsten Speichern hochgeladen.
+  if (!Object.keys(layout).length) { const loc = mapLocal(); if (Object.keys(loc).length) return { layout: loc, cloud: true, pending: true }; }
+  return { layout, cloud: true };
+}
+export async function saveFloorplan(layout, ids) {
+  try { localStorage.setItem(MAP_LS, JSON.stringify(layout)); } catch { /* egal */ }
+  if (isDemo) { load().floorplan = layout; save(); return { cloud: false }; }
+  if (mapCloud === false) return { cloud: false };
+  for (const id of ids) {
+    const { error } = await sb.from(T.loc).update({ map: layout[id] ?? null }).eq('id', id);
+    if (error) { mapCloud = false; return { cloud: false }; }
+  }
+  return { cloud: true };
+}
+
 export async function listMovements(material_id, limit = 200) {
   if (isDemo) {
     const s = load(); const ln = (id) => s.locations.find((l) => l.id === id)?.name || '';
