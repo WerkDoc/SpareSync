@@ -143,7 +143,8 @@ const navStack = [];
 // Seitenübergang für den nächsten Routenwechsel: 'push' | 'pop' | 'fade' | 'none'
 let nextTransition = null;
 let pendingTransition = null;
-const scrollMemo = {};        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
+const scrollMemo = {};
+let keepScrollOnce = null;        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
 let currentHash = null;
 let pendingScroll = 0;
 let pendingScrollWas = 0;
@@ -254,6 +255,7 @@ async function route() {
   const isBack = kind === 'pop' || kind === 'popvt' || kind === 'menuCloseR' || kind === 'menuCloseL';
   lastNavBack = isBack;
   pendingScroll = isBack ? (scrollMemo[h] || 0) : 0;
+  if (keepScrollOnce != null) { pendingScroll = keepScrollOnce; keepScrollOnce = null; }   // Live-Aktualisierung: an Ort und Stelle bleiben
   pendingScrollWas = pendingScroll;
   if (kind === 'push' || kind === 'menuR' || kind === 'menuL') delete scrollMemo[h];
   currentHash = h;
@@ -3910,6 +3912,30 @@ installHaptics();
 // iOS: ohne touchstart-Listener zeigt Safari den :active-Zustand (Hineindrücken) nicht an
 document.addEventListener('touchstart', () => {}, { passive: true });
 if (!db.isDemo) db.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' || ev === 'SIGNED_IN') { invalidate(); } });
+
+// ---------- Live: Buchungen von anderen Geräten sofort anzeigen ----------
+const LIVE_VERB = { out: 'entnommen', in: 'dazugebucht', transfer: 'umgebucht', inventory: 'gezählt' };
+let liveTimer = 0;
+db.onRemoteMovement(async (x) => {
+  invalidate('materials', 'locations'); detailMemo.movs.delete(x.material_id);
+  let m = null; try { m = (await getMats()).find((z) => z.id === x.material_id); } catch { /* egal */ }
+  const n = x.type === 'inventory' ? fmtQty(x.stock_after) : `${fmtQty(Math.abs(+x.qty))}×`;
+  toast('Anderes Gerät', 'info', { icon: 'refresh', sub: `${n} ${m ? m.name : 'Teil'} ${LIVE_VERB[x.type] || 'gebucht'}`, duration: 3500 });
+  haptic('light');
+  // Liste: nur die betroffene Zeile austauschen und kurz aufleuchten lassen
+  if (m) {
+    patchListRow(m);
+    document.querySelectorAll(`.mrow[data-id="${m.id}"], .ios-row[data-m="${m.id}"]`).forEach((r) => { r.classList.remove('live-flash'); void r.offsetWidth; r.classList.add('live-flash'); });
+  }
+  // Übersicht oder Detailseite dieses Teils: still neu aufbauen (Zahlen zählen weiter), wenn gerade nichts offen ist
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => {
+    const { path } = parseHash();
+    const busy = document.querySelector('.layer, .sd-layer, .alert-layer') || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if (busy) return;
+    if (path === '/fav' || path === `/m/${x.material_id}`) { keepScrollOnce = window.scrollY; nextTransition = 'none'; route(); }
+  }, 400);
+});
 
 // Splashscreen-Video (steht in index.html): blendet aus, sobald das Video zu Ende ist UND die App geladen hat
 route().finally(() => {

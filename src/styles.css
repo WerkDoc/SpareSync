@@ -2474,3 +2474,7 @@ span.pv-btn { background: none; }
 .photo-drop img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 2px; }
 .genie-ghost { position: fixed; z-index: 420; pointer-events: none; margin: 0; background: var(--surface); border-radius: 14px; overflow: hidden; will-change: transform, clip-path; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 :root[data-style="neu"] .genie-ghost { background: var(--neu); }
+
+/* Live-Buchung von einem anderen Gerät: Zeile leuchtet kurz auf */
+.live-flash { animation: live-flash 1.6s ease-out; }
+@keyframes live-flash { 0%, 30% { background-color: color-mix(in srgb, var(--primary) 18%, transparent); box-shadow: inset 3px 0 0 var(--primary); } 100% { background-color: transparent; } }

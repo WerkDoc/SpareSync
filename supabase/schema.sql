@@ -327,3 +327,12 @@ begin
 end $$;
 
 grant execute on function public.lager_merge(uuid, uuid) to authenticated;
+
+-- ---------- Live-Updates (Realtime) für Buchungen ----------
+-- (siehe migration-live-updates.sql)
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'lager_movements') then
+    alter publication supabase_realtime add table public.lager_movements;
+  end if;
+end $$;
