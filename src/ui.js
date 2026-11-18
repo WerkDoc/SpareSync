@@ -1361,3 +1361,34 @@ export function speedDial(btn, items, { radius = 170 } = {}) {
     });
   });
 }
+
+// =====================================================================
+//  Kamera: kurzer weißer Blitz – danach fällt das Foto (wie ein Sofortbild) in die Galerie
+// =====================================================================
+export function cameraFlash() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const f = document.createElement('div'); f.className = 'cam-flash'; document.body.appendChild(f);
+  f.animate([{ opacity: 0 }, { opacity: .95, offset: .12 }, { opacity: 0 }], { duration: 520, easing: 'ease-out' }).onfinish = () => f.remove();
+  haptic('medium');
+}
+export function photoDrop(blob, target) {
+  if (!blob || !target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const url = URL.createObjectURL(blob);
+  const t = target.getBoundingClientRect();
+  const el = document.createElement('div'); el.className = 'photo-drop'; el.innerHTML = `<img src="${url}" alt="">`;
+  const w = Math.min(230, innerWidth * 0.6);
+  el.style.cssText = `left:${innerWidth / 2 - w / 2}px;top:${innerHeight * 0.28}px;width:${w}px`;
+  document.body.appendChild(el);
+  const dx = t.left + t.width / 2 - innerWidth / 2; const dy = t.top + t.height / 2 - (innerHeight * 0.28 + w * 0.55);
+  const s = Math.max(0.25, Math.min(1, t.width / w * 0.7));
+  el.animate([
+    { transform: 'translateY(-30px) rotate(-8deg) scale(1.08)', opacity: 0 },
+    { transform: 'translateY(0) rotate(-4deg) scale(1)', opacity: 1, offset: .25 },
+    { transform: `translate(${dx}px, ${dy}px) rotate(2deg) scale(${s})`, opacity: .9, offset: .85 },
+    { transform: `translate(${dx}px, ${dy}px) rotate(0) scale(${s * 0.92})`, opacity: 0 },
+  ], { duration: 1100, easing: 'cubic-bezier(.45, 0, .2, 1)' }).onfinish = () => {
+    el.remove(); URL.revokeObjectURL(url);
+    target.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration: 360, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+    haptic('light');
+  };
+}

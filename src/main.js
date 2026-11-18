@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -1813,7 +1813,7 @@ async function viewMaterial(id, q) {
   const cached = cache.materials?.find((x) => x.id === id);
   const m = cached || await db.getMaterial(id);
   if (!m) { toast('Material nicht gefunden', 'err'); return go('/list', true); }
-  const reload = () => { detailMemo.tasks.delete(id); detailMemo.movs.delete(id); invalidate('materials', 'locations', 'groups'); viewMaterial(id, { tab }); };
+  const reload = () => { detailMemo.tasks.delete(id); detailMemo.movs.delete(id); invalidate('materials', 'locations', 'groups'); return viewMaterial(id, { tab }); };
   const setTab = (t) => { replaceHash(`#/m/${id}?tab=${t}`); viewMaterial(id, { tab: t }); };
 
   const tasks = detailMemo.tasks.get(id);            // undefined = noch nicht geladen → Platzhalter
@@ -1873,7 +1873,17 @@ async function viewMaterial(id, q) {
     if (!src) return;
     const files = await pickFiles({ capture: src === 'cam' });
     if (!files.length) return;
-    try { toast('Bild wird hochgeladen…'); for (const f of files) await db.addFile(id, await compressImage(f), f.name, 'image'); toast('Bild gespeichert'); reload(); } catch (e) { errToast(e); }
+    if (src === 'cam') cameraFlash();
+    try {
+      toast('Bild wird hochgeladen…');
+      let last = null;
+      for (const f of files) { last = await compressImage(f); await db.addFile(id, last, f.name, 'image'); }
+      toast('Bild gespeichert');
+      await reload(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 120)));
+      // das neue Foto fällt sichtbar in die Galerie
+      const target = document.querySelector('.gal-main') || document.querySelector('.gallery');
+      if (last && target) photoDrop(last, target);
+    } catch (e) { errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
   setupGallery(root, m, reload);
