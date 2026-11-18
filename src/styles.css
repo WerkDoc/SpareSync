@@ -2125,3 +2125,36 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .dash-screen.gyro .glass-btn:active { box-shadow: var(--press-s); }
 /* Schatten folgen der Neigung ohne eigene Verzögerung (die Glättung macht motion.js) */
 :root[data-style="neu"] .dash-screen.gyro :is(.widget, .quick, .spark-card, .ios-list, .q-ic, .w-ic, .r-ic, .glass-btn) { transition-property: transform, --press; }
+
+/* =====================================================================
+   Lager-Gesundheit (Übersicht): Ring + Text
+   ===================================================================== */
+.health-card { display: flex; align-items: center; gap: 16px; margin-top: 14px; padding: 16px 14px 16px 16px; border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--card-shadow); color: var(--text); transition: transform .2s var(--press-ease, ease), box-shadow .2s; }
+.health-card:active { transform: scale(.985); box-shadow: var(--card-shadow-press); }
+.health-card > svg { color: var(--text-3); flex-shrink: 0; }
+.health-ring { position: relative; width: 92px; height: 92px; flex-shrink: 0; border-radius: 50%; }
+.health-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.hr-track { fill: none; stroke: var(--fill); stroke-width: 10; }
+.hr-fill { fill: none; stroke-width: 10; stroke-linecap: round; }
+.h-ok .hg1 { stop-color: #34c759; } .h-ok .hg2 { stop-color: #1f9d55; }
+.h-warn .hg1 { stop-color: #ffcc00; } .h-warn .hg2 { stop-color: #ff9500; }
+.h-bad .hg1 { stop-color: #ff7a6b; } .h-bad .hg2 { stop-color: var(--red); }
+.hr-val { position: absolute; inset: 0; display: grid; place-items: center; grid-auto-flow: column; align-content: center; justify-content: center; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.hr-val small { font-size: 13px; font-weight: 600; color: var(--text-2); margin-left: 1px; align-self: start; margin-top: 4px; }
+.health-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.health-text b { font-size: 17px; }
+.health-text small { font-size: 14px; color: var(--text-2); }
+.health-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.health-chips i { font-style: normal; font-size: 12.5px; font-weight: 600; padding: 3px 9px; border-radius: 10px; }
+.hc-low { color: #b36b00; background: color-mix(in srgb, #ff9500 16%, transparent); }
+.hc-empty { color: var(--red); background: color-mix(in srgb, var(--red) 13%, transparent); }
+.hc-ok { color: #1f9d55; background: color-mix(in srgb, #34c759 15%, transparent); }
+:root[data-theme="dark"] .hc-low { color: #ffb340; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hc-low { color: #ffb340; } }
+/* plastisch: Karte erhaben, Ring liegt in einer runden Mulde */
+:root[data-style="neu"] .health-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .health-card:active { box-shadow: var(--sink); transform: scale(.99); }
+:root[data-style="neu"] .health-ring { box-shadow: var(--press-s); }
+:root[data-style="neu"] .hr-track { stroke: transparent; }
+:root[data-style="neu"] .health-chips i { background: var(--neu); box-shadow: 2px 2px 4px var(--neu-sh), -2px -2px 4px var(--neu-hi); }

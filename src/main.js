@@ -893,6 +893,46 @@ function backupHint(mats) {
     </div>`;
 }
 
+// ---------- Lager-Gesundheit: wie viel Prozent der Ersatzteile sind gut bestückt? ----------
+// „gut“ = Bestand über dem Meldebestand bzw. (ohne Meldebestand) überhaupt vorhanden
+function lagerHealth(parts) {
+  const empty = parts.filter((m) => (+m.total || 0) <= 0).length;
+  const low = parts.filter((m) => isLow(m) && (+m.total || 0) > 0).length;
+  const ok = parts.length - empty - low;
+  const pct = parts.length ? Math.round((ok / parts.length) * 100) : 100;
+  const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
+  return { ok, low, empty, total: parts.length, pct, state };
+}
+const HEALTH_R = 40; const HEALTH_C = +(2 * Math.PI * HEALTH_R).toFixed(2);
+function healthCard(h, cu) {
+  if (!h.total) return '';
+  const text = { ok: 'Lager gut bestückt', warn: 'Einiges wird knapp', bad: 'Viel nachzubestellen' }[h.state];
+  return `<a class="health-card h-${h.state}" href="#/list?tab=part&low=1" aria-label="Lager-Gesundheit ${h.pct} Prozent">
+      <div class="health-ring">
+        <svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="hg-${h.state}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="hg1"/><stop offset="1" class="hg2"/></linearGradient></defs>
+          <circle class="hr-track" cx="50" cy="50" r="${HEALTH_R}"/>
+          <circle class="hr-fill" cx="50" cy="50" r="${HEALTH_R}" stroke="url(#hg-${h.state})" style="stroke-dasharray:${HEALTH_C};stroke-dashoffset:${HEALTH_C}"/></svg>
+        <span class="hr-val">${cu('health')}<small>%</small></span>
+      </div>
+      <div class="health-text"><b>${text}</b>
+        <small>${fmtQty(h.ok)} von ${fmtQty(h.total)} Teilen genug da</small>
+        <span class="health-chips">${h.low ? `<i class="hc-low">${fmtQty(h.low)} knapp</i>` : ''}${h.empty ? `<i class="hc-empty">${fmtQty(h.empty)} leer</i>` : ''}${!h.low && !h.empty ? '<i class="hc-ok">alles da</i>' : ''}</span>
+      </div>
+      ${icon('chevR', 18)}
+    </a>`;
+}
+/** Ring füllt sich im gleichen Tempo wie die Zahl hochzählt */
+function animateHealth(root, fromPct, toPct) {
+  const arc = root.querySelector('.hr-fill'); if (!arc) return;
+  const off = (p) => (HEALTH_C * (1 - p / 100)).toFixed(2);
+  arc.style.strokeDashoffset = off(fromPct);
+  if (reduceMotion.matches) { arc.style.strokeDashoffset = off(toPct); return; }
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    arc.style.transition = 'stroke-dashoffset 4.5s cubic-bezier(.16, 1, .3, 1)';
+    arc.style.strokeDashoffset = off(toPct);
+  }));
+}
+
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
 
@@ -911,7 +951,8 @@ async function viewFav() {
   const counts = { locs: locs.length, groups: groups.length };
   const FAV_MAX = 6;
   const favs = mats.filter((m) => m.is_favorite).sort((a, b) => a.number - b.number);
-  const nums = { parts: parts.length, units, low: low.length, cart: cartN };
+  const hl = lagerHealth(parts);
+  const nums = { parts: parts.length, units, low: low.length, cart: cartN, health: hl.pct };
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
 
@@ -945,6 +986,7 @@ async function viewFav() {
 
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
+      ${healthCard(hl, cu)}
       <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
         ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
@@ -987,6 +1029,7 @@ async function viewFav() {
     if (dashShown[k] != null && dashShown[k] !== nums[k]) setTimeout(() => el.closest('.w-val, .w-sub')?.classList.add('num-pop'), 4480);
     dashShown[k] = nums[k];
   });
+  animateHealth(root, dashShown.healthRing ?? 0, hl.pct); dashShown.healthRing = hl.pct;
   popChanged(root);
   updateScrolled();
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
