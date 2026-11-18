@@ -2169,7 +2169,24 @@ function reachStats(movs) {
   const first = movs.length ? Math.min(...movs.map((x) => Date.parse(x.created_at))) : now;
   const days = Math.max(14, Math.min(REACH_DAYS, (now - first) / 864e5));
   const used = outs.reduce((a, x) => a + Math.abs(+x.qty || 0), 0);
-  return { perWeek: used / (days / 7), days: Math.round(days), n: outs.length };
+  // Für den Alters-Hinweis: wann wurde zuletzt Ware eingelagert?
+  const ins = movs.filter((x) => x.type === 'in' && +x.qty > 0).map((x) => Date.parse(x.created_at));
+  return { perWeek: used / (days / 7), days: Math.round(days), n: outs.length, lastIn: ins.length ? Math.max(...ins) : null };
+}
+
+// ---------- Alters-Hinweis: Akkus, Kleber & Co. altern im Regal ----------
+const AGING_RX = /akku|batter|kleber|klebe|adhes|tape|oca|paste|wärmeleit|waermeleit|flux|lötpaste|loetpaste|kleb/i;
+function agingHtml(m, r) {
+  const total = Math.max(0, +m.total || 0); if (total <= 0) return '';
+  const since = r?.lastIn ?? (m.created_at ? Date.parse(m.created_at) : null); if (!since) return '';
+  const months = (Date.now() - since) / (30.44 * 864e5);
+  const sensitive = AGING_RX.test(m.name || '');
+  if (months < (sensitive ? 6 : 12)) return '';
+  const age = months < 24 ? `${Math.floor(months)} Monaten` : `${Math.floor(months / 12)} Jahren`;
+  return `<div class="aging-card ${sensitive ? 'a-sens' : ''}">${icon(sensitive ? 'alert' : 'history', 22, 2.2)}<div>
+      <b>Zuletzt eingelagert vor ${age}</b>
+      <small>${sensitive ? 'Akkus und Kleber altern mit der Zeit – vor dem Einbau kurz prüfen.' : 'Liegt schon lange – wird das Teil noch gebraucht?'}</small>
+    </div></div>`;
 }
 const weeksText = (w) => (w < 1 ? 'wenige Tage' : w < 26 ? `ca. ${Math.round(w)} ${Math.round(w) === 1 ? 'Woche' : 'Wochen'}` : w < 104 ? `ca. ${Math.round(w / 4.35)} Monate` : 'über 2 Jahre');
 function reachHtml(m, r) {
@@ -2198,7 +2215,7 @@ async function fillReach(root, m) {
     const r = reachStats(await db.listMovements(m.id, 500));
     reachMemo.set(m.id, r);
     if (!slot.isConnected) return;
-    const html = reachHtml(m, r);
+    const html = reachHtml(m, r) + agingHtml(m, r);
     if (slot.innerHTML.trim() !== html.trim()) { slot.innerHTML = html; slot.firstElementChild?.classList.add('reach-in'); }
   } catch { /* offline: einfach weglassen */ }
 }
@@ -2242,7 +2259,7 @@ function infosTab(m, tasks) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${stockRing(m)}
-    ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
+    ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) + agingHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
     ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>

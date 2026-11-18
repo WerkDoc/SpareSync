@@ -2196,3 +2196,12 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .value-card:active { box-shadow: var(--sink); transform: scale(.99); }
 :root[data-style="neu"] .v-ic { background: var(--neu); box-shadow: var(--raise-xs, 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi)); }
 :root[data-style="neu"] { --raise-xs: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); }
+
+/* Alters-Hinweis (Detailseite) */
+.aging-card { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; padding: 14px 16px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); }
+.aging-card > svg { flex-shrink: 0; margin-top: 1px; color: var(--text-3); }
+.aging-card.a-sens > svg { color: #ff9500; }
+.aging-card > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.aging-card b { font-size: 16px; }
+.aging-card small { font-size: 13.5px; color: var(--text-2); }
+:root[data-style="neu"] .aging-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
