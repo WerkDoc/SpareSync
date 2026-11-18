@@ -1392,3 +1392,34 @@ export function photoDrop(blob, target) {
     haptic('light');
   };
 }
+
+// =====================================================================
+//  „Papierkorb saugt ein“ (wie der Genie-Effekt am Mac): die Zeile wird schmal und fließt ins Ziel
+// =====================================================================
+export function genieInto(el, target) {
+  if (!el || !target || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  const a = el.getBoundingClientRect(); const b = target.getBoundingClientRect();
+  if (!a.width) return false;
+  const ghost = el.cloneNode(true);
+  ghost.classList.add('genie-ghost');
+  ghost.style.cssText = `left:${a.left}px;top:${a.top}px;width:${a.width}px;height:${a.height}px`;
+  document.body.appendChild(ghost);
+  const tx = b.left + b.width / 2 - (a.left + a.width / 2); const ty = b.top + b.height / 2 - (a.top + a.height / 2);
+  // Trichter: die Seite zum Ziel hin wird zuerst schmal, dann rutscht alles hinein
+  const fx = ((b.left + b.width / 2 - a.left) / a.width) * 100;
+  const up = ty < 0;
+  const edge = up ? 'top' : 'bottom';
+  const funnel = (w) => up
+    ? `polygon(${fx - w}% 0, ${fx + w}% 0, 100% 100%, 0 100%)`
+    : `polygon(0 0, 100% 0, ${fx + w}% 100%, ${fx - w}% 100%)`;
+  ghost.animate([
+    { clipPath: funnel(50), transform: 'translate(0,0) scale(1)', opacity: 1 },
+    { clipPath: funnel(6), transform: `translate(${tx * 0.15}px, ${ty * 0.1}px) scaleY(.9)`, opacity: 1, offset: .35 },
+    { clipPath: funnel(2), transform: `translate(${tx}px, ${ty}px) scale(.06)`, opacity: .2 },
+  ], { duration: 620, easing: 'cubic-bezier(.55, 0, .35, 1)', fill: 'forwards' }).onfinish = () => {
+    ghost.remove();
+    target.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.35) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+  };
+  ghost.style.transformOrigin = `${fx}% ${edge === 'top' ? '0%' : '100%'}`;
+  return true;
+}

@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -2189,9 +2189,22 @@ async function deleteMaterialFlow(m, refresh) {
   if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
   // Erst nur ausblenden – endgültig gelöscht wird nach 5 Sekunden, solange niemand „Rückgängig“ tippt
   const hash = location.hash;
+  // Zeile merken, bevor die Liste neu aufgebaut wird → danach fließt sie in den Papierkorb im Hinweis
+  const row = [...document.querySelectorAll(`.mrow[data-id="${m.id}"], [data-m="${m.id}"]`)].find((el) => el.getBoundingClientRect().height > 0);
+  const ghostSrc = row?.closest('.swipe-wrap') || row;
+  const ghost = ghostSrc?.cloneNode(true); const rect = ghostSrc?.getBoundingClientRect();
   if (cache.materials) cache.materials = cache.materials.filter((x) => x.id !== m.id);
   refresh();
   haptic('medium');
+  if (ghost && rect) {
+    requestAnimationFrame(() => {
+      const ic = document.querySelector('.di-ic, .toast .ic');
+      if (!ic) return;
+      const holder = document.createElement('div'); holder.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;pointer-events:none`;
+      holder.appendChild(ghost); document.body.appendChild(holder);
+      genieInto(holder, ic); holder.remove();
+    });
+  }
   toast(`${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} gelöscht`, 'ok', {
     sub: `${m.number}: ${m.name}`, icon: 'trash',
     action: {
