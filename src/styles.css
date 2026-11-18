@@ -2527,3 +2527,28 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .scrubber.active .scr-track { background: var(--neu); box-shadow: var(--press-s); }
 :root[data-style="neu"] .scr-bubble { background: var(--neu-grad); }
 @media (min-width: 900px) { .scrubber { right: calc((100vw - 900px) / 2 + 2px); } }
+
+/* =====================================================================
+   Karte umdrehen (Detailseite: lange aufs Bild drücken)
+   ===================================================================== */
+.flip-layer { z-index: 165; }
+.flip-dim { position: absolute; inset: 0; background: rgba(8, 16, 34, .45); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); opacity: 0; transition: opacity .25s; }
+.flip-layer.show .flip-dim { opacity: 1; }
+.flip-stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; perspective: 1200px; pointer-events: none; }
+.flip-card { position: relative; width: min(78vw, 320px); aspect-ratio: 3 / 4; transform-style: preserve-3d; pointer-events: auto; cursor: pointer;
+  transform: scale(.85) rotateY(0deg); opacity: 0; transition: transform .75s cubic-bezier(.34, 1.25, .5, 1), opacity .25s; }
+.flip-layer.show .flip-card { transform: scale(1) rotateY(0deg); opacity: 1; }
+.flip-layer.show .flip-card.flipped { transform: scale(1) rotateY(180deg); }
+.flip-face { position: absolute; inset: 0; border-radius: 26px; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 22px; text-align: center;
+  background: var(--surface); color: var(--text); box-shadow: 0 30px 70px rgba(0, 0, 0, .35); }
+.flip-face img { width: 100%; flex: 1; min-height: 0; object-fit: contain; border-radius: 16px; background: #fff; }
+.flip-face b { font-size: 17px; line-height: 1.25; }
+.flip-face small { font-size: 13.5px; color: var(--text-2); }
+.flip-face.back { transform: rotateY(180deg); background: #fff; color: #111; }
+.flip-face.back small { color: #555; }
+.flip-qr { width: 100%; flex: 1; min-height: 0; display: grid; place-items: center; }
+.flip-qr svg { width: 100%; height: 100%; max-height: 100%; }
+.flip-hint { margin: 0; color: rgba(255, 255, 255, .85); font-size: 13.5px; pointer-events: auto; text-shadow: 0 1px 6px rgba(0, 0, 0, .4); }
+:root[data-style="neu"] .flip-face.front { background: var(--neu); }
+@media (prefers-reduced-motion: reduce) { .flip-card { transition: opacity .2s; } .flip-layer.show .flip-card.flipped { transform: none; } .flip-card.flipped .front { visibility: hidden; } .flip-card.flipped .back { transform: none; } }

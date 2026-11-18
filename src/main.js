@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto, flipCard,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -1947,6 +1947,8 @@ async function viewMaterial(id, q) {
     } catch (e) { errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
+  // Lange auf das Teilebild drücken → Karte dreht sich um, hinten der QR-Code groß zum Scannen
+  setupFlip(root, m);
   setupGallery(root, m, reload);
 
   if (tab === 'infos') {
@@ -2166,6 +2168,25 @@ function setupGallery(root, m, reload) {
 }
 
 // ---------- Gemeinsame Material-Aktionen (Detailseite + Kontextmenü) ----------
+function setupFlip(root, m) {
+  const g = root.querySelector('.gallery'); if (!g) return;
+  let t = 0; let sx = 0; let sy = 0; let fired = false;
+  g.addEventListener('pointerdown', (e) => {
+    fired = false; sx = e.clientX; sy = e.clientY;
+    clearTimeout(t);
+    t = setTimeout(() => {
+      fired = true; haptic('medium');
+      const im = m.images?.[0];
+      const code = m.barcode && m.barcode.length <= 20 ? m.barcode : String(m.number);   // wie beim Etikett
+      flipCard({ title: m.name, number: m.number, code, sub: code !== String(m.number) ? `Nr. ${m.number}` : '', img: im ? (im.thumb || im.url) : '' });
+    }, 520);
+  });
+  g.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) clearTimeout(t); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => g.addEventListener(ev, () => clearTimeout(t)));
+  g.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
+  g.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
 function openLabel(m) {
   // 2. Zeile: Chargennummer/Platz (eigenes Feld), sonst Artikelnummer
   const cf = m.custom_fields || {};

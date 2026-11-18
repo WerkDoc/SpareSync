@@ -564,7 +564,7 @@ export const LABEL_SIZES = [
   { id: '54x25', w: 54, h: 25, label: '54 × 25 mm', hint: 'Dymo 11352' },
   { id: '50x30', w: 50, h: 30, label: '50 × 30 mm', hint: 'Allgemein' },
 ];
-async function qrSvg(text) {
+export async function qrSvg(text) {
   const QR = (await import('qrcode')).default;
   // margin 1 = schmaler weißer Ruherand (wichtig fürs Scannen); kurze Inhalte → große, robuste Punkte
   return QR.toString(String(text), { type: 'svg', margin: 1, errorCorrectionLevel: String(text).length <= 24 ? 'Q' : 'M', color: { dark: '#000000', light: '#ffffff' } });
@@ -1422,4 +1422,30 @@ export function genieInto(el, target) {
   };
   ghost.style.transformOrigin = `${fx}% ${edge === 'top' ? '0%' : '100%'}`;
   return true;
+}
+
+// =====================================================================
+//  Karte umdrehen: das Teil dreht sich in 3D um, hinten steht der Code groß zum Scannen
+// =====================================================================
+export async function flipCard({ title, sub = '', img = '', code, number = '' }) {
+  let svg = '';
+  try { svg = await qrSvg(code); } catch { toast('QR-Code konnte nicht erzeugt werden', 'err'); return; }
+  const { el, close } = layer('flip-layer', `
+    <div class="flip-dim"></div>
+    <div class="flip-stage">
+      <div class="flip-card">
+        <div class="flip-face front">${img ? `<img src="${esc(img)}" alt="">` : icon('box', 64, 1.4)}<b>${esc(title)}</b>${number !== '' ? `<small>Nr. ${esc(number)}</small>` : ''}</div>
+        <div class="flip-face back"><div class="flip-qr">${svg}</div><b>${esc(title)}</b><small class="selectable">${esc(code)}</small>${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+      </div>
+      <p class="flip-hint">Tippen zum Umdrehen · daneben tippen schließt</p>
+    </div>`);
+  const card = el.querySelector('.flip-card');
+  // Bildschirm hell drehen hilft dem Scanner (nur Hinweis – Helligkeit kann eine Web-App nicht steuern)
+  const turn = () => { card.classList.toggle('flipped'); haptic('light'); };
+  setTimeout(turn, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 280);
+  // Der Finger vom langen Drücken liegt beim Loslassen oft schon auf der Karte → diesen „Tipp“ nicht mitzählen
+  const t0 = performance.now(); const fresh = () => performance.now() - t0 < 650;
+  card.addEventListener('click', (e) => { e.stopPropagation(); if (!fresh()) turn(); });
+  el.querySelector('.flip-dim').onclick = () => { if (!fresh()) close(); };
+  el.querySelector('.flip-hint').onclick = () => { if (!fresh()) close(); };
 }
