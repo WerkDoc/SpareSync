@@ -3909,6 +3909,26 @@ if (document.documentElement.classList.contains('fullbleed')) {
   probe.remove();
 }
 installHaptics();
+// iOS: Nach dem Schließen der Tastatur bleiben fest stehende Leisten (Tab-Leiste, Fußzeile) manchmal
+// dort „hängen“, wo vorher die Tastatur anfing. Darum danach den Viewport zurücksetzen und die Leisten neu zeichnen.
+(() => {
+  const vv = window.visualViewport;
+  let kbOpen = false; let t = 0;
+  const settleFixed = () => {
+    clearTimeout(t);
+    t = setTimeout(() => requestAnimationFrame(() => {
+      if (vv && vv.offsetTop > 0) window.scrollTo(window.scrollX, window.scrollY);   // Rest-Versatz der Tastatur entfernen
+      window.scrollBy(0, 1); window.scrollBy(0, -1);
+      document.querySelectorAll('.tabbar, .bottom-bar').forEach((el) => { el.style.transform = 'translateZ(0)'; void el.offsetHeight; el.style.transform = ''; });
+    }), 80);
+  };
+  vv?.addEventListener('resize', () => {
+    const open = vv.height < window.innerHeight - 120;
+    if (kbOpen && !open) settleFixed();
+    kbOpen = open;
+  });
+  document.addEventListener('focusout', (e) => { if (e.target?.matches?.('input, textarea, select')) settleFixed(); });
+})();
 // iOS: ohne touchstart-Listener zeigt Safari den :active-Zustand (Hineindrücken) nicht an
 document.addEventListener('touchstart', () => {}, { passive: true });
 if (!db.isDemo) db.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' || ev === 'SIGNED_IN') { invalidate(); } });
