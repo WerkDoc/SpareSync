@@ -10,6 +10,7 @@ import {
   countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
+import { fillRecapCard, showRecap } from './recap.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
 import { setupPullToRefresh, setupPullToSearch } from './ptr.js';
@@ -903,6 +904,8 @@ function lagerHealth(parts) {
   const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
   return { ok, low, empty, total: parts.length, pct, state };
 }
+const recapThumb = (m) => (m?.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '');
+
 // ---------- Lagerwert (Einkauf) ----------
 function lagerValue(parts) {
   const stock = (m) => Math.max(0, +m.total || 0);
@@ -1002,6 +1005,7 @@ async function viewFav() {
         </a>
       </section>
 
+      <div data-recap></div>
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
       ${healthCard(hl, cu)}
@@ -1055,6 +1059,7 @@ async function viewFav() {
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
   setupQuickReorder(root);
+  fillRecapCard(root.querySelector('[data-recap]'), mats, isLow, recapThumb);
   on(root, 'backup-later', (el) => {
     try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
     const card = el.closest('.backup-hint'); card.style.height = `${card.offsetHeight}px`;
@@ -2530,6 +2535,8 @@ async function viewStats() {
       <h2 class="dash-sec">Verbrauchs-Kalender</h2>
       ${heatmap(movs, days, mats)}
 
+      <button class="btn-tinted full mt recap-open" data-a="recap">${icon('chart', 18)} Wochenrückblick ansehen</button>
+
       <h2 class="dash-sec">Meistverbraucht</h2>
       ${st.top.length ? `<section class="ios-list">
         ${st.top.slice(0, 10).map((t, i) => `<a class="ios-row recent stats-row" href="#/m/${t.m.id}" data-id="${t.m.id}">
@@ -2568,6 +2575,7 @@ async function viewStats() {
       </section>${more(st.byNote, 10)}` : ''}`,
   });
   root.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('ss-stats-days', b.dataset.days); viewStats(); }));
+  root.querySelector('[data-a=recap]')?.addEventListener('click', () => showRecap(mats, isLow, recapThumb).catch(errToast));
   setupHeatmap(root, movs, mats);
   root.querySelectorAll('[data-apply]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;

@@ -30,7 +30,7 @@ function unlockScroll() {
   window.scrollTo(0, lockedY);
 }
 
-function layer(cls, html) {
+export function layer(cls, html) {
   const el = document.createElement('div');
   el.className = `layer ${cls}`;
   el.innerHTML = html;
