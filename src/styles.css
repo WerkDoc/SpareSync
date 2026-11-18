@@ -2571,3 +2571,89 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .skel-card { animation: skel-breathe 2.4s ease-in-out infinite; }
 @keyframes skel-breathe { 50% { box-shadow: 4px 4px 9px var(--neu-sh), -4px -4px 9px var(--neu-hi); } }
 @media (prefers-reduced-motion: reduce) { :root[data-style="neu"] .skel-card, :root[data-style="neu"] .skel::after { animation: none; } }
+
+/* =====================================================================
+   GASTMODUS + ANMELDUNG
+   ===================================================================== */
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 14px 4px 12px; color: var(--text-3); font-size: 13px; }
+.auth-or::before, .auth-or::after { content: ''; flex: 1; height: 1px; background: var(--sep, rgba(0,0,0,.12)); }
+.auth-guest {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; text-align: left;
+  border-radius: 18px; background: var(--surface); color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 22px -14px rgba(0,0,0,.2);
+  transition: transform .15s, box-shadow .2s;
+}
+.auth-guest:active { transform: scale(.985); }
+.auth-guest:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.auth-guest .ag-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--brand-blue, #3b82f6), var(--primary)); }
+.auth-guest .ag-txt { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.auth-guest .ag-txt b { font-size: 16px; font-weight: 600; }
+.auth-guest .ag-txt small { font-size: 13px; color: var(--text-2); }
+.auth-guest > svg:last-child { color: var(--text-3); flex-shrink: 0; }
+
+.guest-banner { width: 100%; text-align: left; color: var(--text); font: inherit; font-size: 14px; }
+.guest-banner > svg:first-child { color: var(--primary); }
+.guest-banner span { display: flex; flex-direction: column; gap: 1px; }
+.guest-banner em { font-style: normal; }
+.guest-banner small { font-size: 12.5px; color: var(--primary); font-weight: 600; }
+
+/* Übergang beim Start des Gastmodus */
+html.guest-enter body { transition: opacity .4s ease, filter .4s ease; opacity: 0; filter: blur(6px); }
+@media (prefers-reduced-motion: reduce) { html.guest-enter body { transition: none; } }
+
+/* ---- Plastisch: Anmelden / Registrieren ---- */
+:root[data-style="neu"] .auth-screen,
+:root[data-style="neu"] .screen-anim.auth-screen { background: var(--neu); }
+:root[data-style="neu"] .auth-logo {
+  width: 96px; height: 96px; padding: 10px; border-radius: 30px; background: var(--neu);
+  box-shadow: var(--raise);
+}
+:root[data-style="neu"] .auth-card {
+  background: var(--neu); border-radius: 28px; padding: 26px 20px 24px; gap: 16px;
+  box-shadow: var(--raise);
+}
+:root[data-style="neu"] .auth-field > span { padding-left: 8px; }
+:root[data-style="neu"] .auth-field input {
+  height: 54px; border: 0; border-radius: 27px; padding: 0 20px; background: var(--neu);
+  box-shadow: var(--sink); transition: box-shadow .2s var(--neu-ease);
+}
+:root[data-style="neu"] .auth-field input:focus {
+  background: var(--neu); outline: none;
+  box-shadow: var(--sink), 0 0 0 2px color-mix(in srgb, var(--primary) 55%, transparent);
+}
+:root[data-style="neu"] .auth-pw input { padding-right: 112px; }
+:root[data-style="neu"] .auth-eye {
+  right: 8px; height: 38px; border-radius: 19px; padding: 0 14px; background: var(--neu);
+  box-shadow: var(--raise-s); color: var(--primary); font-size: 14px;
+  transition: box-shadow .15s var(--neu-ease);
+}
+:root[data-style="neu"] .auth-eye:active,
+:root[data-style="neu"] .auth-eye[aria-pressed="true"] { background: var(--neu); box-shadow: var(--press-s); }
+:root[data-style="neu"] .auth-submit {
+  height: 58px; border-radius: 29px; background: var(--neu-grad);
+  box-shadow: 6px 6px 14px var(--neu-glow), -5px -5px 12px var(--neu-hi);
+  transition: box-shadow .18s var(--neu-ease), transform .18s var(--neu-ease);
+}
+:root[data-style="neu"] .auth-submit:active {
+  transform: scale(.98); filter: none;
+  box-shadow: inset 4px 4px 9px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15);
+}
+:root[data-style="neu"] .auth-switch { margin-top: 22px; padding: 12px 20px; border-radius: 22px; transition: box-shadow .15s var(--neu-ease); }
+:root[data-style="neu"] .auth-switch:active { box-shadow: var(--press-s); }
+:root[data-style="neu"] .auth-error { background: var(--neu); box-shadow: var(--press-s); }
+:root[data-style="neu"] .auth-sent-ic { background: var(--neu); box-shadow: var(--raise-s); width: 72px; height: 72px; }
+:root[data-style="neu"] .auth-or::before,
+:root[data-style="neu"] .auth-or::after {
+  background: color-mix(in srgb, var(--neu-sh) 75%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--neu-hi) 80%, transparent);
+}
+:root[data-style="neu"] .auth-guest {
+  background: var(--neu); border-radius: 24px; padding: 14px 16px; box-shadow: var(--raise);
+  transition: box-shadow .2s var(--neu-ease), transform .2s var(--neu-ease);
+}
+:root[data-style="neu"] .auth-guest:active { box-shadow: var(--sink); transform: scale(.99); }
+:root[data-style="neu"] .auth-guest .ag-ic {
+  border-radius: 50%; background: var(--neu-grad);
+  box-shadow: 4px 4px 9px var(--neu-glow), -3px -3px 8px var(--neu-hi);
+}
+:root[data-style="neu"] .auth-guest:active .ag-ic { box-shadow: inset 3px 3px 6px rgba(0, 0, 0, .25); }

@@ -7,7 +7,16 @@ import { createClient } from '@supabase/supabase-js';
 const SB_URL = import.meta.env.VITE_SUPABASE_URL;
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const sb = SB_URL && SB_KEY
+// Gastmodus: die App läuft mit Beispieldaten nur auf diesem Gerät – ohne Konto, ohne Verbindung zur Datenbank.
+// So kann man alles in Ruhe ausprobieren, bevor man sich registriert.
+const GUEST_KEY = 'ss-guest';
+const GUEST_LS = 'sparesync-guest-v1';
+export const hasCloud = !!(SB_URL && SB_KEY);
+export const isGuest = hasCloud && (() => { try { return localStorage.getItem(GUEST_KEY) === '1'; } catch { return false; } })();
+export function startGuest() { try { localStorage.setItem(GUEST_KEY, '1'); } catch { /* egal */ } }
+export function endGuest() { try { localStorage.removeItem(GUEST_KEY); localStorage.removeItem(GUEST_LS); } catch { /* egal */ } }
+
+export const sb = hasCloud && !isGuest
   ? createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } })
   : null;
 export const isDemo = !sb;
@@ -27,7 +36,7 @@ const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'de');
 // =====================================================================
 //  DEMO-SPEICHER
 // =====================================================================
-const LS = 'werkdoc-lager-demo-v1';
+const LS = isGuest ? GUEST_LS : 'werkdoc-lager-demo-v1';   // Gastdaten getrennt vom Entwickler-Demo
 let store = null;
 
 function seed() {
