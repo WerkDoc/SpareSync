@@ -57,7 +57,8 @@ function enableSwipeDown(sheetEl, dismiss) {
     const t = e.target;
     fromHandle = !!t.closest('.grabber, .bsheet-grab, .bsheet-head') && !t.closest('button');
     // im Inhalt nur, wenn er ganz oben ist (sonst normales Scrollen)
-    tracking = fromHandle || (!t.closest('input, textarea, select') && (!body || body.scrollTop <= 0));
+    // Drehregler & Co. (data-no-sheet-drag) ziehen das Sheet nicht mit
+    tracking = !t.closest('[data-no-sheet-drag]') && (fromHandle || (!t.closest('input, textarea, select') && (!body || body.scrollTop <= 0)));
     dragging = false;
     startY = lastY = e.touches[0].clientY; lastT = performance.now(); vel = 0;
   }, { passive: true });

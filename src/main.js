@@ -893,6 +893,46 @@ function backupHint(mats) {
     </div>`;
 }
 
+// ---------- Lager-Gesundheit: wie viel Prozent der Ersatzteile sind gut bestückt? ----------
+// „gut“ = Bestand über dem Meldebestand bzw. (ohne Meldebestand) überhaupt vorhanden
+function lagerHealth(parts) {
+  const empty = parts.filter((m) => (+m.total || 0) <= 0).length;
+  const low = parts.filter((m) => isLow(m) && (+m.total || 0) > 0).length;
+  const ok = parts.length - empty - low;
+  const pct = parts.length ? Math.round((ok / parts.length) * 100) : 100;
+  const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
+  return { ok, low, empty, total: parts.length, pct, state };
+}
+const HEALTH_R = 40; const HEALTH_C = +(2 * Math.PI * HEALTH_R).toFixed(2);
+function healthCard(h, cu) {
+  if (!h.total) return '';
+  const text = { ok: 'Lager gut bestückt', warn: 'Einiges wird knapp', bad: 'Viel nachzubestellen' }[h.state];
+  return `<a class="health-card h-${h.state}" href="#/list?tab=part&low=1" aria-label="Lager-Gesundheit ${h.pct} Prozent">
+      <div class="health-ring">
+        <svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="hg-${h.state}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="hg1"/><stop offset="1" class="hg2"/></linearGradient></defs>
+          <circle class="hr-track" cx="50" cy="50" r="${HEALTH_R}"/>
+          <circle class="hr-fill" cx="50" cy="50" r="${HEALTH_R}" stroke="url(#hg-${h.state})" style="stroke-dasharray:${HEALTH_C};stroke-dashoffset:${HEALTH_C}"/></svg>
+        <span class="hr-val">${cu('health')}<small>%</small></span>
+      </div>
+      <div class="health-text"><b>${text}</b>
+        <small>${fmtQty(h.ok)} von ${fmtQty(h.total)} Teilen genug da</small>
+        <span class="health-chips">${h.low ? `<i class="hc-low">${fmtQty(h.low)} knapp</i>` : ''}${h.empty ? `<i class="hc-empty">${fmtQty(h.empty)} leer</i>` : ''}${!h.low && !h.empty ? '<i class="hc-ok">alles da</i>' : ''}</span>
+      </div>
+      ${icon('chevR', 18)}
+    </a>`;
+}
+/** Ring füllt sich im gleichen Tempo wie die Zahl hochzählt */
+function animateHealth(root, fromPct, toPct) {
+  const arc = root.querySelector('.hr-fill'); if (!arc) return;
+  const off = (p) => (HEALTH_C * (1 - p / 100)).toFixed(2);
+  arc.style.strokeDashoffset = off(fromPct);
+  if (reduceMotion.matches) { arc.style.strokeDashoffset = off(toPct); return; }
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    arc.style.transition = 'stroke-dashoffset 4.5s cubic-bezier(.16, 1, .3, 1)';
+    arc.style.strokeDashoffset = off(toPct);
+  }));
+}
+
 // Zuletzt angezeigte Dashboard-Zahlen → beim nächsten Mal von dort aus weiterzählen
 const dashShown = {};
 
@@ -911,7 +951,8 @@ async function viewFav() {
   const counts = { locs: locs.length, groups: groups.length };
   const FAV_MAX = 6;
   const favs = mats.filter((m) => m.is_favorite).sort((a, b) => a.number - b.number);
-  const nums = { parts: parts.length, units, low: low.length, cart: cartN };
+  const hl = lagerHealth(parts);
+  const nums = { parts: parts.length, units, low: low.length, cart: cartN, health: hl.pct };
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
 
@@ -945,6 +986,7 @@ async function viewFav() {
 
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
+      ${healthCard(hl, cu)}
       <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
         ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
@@ -987,6 +1029,7 @@ async function viewFav() {
     if (dashShown[k] != null && dashShown[k] !== nums[k]) setTimeout(() => el.closest('.w-val, .w-sub')?.classList.add('num-pop'), 4480);
     dashShown[k] = nums[k];
   });
+  animateHealth(root, dashShown.healthRing ?? 0, hl.pct); dashShown.healthRing = hl.pct;
   popChanged(root);
   updateScrolled();
   onLongPress(root.querySelector('.content'), '.ios-row.recent', (el) => materialContextMenu(el, () => viewFav()));
@@ -1589,11 +1632,16 @@ async function openBooking(m, type, onDone, preset = {}) {
       ${type === 'transfer' ? `<label class="frow"><span>Nach Lagerort</span><select data-f="to">${opts(locs.find((l) => l.id !== fromDefault)?.id, null)}</select></label>` : ''}
       <div class="frow"><span>Bestand hier</span><b data-f="here">${fmtQty(qtyAt(fromDefault))}</b></div>
     </div>
-    <div class="stepper big">
+    <div class="stepper big has-dial">
       <button data-s="-1" aria-label="Weniger">${icon('minus', 28, 2.6)}</button>
-      <span class="odo"><input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty"></span>
+      <div class="dial" data-dial data-no-sheet-drag>
+        <div class="dial-ring">${Array.from({ length: 24 }, (_, i) => `<i style="--a:${i * 15}deg"></i>`).join('')}</div>
+        <div class="dial-knob"><b class="dial-dot"></b></div>
+        <span class="odo"><input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty" aria-label="Menge"></span>
+      </div>
       <button data-s="1" aria-label="Mehr">${icon('plus', 28, 2.6)}</button>
     </div>
+    <p class="dial-hint">Drehen zum Einstellen · Tippen zum Eintippen</p>
     <div class="form-group"><label class="frow col"><span>${type === 'out' ? 'Wofür? (Notiz, optional)' : 'Notiz (optional)'}</span><input data-f="note" placeholder="${type === 'out' ? 'z.B. Kunde Müller, Auftrag 2410-17' : 'z.B. Lieferung, Lieferant'}" value="${esc(preset.note || '')}" autocomplete="off" enterkeyhint="done"></label></div>
     ${recentNotes(type).length ? `<div class="note-chips" aria-label="Zuletzt verwendete Notizen">${recentNotes(type).map((n) => `<button type="button" class="chip" data-note="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
     <button class="btn-action ${conf.cls} full" data-a="ok">${icon(conf.icon, 22, 2.6)} ${conf.title}</button>`,
@@ -1614,12 +1662,15 @@ async function openBooking(m, type, onDone, preset = {}) {
       let prevFrom = f('from').value; let prevTo = f('to')?.value;
       f('from').onchange = async () => { await handleNew(f('from'), prevFrom); prevFrom = f('from').value; f('here').textContent = fmtQty(qtyAt(prevFrom)); };
       if (f('to')) f('to').onchange = async () => { await handleNew(f('to'), prevTo); prevTo = f('to').value; };
-      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => {
-        const old = qty.value; const next = Math.max(0, (+qty.value || 0) + +b.dataset.s);
-        if (String(next) === old) return;
-        qty.value = next; haptic();
-        odometer(qty, old, +b.dataset.s > 0 ? 1 : -1);
-      }));
+      const step = (d) => {
+        const old = qty.value; const next = Math.max(0, (+qty.value || 0) + d);
+        if (String(next) === old) return false;
+        qty.value = next; haptic('selection');
+        odometer(qty, old, d > 0 ? 1 : -1);
+        return true;
+      };
+      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { if (step(+b.dataset.s)) dial?.nudge(+b.dataset.s); }));
+      const dial = setupDial(root.querySelector('[data-dial]'), qty, step);
       root.querySelectorAll('[data-note]').forEach((b) => (b.onclick = () => { f('note').value = b.dataset.note; haptic(); }));
       root.querySelector('[data-a=ok]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true;
@@ -1642,6 +1693,50 @@ async function openBooking(m, type, onDone, preset = {}) {
       };
     },
   });
+}
+
+/**
+ * Drehregler für die Menge (wie ein Lautstärke-Knopf): im Uhrzeigersinn mehr, dagegen weniger.
+ * Alle 30° ein Schritt mit leichtem Klick (Haptik). Tippen ohne Drehen öffnet die Tastatur.
+ */
+const DIAL_STEP = 30;
+function setupDial(el, input, step) {
+  if (!el) return null;
+  const knob = el.querySelector('.dial-knob');
+  let rot = 0; let acc = 0; let last = null; let moved = 0; let id = null;
+  const show = (anim) => { knob.style.transition = anim ? 'transform .35s cubic-bezier(.34,1.5,.64,1)' : 'none'; knob.style.transform = `rotate(${rot}deg)`; };
+  const angle = (e) => { const r = el.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    id = e.pointerId; last = angle(e); moved = 0; acc = 0;
+    el.classList.add('turning');
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== id || last == null) return;
+    const a = angle(e); let d = a - last; last = a;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    moved += Math.abs(d);
+    if (moved < 8) return;                                   // kleines Zittern beim Tippen ignorieren
+    if (moved - Math.abs(d) < 8) { try { el.setPointerCapture(id); } catch { /* egal */ } input.blur(); }
+    acc += d;
+    while (acc >= DIAL_STEP) { acc -= DIAL_STEP; if (step(1)) rot += DIAL_STEP; }
+    while (acc <= -DIAL_STEP) { acc += DIAL_STEP; if (step(-1)) rot -= DIAL_STEP; else acc = 0; }   // bei 0 bleibt der Knopf stehen
+    knob.style.transition = 'none';
+    knob.style.transform = `rotate(${rot + acc * 0.35}deg)`;     // leicht „zwischen den Rasten“ mitgehen
+  });
+  const end = (e) => {
+    if (e.pointerId !== id) return;
+    id = null; last = null; el.classList.remove('turning');
+    show(true);                                              // in die nächste Raste federn
+    if (moved >= 8) e.preventDefault();
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('click', (e) => { if (moved >= 8) { e.preventDefault(); return; } input.focus(); input.select?.(); });
+  // Während des Drehens nicht scrollen und das Sheet nicht ziehen
+  el.addEventListener('touchmove', (e) => { if (id != null && moved >= 8) e.preventDefault(); }, { passive: false });
+  show(false);
+  return { nudge: (d) => { rot += d * DIAL_STEP; show(true); } };
 }
 
 // =====================================================================
@@ -1684,6 +1779,7 @@ async function viewMaterial(id, q) {
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
   setupHeroScroll(root);
+  if (tab === 'infos') fillReach(root, m);
 
   // Im Hintergrund frischen Stand holen; nur wenn sich etwas geändert hat, wird die Seite (ohne Animation) neu gezeichnet
   if (!q.fresh) {
@@ -2044,6 +2140,50 @@ async function undoBooking(b, title, onDone) {
   } catch (e) { errToast(e); }
 }
 
+// ---------- Reichweite: „Reicht noch ca. X Wochen“ aus dem bisherigen Verbrauch ----------
+const REACH_DAYS = 90;
+const reachMemo = new Map();          // Teil-ID → { perWeek, days, n }
+function reachStats(movs) {
+  const now = Date.now(); const since = now - REACH_DAYS * 864e5;
+  const outs = movs.filter((x) => x.type === 'out' && Date.parse(x.created_at) >= since);
+  // Zeitraum: 90 Tage – oder kürzer, wenn das Teil noch nicht so lange gebucht wird (mind. 14 Tage, sonst wird die Schätzung wild)
+  const first = movs.length ? Math.min(...movs.map((x) => Date.parse(x.created_at))) : now;
+  const days = Math.max(14, Math.min(REACH_DAYS, (now - first) / 864e5));
+  const used = outs.reduce((a, x) => a + Math.abs(+x.qty || 0), 0);
+  return { perWeek: used / (days / 7), days: Math.round(days), n: outs.length };
+}
+const weeksText = (w) => (w < 1 ? 'wenige Tage' : w < 26 ? `ca. ${Math.round(w)} ${Math.round(w) === 1 ? 'Woche' : 'Wochen'}` : w < 104 ? `ca. ${Math.round(w / 4.35)} Monate` : 'über 2 Jahre');
+function reachHtml(m, r) {
+  if (!r) return '';
+  const total = Math.max(0, +m.total || 0); const min = +m.min_stock || 0;
+  const rate = `Ø ${fmtQty(+r.perWeek.toFixed(1))} Stück pro Woche · letzte ${r.days} Tage${r.n < 3 ? ' · grobe Schätzung' : ''}`;
+  if (r.perWeek <= 0) {
+    return `<div class="reach-card r-idle">${icon('history', 22, 2.2)}<div><b>In den letzten ${r.days} Tagen nicht entnommen</b><small>Keine Reichweite berechenbar</small></div></div>`;
+  }
+  const weeks = total / r.perWeek;
+  const state = total <= 0 || weeks < 2 ? 'bad' : weeks < 4 ? 'warn' : 'ok';
+  const head = total <= 0 ? 'Leer – wird aber regelmäßig gebraucht' : `Reicht noch ${weeksText(weeks)}`;
+  const toMin = min > 0 && total > min ? (total - min) / r.perWeek : null;
+  // Balken: 8 Wochen = voll
+  const frac = Math.max(0.03, Math.min(1, weeks / 8));
+  return `<div class="reach-card r-${state}">${icon('clock', 22, 2.2)}<div>
+      <b>${head}</b>
+      <small>${rate}</small>
+      ${toMin != null ? `<small>Meldebestand in ${weeksText(toMin)} erreicht</small>` : ''}
+      <span class="reach-bar"><i style="--w:${(frac * 100).toFixed(1)}%"></i></span>
+    </div></div>`;
+}
+async function fillReach(root, m) {
+  const slot = root.querySelector('[data-reach]'); if (!slot) return;
+  try {
+    const r = reachStats(await db.listMovements(m.id, 500));
+    reachMemo.set(m.id, r);
+    if (!slot.isConnected) return;
+    const html = reachHtml(m, r);
+    if (slot.innerHTML.trim() !== html.trim()) { slot.innerHTML = html; slot.firstElementChild?.classList.add('reach-in'); }
+  } catch { /* offline: einfach weglassen */ }
+}
+
 /** Bestands-Ring: wie voll ist das Fach im Verhältnis zu Melde- und Maximalbestand? (nur wenn einer davon gesetzt ist) */
 function stockRing(m) {
   const min = +m.min_stock || 0; const max = +m.max_stock || 0; const total = Math.max(0, +m.total || 0);
@@ -2083,6 +2223,7 @@ function infosTab(m, tasks) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${stockRing(m)}
+    ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
     ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
