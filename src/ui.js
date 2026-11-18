@@ -30,7 +30,7 @@ function unlockScroll() {
   window.scrollTo(0, lockedY);
 }
 
-function layer(cls, html) {
+export function layer(cls, html) {
   const el = document.createElement('div');
   el.className = `layer ${cls}`;
   el.innerHTML = html;
@@ -1220,4 +1220,38 @@ export function photoViewer({ images, start = 0, title = '', onDelete = null, on
   el.querySelector('[data-a=x]').onclick = close;
   el.querySelector('[data-a=del]')?.addEventListener('click', () => onDelete(images[idx], close));
   return close;
+}
+
+// =====================================================================
+//  „Ab in den Warenkorb“: ein Bild fliegt im Bogen zu einem Ziel, das Ziel hüpft
+// =====================================================================
+export function flyTo({ from, to, img = '', onLand } = {}) {
+  if (!from || !to || matchMedia('(prefers-reduced-motion: reduce)').matches) { onLand?.(); return false; }
+  const a = from.getBoundingClientRect ? from.getBoundingClientRect() : from;
+  const b = to.getBoundingClientRect();
+  const size = 58;
+  const el = document.createElement('div');
+  el.className = 'fly-item';
+  el.innerHTML = img ? `<img src="${esc(img)}" alt="">` : icon('box', 26, 2.2);
+  el.style.cssText = `left:${a.left + a.width / 2 - size / 2}px;top:${a.top + a.height / 2 - size / 2}px;width:${size}px;height:${size}px`;
+  document.body.appendChild(el);
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+  const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  const lift = Math.min(160, Math.max(70, Math.abs(dx) * 0.4 + 60));   // Bogenhöhe
+  const frames = [];
+  for (let i = 0; i <= 24; i++) {
+    const t = i / 24;
+    const x = dx * t; const y = dy * t - lift * 4 * t * (1 - t);           // Parabel
+    const s = 1 - 0.72 * t; const r = 25 * t;
+    frames.push({ transform: `translate(${x}px, ${y}px) scale(${s}) rotate(${r}deg)`, opacity: t > .9 ? (1 - t) * 10 : 1 });
+  }
+  const anim = el.animate(frames, { duration: 720, easing: 'cubic-bezier(.45, 0, .25, 1)' });
+  anim.onfinish = () => {
+    el.remove();
+    to.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.28)' }, { transform: 'scale(.92)' }, { transform: 'scale(1)' }],
+      { duration: 480, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+    haptic('success');
+    onLand?.();
+  };
+  return true;
 }

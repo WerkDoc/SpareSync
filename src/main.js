@@ -7,9 +7,10 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
+import { fillRecapCard, showRecap } from './recap.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
 import { setupPullToRefresh, setupPullToSearch } from './ptr.js';
@@ -903,6 +904,25 @@ function lagerHealth(parts) {
   const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
   return { ok, low, empty, total: parts.length, pct, state };
 }
+const recapThumb = (m) => (m?.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '');
+
+// ---------- Lagerwert (Einkauf) ----------
+function lagerValue(parts) {
+  const stock = (m) => Math.max(0, +m.total || 0);
+  const buy = parts.reduce((a, m) => a + stock(m) * (+m.purchase_price || 0), 0);
+  const missing = parts.filter((m) => stock(m) > 0 && !(+m.purchase_price > 0)).length;
+  const top = parts.map((m) => ({ m, v: stock(m) * (+m.purchase_price || 0) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v)[0];
+  return { buy, missing, top };
+}
+function valueCard(v, cu) {
+  if (!(v.buy > 0)) return '';
+  return `<a class="value-card" href="#/stats" aria-label="Lagerwert im Einkauf">
+      <span class="v-ic">${icon('euro', 22, 2.2)}</span>
+      <div class="v-main"><small>Lagerwert (Einkauf)</small><b>${cu('value')} €</b>
+        <small>${v.missing ? `${fmtQty(v.missing)} ${v.missing === 1 ? 'Teil' : 'Teile'} noch ohne Einkaufspreis` : 'Alle Teile mit Einkaufspreis'}${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small></div>
+      ${icon('chevR', 18)}
+    </a>`;
+}
 const HEALTH_R = 40; const HEALTH_C = +(2 * Math.PI * HEALTH_R).toFixed(2);
 function healthCard(h, cu) {
   if (!h.total) return '';
@@ -952,7 +972,8 @@ async function viewFav() {
   const FAV_MAX = 6;
   const favs = mats.filter((m) => m.is_favorite).sort((a, b) => a.number - b.number);
   const hl = lagerHealth(parts);
-  const nums = { parts: parts.length, units, low: low.length, cart: cartN, health: hl.pct };
+  const val = lagerValue(parts);
+  const nums = { parts: parts.length, units, low: low.length, cart: cartN, health: hl.pct, value: Math.round(val.buy) };
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
 
@@ -984,9 +1005,11 @@ async function viewFav() {
         </a>
       </section>
 
+      <div data-recap></div>
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
       ${healthCard(hl, cu)}
+      ${valueCard(val, cu)}
       <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
         ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
@@ -1036,6 +1059,7 @@ async function viewFav() {
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
   setupQuickReorder(root);
+  fillRecapCard(root.querySelector('[data-recap]'), mats, isLow, recapThumb);
   on(root, 'backup-later', (el) => {
     try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
     const card = el.closest('.backup-hint'); card.style.height = `${card.offsetHeight}px`;
@@ -2056,7 +2080,21 @@ async function addToCartFlow(m) {
   const sug = Math.max(1, (+m.max_stock || 0) - m.total) || 1;
   const n = await prompt({ title: 'In den Warenkorb', message: m.name, value: sug, type: 'number', okText: 'Hinzufügen' });
   if (!n || !(+n > 0)) return;
-  try { await db.addToCart('cart', m.id, +n); invalidate('cart'); successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`); } catch (e) { errToast(e); }
+  try {
+    await db.addToCart('cart', m.id, +n); invalidate('cart');
+    const flew = flyToCart(m, () => toast('Im Warenkorb', 'ok', { sub: `${fmtQty(n)} × ${m.name}` }));
+    if (!flew) successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`);
+  } catch (e) { errToast(e); }
+}
+/** Teilebild fliegt zum nächsten sichtbaren Warenkorb (Segment in der Liste, Widget auf der Übersicht, sonst Tab „Teile“) */
+function flyToCart(m, onLand) {
+  const visible = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
+  const to = ['.segment [data-tab="cart"]', '.widget[href="#/list?tab=cart"] .w-ic', '.tabbar .tab[href="#/list"] svg']
+    .map((q) => document.querySelector(q)).find(visible);
+  const from = [document.querySelector('.gal-main .cur img'), document.querySelector('[data-act="cart"] i'), document.querySelector(`[data-m="${m.id}"] .thumb`)].find(visible)
+    || { left: innerWidth / 2 - 30, top: innerHeight / 2 - 30, width: 60, height: 60 };
+  const img = m.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '';
+  return flyTo({ from, to, img, onLand });
 }
 
 /** Haptic Touch: langes Drücken auf einen Eintrag → Kontextmenü mit den wichtigsten Aktionen */
@@ -2150,7 +2188,24 @@ function reachStats(movs) {
   const first = movs.length ? Math.min(...movs.map((x) => Date.parse(x.created_at))) : now;
   const days = Math.max(14, Math.min(REACH_DAYS, (now - first) / 864e5));
   const used = outs.reduce((a, x) => a + Math.abs(+x.qty || 0), 0);
-  return { perWeek: used / (days / 7), days: Math.round(days), n: outs.length };
+  // Für den Alters-Hinweis: wann wurde zuletzt Ware eingelagert?
+  const ins = movs.filter((x) => x.type === 'in' && +x.qty > 0).map((x) => Date.parse(x.created_at));
+  return { perWeek: used / (days / 7), days: Math.round(days), n: outs.length, lastIn: ins.length ? Math.max(...ins) : null };
+}
+
+// ---------- Alters-Hinweis: Akkus, Kleber & Co. altern im Regal ----------
+const AGING_RX = /akku|batter|kleber|klebe|adhes|tape|oca|paste|wärmeleit|waermeleit|flux|lötpaste|loetpaste|kleb/i;
+function agingHtml(m, r) {
+  const total = Math.max(0, +m.total || 0); if (total <= 0) return '';
+  const since = r?.lastIn ?? (m.created_at ? Date.parse(m.created_at) : null); if (!since) return '';
+  const months = (Date.now() - since) / (30.44 * 864e5);
+  const sensitive = AGING_RX.test(m.name || '');
+  if (months < (sensitive ? 6 : 12)) return '';
+  const age = months < 24 ? `${Math.floor(months)} Monaten` : `${Math.floor(months / 12)} Jahren`;
+  return `<div class="aging-card ${sensitive ? 'a-sens' : ''}">${icon(sensitive ? 'alert' : 'history', 22, 2.2)}<div>
+      <b>Zuletzt eingelagert vor ${age}</b>
+      <small>${sensitive ? 'Akkus und Kleber altern mit der Zeit – vor dem Einbau kurz prüfen.' : 'Liegt schon lange – wird das Teil noch gebraucht?'}</small>
+    </div></div>`;
 }
 const weeksText = (w) => (w < 1 ? 'wenige Tage' : w < 26 ? `ca. ${Math.round(w)} ${Math.round(w) === 1 ? 'Woche' : 'Wochen'}` : w < 104 ? `ca. ${Math.round(w / 4.35)} Monate` : 'über 2 Jahre');
 function reachHtml(m, r) {
@@ -2158,6 +2213,7 @@ function reachHtml(m, r) {
   const total = Math.max(0, +m.total || 0); const min = +m.min_stock || 0;
   const rate = `Ø ${fmtQty(+r.perWeek.toFixed(1))} Stück pro Woche · letzte ${r.days} Tage${r.n < 3 ? ' · grobe Schätzung' : ''}`;
   if (r.perWeek <= 0) {
+    if (r.days < 30) return '';                 // zu wenig Verlauf für eine Aussage
     return `<div class="reach-card r-idle">${icon('history', 22, 2.2)}<div><b>In den letzten ${r.days} Tagen nicht entnommen</b><small>Keine Reichweite berechenbar</small></div></div>`;
   }
   const weeks = total / r.perWeek;
@@ -2179,7 +2235,7 @@ async function fillReach(root, m) {
     const r = reachStats(await db.listMovements(m.id, 500));
     reachMemo.set(m.id, r);
     if (!slot.isConnected) return;
-    const html = reachHtml(m, r);
+    const html = reachHtml(m, r) + agingHtml(m, r);
     if (slot.innerHTML.trim() !== html.trim()) { slot.innerHTML = html; slot.firstElementChild?.classList.add('reach-in'); }
   } catch { /* offline: einfach weglassen */ }
 }
@@ -2223,7 +2279,7 @@ function infosTab(m, tasks) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${stockRing(m)}
-    ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
+    ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) + agingHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
     ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
@@ -2271,7 +2327,7 @@ const typeInfo = {
   in: { label: 'Dazu gebucht', cls: 'green', ic: 'plus' }, out: { label: 'Entnommen', cls: 'red', ic: 'minus' },
   transfer: { label: 'Umgebucht', cls: 'blue', ic: 'swap' }, inventory: { label: 'Inventur', cls: 'gray', ic: 'tally' },
 };
-const movementRow = (x, showAfter = false) => {
+const movementRow = (x, showAfter = false, price = 0) => {
   const t = typeInfo[x.type];
   const where = x.type === 'transfer' ? `${esc(x.from_name)} → ${esc(x.to_name)}` : esc(x.from_name);
   const sign = x.type === 'transfer' ? '' : x.qty > 0 ? '+' : '';
@@ -2280,7 +2336,8 @@ const movementRow = (x, showAfter = false) => {
     <div class="mov-main"><b>${t.label}</b><div class="small muted">${where}</div>
       ${x.note ? `<div class="mov-note">${icon('tag', 13, 2.2)}<span>${esc(x.note)}</span></div>` : ''}
       ${showAfter && x.stock_after != null ? `<div class="small muted">Gesamtbestand danach: ${fmtQty(x.stock_after)}</div>` : ''}</div>
-    <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div></div>
+    <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div>
+      ${x.type === 'out' && +price > 0 ? `<div class="mov-cost">≈ ${fmtEUR(Math.abs(+x.qty) * +price)}</div>` : ''}</div>
   </div>`;
 };
 
@@ -2293,7 +2350,7 @@ function bookingTab(m, mov) {
     <button class="book-card green" data-act="book-in"><i>${icon('plus', 34, 2.6)}</i><span>Dazu buchen</span></button>
     <button class="book-card blue" data-act="book-transfer"><i>${icon('swap', 34, 2.4)}</i><span>Umbuchen</span></button>
     <button class="link-row muted" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>
-    ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map(movementRow).join('')}</div>` : ''}`;
+    ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map((x, i) => movementRow(x, i, m.purchase_price)).join('')}</div>` : ''}`;
 }
 
 function detailsTab(m, defs = []) {
@@ -2343,7 +2400,7 @@ async function viewHistory(id) {
   const [m, mov] = await Promise.all([db.getMaterial(id), db.listMovements(id)]);
   screen({
     header: navbar({ left: backBtn('arrow'), title: `<div class="two-line">Bestandsänderungen<br><small>${m ? esc(m.name) : ''}</small></div>` }),
-    body: mov.length ? `<div class="mov-list">${mov.map((x) => movementRow(x, true)).join('')}</div>`
+    body: mov.length ? `<div class="mov-list">${mov.map((x) => movementRow(x, true, m?.purchase_price)).join('')}</div>`
       : empty('history', 'Noch keine Bestandsänderungen'),
   });
 }
@@ -2478,6 +2535,8 @@ async function viewStats() {
       <h2 class="dash-sec">Verbrauchs-Kalender</h2>
       ${heatmap(movs, days, mats)}
 
+      <button class="btn-tinted full mt recap-open" data-a="recap">${icon('chart', 18)} Wochenrückblick ansehen</button>
+
       <h2 class="dash-sec">Meistverbraucht</h2>
       ${st.top.length ? `<section class="ios-list">
         ${st.top.slice(0, 10).map((t, i) => `<a class="ios-row recent stats-row" href="#/m/${t.m.id}" data-id="${t.m.id}">
@@ -2516,6 +2575,7 @@ async function viewStats() {
       </section>${more(st.byNote, 10)}` : ''}`,
   });
   root.querySelectorAll('[data-days]').forEach((b) => (b.onclick = () => { sessionStorage.setItem('ss-stats-days', b.dataset.days); viewStats(); }));
+  root.querySelector('[data-a=recap]')?.addEventListener('click', () => showRecap(mats, isLow, recapThumb).catch(errToast));
   setupHeatmap(root, movs, mats);
   root.querySelectorAll('[data-apply]').forEach((b) => (b.onclick = async () => {
     b.disabled = true;
@@ -3069,9 +3129,14 @@ async function viewInventory(q) {
 
   const root = screen({
     header: navbar({ left: backBtn(), title: `<div class="two-line">Inventur<br><small>${esc(loc.name)}</small></div>`, right: btn('scan', 'scan', 'Scannen') }),
-    body: `<div class="inv-progress" aria-live="polite">
-        <div class="ip-head"><b data-ip="text">0 von 0 gezählt</b><span data-ip="pct">0 %</span></div>
-        <div class="ip-bar"><i data-ip="bar"></i></div>
+    body: `<div class="inv-progress inv-ring-card" aria-live="polite">
+        <div class="inv-ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="ig" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="ig1"/><stop offset="1" class="ig2"/></linearGradient></defs>
+            <circle class="ir-track" cx="50" cy="50" r="42"/>
+            <circle class="ir-fill" data-ip="bar" cx="50" cy="50" r="42" stroke="url(#ig)" style="stroke-dasharray:263.89;stroke-dashoffset:263.89"/></svg>
+          <span class="ir-val" data-ip="pct">0 %</span>
+        </div>
+        <div class="ir-text"><b data-ip="text">0 von 0 gezählt</b><small data-ip="sub">Ist-Menge eintragen oder scannen</small></div>
       </div>
       <label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
       <div id="irows" class="inv-list mt"></div>
@@ -3080,15 +3145,21 @@ async function viewInventory(q) {
   });
   const box = root.querySelector('#irows');
   let justCounted = null;                  // diese Zeile bekommt beim nächsten Aufbau das kurze Häkchen
+  let wasComplete = false; let progressReady = false;   // Konfetti nur beim Übergang auf 100 %, nicht beim Öffnen
   const updateProgress = () => {
     const done = rows.filter((m) => (counts.get(m.id) ?? '') !== '').length;
     const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
     const ip = (k) => root.querySelector(`[data-ip=${k}]`);
     ip('text').textContent = `${done} von ${rows.length} gezählt`;
     ip('pct').textContent = `${pct} %`;
-    ip('bar').style.width = `${pct}%`;
-    root.querySelector('.inv-progress').classList.toggle('complete', !!rows.length && done === rows.length);
-    root.querySelector('.inv-progress').hidden = !rows.length;
+    ip('bar').style.strokeDashoffset = (263.89 * (1 - pct / 100)).toFixed(2);
+    const complete = !!rows.length && done === rows.length;
+    ip('sub').textContent = complete ? 'Alles gezählt – jetzt unten buchen' : `Noch ${rows.length - done} ${rows.length - done === 1 ? 'Teil' : 'Teile'} offen`;
+    const card = root.querySelector('.inv-progress');
+    if (complete && !wasComplete && progressReady) { confetti(); haptic('success'); card.classList.remove('done-pop'); void card.offsetWidth; card.classList.add('done-pop'); }
+    wasComplete = complete; progressReady = true;
+    card.classList.toggle('complete', complete);
+    card.hidden = !rows.length;
   };
   const updateCommit = () => {
     const n = [...counts].filter(([mid, v]) => v !== '' && +v !== soll(rows.find((m) => m.id === mid) || { locations: [] })).length;
