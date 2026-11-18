@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -115,7 +115,10 @@ function syncThemeColor() {
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
 // Overlays (Sheets, Dialoge, Kontextmenü) kommen und gehen → Farbe nachziehen
 new MutationObserver(() => requestAnimationFrame(syncThemeColor)).observe(document.body, { childList: true });
-function toggleTheme(btn) {
+async function toggleTheme(btn) {
+  // Erst verwandelt sich das Symbol (Mond ⇄ Sonne), dann breitet sich das neue Design aus
+  const sm = btn?.querySelector?.('.sunmoon');
+  if (sm && !reduceMotion.matches) { sm.classList.toggle('is-sun'); sm.classList.add('morph'); haptic('light'); await new Promise((r) => setTimeout(r, 340)); }
   const dark = document.documentElement.dataset.theme === 'dark'
     || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
   const apply = () => { localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); return route(); };
@@ -626,7 +629,7 @@ const dashHeader = () => `<header class="dash-nav">
         ${brandLogo()}
         <span class="dash-nav-title" aria-hidden="true">Übersicht</span>
         <span class="dash-nav-right">
-          <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel">${icon(isDark() ? 'sun' : 'moon', 21)}</button>
+          <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel"><span class="sunmoon ${isDark() ? 'is-sun' : ''}">${icon('moon', 21)}${icon('sun', 21)}</span></button>
           <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
           <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
         </span>
@@ -1061,6 +1064,7 @@ async function viewFav() {
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
   setupQuickReorder(root);
+  setupEasterEgg(root);
   fillRecapCard(root.querySelector('[data-recap]'), mats, isLow, recapThumb);
   on(root, 'backup-later', (el) => {
     try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
@@ -1080,6 +1084,21 @@ async function viewFav() {
     const m = await db.findByCode(code);
     if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
+  });
+}
+
+/** Easter Egg: fünfmal schnell aufs Logo tippen → das S dreht sich wie ein Zahnrad, Zahnräder regnen */
+let eggTaps = []; let eggBusy = false;
+function setupEasterEgg(root) {
+  const logo = root.querySelector('.dash-nav .brand'); if (!logo) return;
+  logo.addEventListener('click', () => {
+    const now = Date.now(); eggTaps = eggTaps.filter((t) => now - t < 1800).concat(now);
+    const s = logo.querySelector('.brand-s');
+    s.classList.remove('egg-tap'); void s.offsetWidth; s.classList.add('egg-tap');     // kleiner Hüpfer pro Tipp
+    if (eggTaps.length < 5 || eggBusy) return;
+    eggTaps = []; eggBusy = true;
+    s.classList.add('egg-spin'); gearRain();
+    setTimeout(() => { s.classList.remove('egg-spin'); eggBusy = false; }, 2200);
   });
 }
 

@@ -2373,3 +2373,22 @@ span.pv-btn { background: none; }
 .inv-progress.finished .ir-val { color: var(--green); }
 .inv-progress.finished .ir-val svg { width: 34px; height: 34px; }
 .inv-ring .ir-val svg { transform: none; }
+
+/* =====================================================================
+   Mond ⇄ Sonne (Kopfzeile): Mond dreht weg, Sonne dreht mit Strahlen herein
+   ===================================================================== */
+.sunmoon { position: relative; display: grid; width: 21px; height: 21px; }
+.sunmoon > svg { grid-area: 1 / 1; transition: transform .42s cubic-bezier(.34, 1.4, .64, 1), opacity .25s; }
+.sunmoon > svg:last-child { opacity: 0; transform: rotate(-120deg) scale(.3); color: #ff9f0a; }
+.sunmoon.is-sun > svg:first-child { opacity: 0; transform: rotate(90deg) scale(.3) translate(4px, -4px); }
+.sunmoon.is-sun > svg:last-child { opacity: 1; transform: none; }
+.sunmoon.morph.is-sun > svg:last-child { animation: sun-glow .6s ease-out; }
+@keyframes sun-glow { 40% { filter: drop-shadow(0 0 6px #ffcc00); } }
+@media (prefers-reduced-motion: reduce) { .sunmoon > svg { transition: opacity .2s; } }
+
+/* Easter Egg am Logo */
+.dash-nav .brand { cursor: default; -webkit-tap-highlight-color: transparent; }
+.brand-s.egg-tap { animation: egg-tap .25s ease; }
+.brand-s.egg-spin { animation: egg-spin 2s cubic-bezier(.3, .1, .2, 1); }
+@keyframes egg-tap { 50% { transform: scale(.85) rotate(-12deg); } }
+@keyframes egg-spin { 0% { transform: none; } 15% { transform: scale(.8); } 75% { transform: rotate(1080deg) scale(1.15); } 100% { transform: rotate(1080deg); } }

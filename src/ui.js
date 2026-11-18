@@ -1255,3 +1255,41 @@ export function flyTo({ from, to, img = '', onLand } = {}) {
   };
   return true;
 }
+
+// =====================================================================
+//  Easter Egg: Zahnrad-Regen (fällt von oben, dreht sich, prallt leicht ab)
+// =====================================================================
+export function gearRain({ count = 34, duration = 3200 } = {}) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas'); cv.className = 'confetti';
+  const dpr = Math.min(2, window.devicePixelRatio || 1); const W = innerWidth; const H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; document.body.appendChild(cv);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const colors = ['#1d4e89', '#2f80ed', '#4ab3f4', '#f7931e', '#ff5e3a'];
+  const gears = Array.from({ length: count }, (_, i) => ({
+    x: Math.random() * W, y: -40 - Math.random() * H * 0.8, vy: 2 + Math.random() * 3, vx: (Math.random() - 0.5) * 1.2,
+    r: 9 + Math.random() * 14, a: Math.random() * 6, va: (Math.random() - 0.5) * 0.18, c: colors[i % colors.length], teeth: 6 + (i % 4) * 2, bounced: false,
+  }));
+  const gear = (p) => {
+    g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.fillStyle = p.c; g.beginPath();
+    const n = p.teeth; const ro = p.r; const ri = p.r * 0.76;
+    for (let k = 0; k < n * 2; k++) {
+      const a0 = (k / (n * 2)) * Math.PI * 2; const a1 = ((k + 1) / (n * 2)) * Math.PI * 2; const rr = k % 2 ? ri : ro;
+      g.lineTo(Math.cos(a0) * rr, Math.sin(a0) * rr); g.lineTo(Math.cos(a1) * rr, Math.sin(a1) * rr);
+    }
+    g.closePath(); g.moveTo(p.r * 0.34, 0); g.arc(0, 0, p.r * 0.34, 0, Math.PI * 2, true); g.fill('evenodd'); g.restore();
+  };
+  haptic('success');
+  const t0 = performance.now();
+  const frame = (now) => {
+    const t = now - t0; g.clearRect(0, 0, W, H);
+    g.globalAlpha = t > duration - 600 ? Math.max(0, (duration - t) / 600) : 1;
+    for (const p of gears) {
+      p.vy += 0.12; p.y += p.vy; p.x += p.vx; p.a += p.va;
+      if (!p.bounced && p.y > H - p.r - 8) { p.y = H - p.r - 8; p.vy *= -0.45; p.va *= -1.4; p.bounced = true; }
+      gear(p);
+    }
+    if (t < duration) requestAnimationFrame(frame); else cv.remove();
+  };
+  requestAnimationFrame(frame);
+}
