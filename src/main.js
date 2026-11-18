@@ -11,6 +11,7 @@ import {
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
+import * as sfx from './sounds.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
 import { setupPullToRefresh, setupPullToSearch } from './ptr.js';
@@ -1716,7 +1717,7 @@ async function openBooking(m, type, onDone, preset = {}) {
       const step = (d) => {
         const old = qty.value; const next = Math.max(0, (+qty.value || 0) + d);
         if (String(next) === old) return false;
-        qty.value = next; haptic('selection');
+        qty.value = next; haptic('selection'); sfx.tick();
         odometer(qty, old, d > 0 ? 1 : -1);
         return true;
       };
@@ -1729,7 +1730,7 @@ async function openBooking(m, type, onDone, preset = {}) {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
           rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
-          haptic('success');
+          haptic('success'); sfx.ping();
           const booked = { material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null };
           const hashAtBooking = location.hash;
           const lowWarn = () => { if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); };
@@ -2124,6 +2125,7 @@ async function addToCartFlow(m) {
   if (!n || !(+n > 0)) return;
   try {
     await db.addToCart('cart', m.id, +n); invalidate('cart');
+    sfx.cash();
     const flew = flyToCart(m, () => toast('Im Warenkorb', 'ok', { sub: `${fmtQty(n)} × ${m.name}` }));
     if (!flew) successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`);
   } catch (e) { errToast(e); }
@@ -3585,6 +3587,8 @@ async function viewSettings() {
           <select data-act-markup>${[20, 25, 30, 40, 50, 60, 75, 100, 150].concat([markupCfg().pct]).filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map((v) => `<option value="${v}" ${+markupCfg().pct === v ? 'selected' : ''}>+${v} %</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-green">${icon('tag', 19)}</i><span>Verkaufspreis runden</span>
           <select data-act-round>${Object.entries(MARKUP_ROUND).map(([k, t]) => `<option value="${k}" ${markupCfg().round === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-indigo">${icon('bell', 19)}</i><span>Töne<small>Klick, Ping und Kasse beim Buchen</small></span>
+          <input type="checkbox" class="switch" data-act-sounds ${sfx.soundsOn() ? 'checked' : ''}></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
@@ -3598,6 +3602,7 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-sounds]').onchange = (e) => { sfx.setSoundsOn(e.target.checked); if (e.target.checked) sfx.ping(); haptic('light'); };
   root.querySelector('[data-act-markup]').onchange = (e) => { setMarkup({ pct: +e.target.value }); haptic('light'); };
   root.querySelector('[data-act-round]').onchange = (e) => { setMarkup({ round: e.target.value }); haptic('light'); };
   root.querySelector('[data-act-style]').onchange = (e) => {
