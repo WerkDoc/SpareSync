@@ -49,6 +49,29 @@
       /* iOS: Play-Symbol-Overlay ausblenden, falls das Video kurz pausiert ist */
       #splash video::-webkit-media-controls, #splash video::-webkit-media-controls-start-playback-button { display: none !important; -webkit-appearance: none; }
       html.splash-on, html.splash-on body { overflow: hidden; }
+
+      /* ---------- Splashscreen im Design „Plastisch“: das S wird aus der Fläche herausgedrückt ---------- */
+      #splash .sp-neu { display: none; }
+      #splash.neu { background: #e6eaf0; --sh: #c2cad6; --hi: #ffffff; --navy: #0b1735; --blue: #1586dc; }
+      html[data-theme="dark"] #splash.neu { background: #17191e; --sh: #0a0b0d; --hi: #22252c; --navy: #f2f2f7; --blue: #3fa9f5; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) #splash.neu { background: #17191e; --sh: #0a0b0d; --hi: #22252c; --navy: #f2f2f7; --blue: #3fa9f5; } }
+      #splash.neu .sp-skip { display: none; }
+      #splash.neu .sp-neu { display: flex; flex-direction: column; align-items: center; gap: 26px; }
+      .sp-disk { position: relative; width: 156px; height: 156px; border-radius: 50%; display: grid; place-items: center; }
+      .sp-disk::before, .sp-disk::after { content: ''; position: absolute; inset: 0; border-radius: 50%; }
+      .sp-disk::before { box-shadow: inset 9px 9px 18px var(--sh), inset -9px -9px 18px var(--hi); animation: spSink 1.2s cubic-bezier(.4, 0, .2, 1) forwards; }
+      .sp-disk::after { opacity: 0; box-shadow: 14px 14px 30px var(--sh), -14px -14px 30px var(--hi); animation: spRaise 1.2s cubic-bezier(.4, 0, .2, 1) forwards; }
+      .sp-disk img { position: relative; z-index: 1; width: 74px; height: auto; opacity: .35; transform: scale(.78); animation: spLogo 1.2s cubic-bezier(.34, 1.45, .64, 1) forwards; }
+      .sp-word { font: 800 36px/1 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif; letter-spacing: -.035em; opacity: 0; transform: translateY(10px); animation: spWord .5s cubic-bezier(.22, 1, .36, 1) .75s forwards; }
+      .sp-word span:first-child { color: var(--navy); } .sp-word span:last-child { color: var(--blue); }
+      @keyframes spSink { 0%, 25% { opacity: 1; } 60%, 100% { opacity: 0; } }
+      @keyframes spRaise { 0%, 30% { opacity: 0; } 70%, 100% { opacity: 1; } }
+      @keyframes spLogo { 0%, 22% { opacity: .35; transform: scale(.78); } 65% { opacity: 1; transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+      @keyframes spWord { to { opacity: 1; transform: none; } }
+      @media (prefers-reduced-motion: reduce) {
+        .sp-disk::before { display: none; } .sp-disk::after { opacity: 1; animation: none; }
+        .sp-disk img, .sp-word { opacity: 1; transform: none; animation: none; }
+      }
     </style>
   </head>
   <body>
@@ -56,6 +79,7 @@
       <video id="splash-video" src="./splash.mp4" autoplay muted playsinline webkit-playsinline preload="auto"
              disablepictureinpicture disableremoteplayback></video>
       <div class="sp-skip">Tippen zum Überspringen</div>
+      <div class="sp-neu"><div class="sp-disk"><img src="./brand-s.png" alt=""></div><div class="sp-word"><span>spare</span><span>Sync</span></div></div>
     </div>
     <script>
       // Splash: Video bis zum Ende abspielen, dann weich ausblenden und entfernen.
@@ -65,6 +89,9 @@
         var v = document.getElementById('splash-video');
         if (!sp || !v) return;
         document.documentElement.classList.add('splash-on');
+        // Design „Plastisch“: statt des Videos das plastische Logo (Klassisch behält das Video)
+        var neu = document.documentElement.dataset.style === 'neu';
+        if (neu) { sp.classList.add('neu'); try { v.pause(); } catch (e) {} if (v.parentNode) v.parentNode.removeChild(v); }
         var videoDone = false;
         var SPEED = 2.2; // Wiedergabe-Tempo: 1 = normal, 1.5 = 50 % schneller
 
@@ -98,6 +125,12 @@
         document.addEventListener('keydown', function onKey(e) {
           if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') { document.removeEventListener('keydown', onKey); if (document.getElementById('splash')) skip(e); }
         });
+
+        if (neu) {
+          var reducedNeu = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+          setTimeout(window.__splashFinish, reducedNeu ? 250 : 1700);
+          return;
+        }
 
         // onEnded: Video ist durch
         v.addEventListener('ended', window.__splashFinish);
