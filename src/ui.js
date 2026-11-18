@@ -1255,3 +1255,171 @@ export function flyTo({ from, to, img = '', onLand } = {}) {
   };
   return true;
 }
+
+// =====================================================================
+//  Easter Egg: Zahnrad-Regen (fällt von oben, dreht sich, prallt leicht ab)
+// =====================================================================
+export function gearRain({ count = 34, duration = 3200 } = {}) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas'); cv.className = 'confetti';
+  const dpr = Math.min(2, window.devicePixelRatio || 1); const W = innerWidth; const H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; document.body.appendChild(cv);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const colors = ['#1d4e89', '#2f80ed', '#4ab3f4', '#f7931e', '#ff5e3a'];
+  const gears = Array.from({ length: count }, (_, i) => ({
+    x: Math.random() * W, y: -40 - Math.random() * H * 0.8, vy: 2 + Math.random() * 3, vx: (Math.random() - 0.5) * 1.2,
+    r: 9 + Math.random() * 14, a: Math.random() * 6, va: (Math.random() - 0.5) * 0.18, c: colors[i % colors.length], teeth: 6 + (i % 4) * 2, bounced: false,
+  }));
+  const gear = (p) => {
+    g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.fillStyle = p.c; g.beginPath();
+    const n = p.teeth; const ro = p.r; const ri = p.r * 0.76;
+    for (let k = 0; k < n * 2; k++) {
+      const a0 = (k / (n * 2)) * Math.PI * 2; const a1 = ((k + 1) / (n * 2)) * Math.PI * 2; const rr = k % 2 ? ri : ro;
+      g.lineTo(Math.cos(a0) * rr, Math.sin(a0) * rr); g.lineTo(Math.cos(a1) * rr, Math.sin(a1) * rr);
+    }
+    g.closePath(); g.moveTo(p.r * 0.34, 0); g.arc(0, 0, p.r * 0.34, 0, Math.PI * 2, true); g.fill('evenodd'); g.restore();
+  };
+  haptic('success');
+  const t0 = performance.now();
+  const frame = (now) => {
+    const t = now - t0; g.clearRect(0, 0, W, H);
+    g.globalAlpha = t > duration - 600 ? Math.max(0, (duration - t) / 600) : 1;
+    for (const p of gears) {
+      p.vy += 0.12; p.y += p.vy; p.x += p.vx; p.a += p.va;
+      if (!p.bounced && p.y > H - p.r - 8) { p.y = H - p.r - 8; p.vy *= -0.45; p.va *= -1.4; p.bounced = true; }
+      gear(p);
+    }
+    if (t < duration) requestAnimationFrame(frame); else cv.remove();
+  };
+  requestAnimationFrame(frame);
+}
+
+// =====================================================================
+//  Fliegende Zahl beim Buchen: „−2“ steigt aus dem Bestand auf und zerplatzt in Funken,
+//  „+5“ fällt von oben in den Bestand hinein
+// =====================================================================
+export function floatDelta({ text, kind = 'out', anchor = null } = {}) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = anchor?.getBoundingClientRect?.() || { left: innerWidth / 2 - 20, top: innerHeight * 0.45, width: 40, height: 40 };
+  const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+  const el = document.createElement('div');
+  el.className = `float-delta ${kind}`; el.textContent = text;
+  el.style.left = `${cx}px`; el.style.top = `${cy}px`;
+  document.body.appendChild(el);
+  const up = kind === 'out';
+  const a = el.animate(up
+    ? [{ transform: 'translate(-50%, -50%) scale(.6)', opacity: 0 }, { transform: 'translate(-50%, -90%) scale(1.15)', opacity: 1, offset: .25 }, { transform: 'translate(-50%, -260%) scale(1)', opacity: 1 }]
+    : [{ transform: 'translate(-50%, -360%) scale(1)', opacity: 0 }, { transform: 'translate(-50%, -260%) scale(1.1)', opacity: 1, offset: .3 }, { transform: 'translate(-50%, -50%) scale(.5)', opacity: .9 }],
+  { duration: up ? 760 : 680, easing: up ? 'cubic-bezier(.2, .8, .3, 1)' : 'cubic-bezier(.55, 0, .8, .4)', fill: 'forwards' });
+  a.onfinish = () => {
+    const b = el.getBoundingClientRect(); el.remove();
+    // Funken: beim Entnehmen dort, wo die Zahl zerplatzt, beim Dazubuchen am Bestand (Spritzer nach oben)
+    const x0 = up ? b.left + b.width / 2 : cx; const y0 = up ? b.top + b.height / 2 : cy;
+    for (let i = 0; i < 12; i++) {
+      const s = document.createElement('i'); s.className = `float-spark ${kind}`;
+      s.style.left = `${x0}px`; s.style.top = `${y0}px`; document.body.appendChild(s);
+      const ang = up ? (i / 12) * Math.PI * 2 : Math.PI + (i / 11) * Math.PI;   // in: nur nach oben spritzen
+      const d = 26 + Math.random() * 22;
+      s.animate([{ transform: 'translate(-50%, -50%) scale(1)', opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(ang) * d}px), calc(-50% + ${Math.sin(ang) * d}px)) scale(.2)`, opacity: 0 }],
+        { duration: 520 + Math.random() * 200, easing: 'cubic-bezier(.2, .8, .3, 1)' }).onfinish = () => s.remove();
+    }
+    if (anchor?.animate) anchor.animate([{ transform: 'scale(1)' }, { transform: `scale(${up ? .88 : 1.18})` }, { transform: 'scale(1)' }], { duration: 380, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+  };
+}
+
+// =====================================================================
+//  Fächer-Menü („Speed Dial“): das + dreht sich zum ×, Optionen fächern sich als runde Bubbles im Bogen auf
+// =====================================================================
+export function speedDial(btn, items, { radius = 170 } = {}) {
+  return new Promise((resolve) => {
+    const r = btn.getBoundingClientRect();
+    const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+    const ov = document.createElement('div'); ov.className = 'sd-layer';
+    const n = items.length;
+    // Bubbles fächern sich in einem nach links gewölbten Bogen unter dem Knopf auf (Abstand je 72 px, Beschriftung links daneben)
+    const pos = items.map((_, i) => ({ x: -18 - (radius * 0.42) * Math.sin((Math.PI * (i + 0.5)) / n), y: 74 + i * 72 }));
+    ov.innerHTML = `<div class="sd-dim"></div>
+      ${items.map((it, i) => `<button class="sd-item" data-v="${esc(it.value)}" style="left:${cx}px;top:${cy}px;--x:${pos[i].x.toFixed(1)}px;--y:${pos[i].y.toFixed(1)}px;--i:${i}">
+        <span class="sd-bubble ${it.tone ? `tone-${it.tone}` : ''}">${icon(it.icon, 24, 2.1)}</span><span class="sd-label">${esc(it.label)}</span></button>`).join('')}
+      <button class="sd-close" style="left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px" aria-label="Schließen">${icon('plus', 22, 2.3)}</button>`;
+    document.body.appendChild(ov);
+    btn.style.visibility = 'hidden';
+    haptic('light');
+    requestAnimationFrame(() => ov.classList.add('open'));
+    const done = (v) => {
+      ov.classList.remove('open'); ov.classList.add('closing');
+      setTimeout(() => { ov.remove(); btn.style.visibility = ''; }, 320);
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', (e) => {
+      const it = e.target.closest('.sd-item');
+      if (it) { haptic('selection'); done(it.dataset.v); return; }
+      done(null);
+    });
+  });
+}
+
+// =====================================================================
+//  Kamera: kurzer weißer Blitz – danach fällt das Foto (wie ein Sofortbild) in die Galerie
+// =====================================================================
+export function cameraFlash() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const f = document.createElement('div'); f.className = 'cam-flash'; document.body.appendChild(f);
+  f.animate([{ opacity: 0 }, { opacity: .95, offset: .12 }, { opacity: 0 }], { duration: 520, easing: 'ease-out' }).onfinish = () => f.remove();
+  haptic('medium');
+}
+export function photoDrop(blob, target) {
+  if (!blob || !target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const url = URL.createObjectURL(blob);
+  const t = target.getBoundingClientRect();
+  const el = document.createElement('div'); el.className = 'photo-drop'; el.innerHTML = `<img src="${url}" alt="">`;
+  const w = Math.min(230, innerWidth * 0.6);
+  el.style.cssText = `left:${innerWidth / 2 - w / 2}px;top:${innerHeight * 0.28}px;width:${w}px`;
+  document.body.appendChild(el);
+  const dx = t.left + t.width / 2 - innerWidth / 2; const dy = t.top + t.height / 2 - (innerHeight * 0.28 + w * 0.55);
+  const s = Math.max(0.25, Math.min(1, t.width / w * 0.7));
+  el.animate([
+    { transform: 'translateY(-30px) rotate(-8deg) scale(1.08)', opacity: 0 },
+    { transform: 'translateY(0) rotate(-4deg) scale(1)', opacity: 1, offset: .25 },
+    { transform: `translate(${dx}px, ${dy}px) rotate(2deg) scale(${s})`, opacity: .9, offset: .85 },
+    { transform: `translate(${dx}px, ${dy}px) rotate(0) scale(${s * 0.92})`, opacity: 0 },
+  ], { duration: 1100, easing: 'cubic-bezier(.45, 0, .2, 1)' }).onfinish = () => {
+    el.remove(); URL.revokeObjectURL(url);
+    target.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.04)' }, { transform: 'scale(1)' }], { duration: 360, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+    haptic('light');
+  };
+}
+
+// =====================================================================
+//  „Papierkorb saugt ein“ (wie der Genie-Effekt am Mac): die Zeile wird schmal und fließt ins Ziel
+// =====================================================================
+export function genieInto(el, target) {
+  if (!el || !target || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  const a = el.getBoundingClientRect(); const b = target.getBoundingClientRect();
+  if (!a.width) return false;
+  const ghost = el.cloneNode(true);
+  ghost.classList.add('genie-ghost');
+  ghost.style.cssText = `left:${a.left}px;top:${a.top}px;width:${a.width}px;height:${a.height}px`;
+  document.body.appendChild(ghost);
+  const tx = b.left + b.width / 2 - (a.left + a.width / 2); const ty = b.top + b.height / 2 - (a.top + a.height / 2);
+  // Trichter: die Seite zum Ziel hin wird zuerst schmal, dann rutscht alles hinein
+  const fx = ((b.left + b.width / 2 - a.left) / a.width) * 100;
+  const up = ty < 0;
+  const edge = up ? 'top' : 'bottom';
+  const funnel = (w) => up
+    ? `polygon(${fx - w}% 0, ${fx + w}% 0, 100% 100%, 0 100%)`
+    : `polygon(0 0, 100% 0, ${fx + w}% 100%, ${fx - w}% 100%)`;
+  ghost.animate([
+    { clipPath: funnel(50), transform: 'translate(0,0) scale(1)', opacity: 1 },
+    { clipPath: funnel(6), transform: `translate(${tx * 0.15}px, ${ty * 0.1}px) scaleY(.9)`, opacity: 1, offset: .35 },
+    { clipPath: funnel(2), transform: `translate(${tx}px, ${ty}px) scale(.06)`, opacity: .2 },
+  ], { duration: 620, easing: 'cubic-bezier(.55, 0, .35, 1)', fill: 'forwards' }).onfinish = () => {
+    ghost.remove();
+    target.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.35) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+  };
+  ghost.style.transformOrigin = `${fx}% ${edge === 'top' ? '0%' : '100%'}`;
+  return true;
+}

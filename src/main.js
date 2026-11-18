@@ -7,10 +7,11 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
+import * as sfx from './sounds.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
 import { setupPullToRefresh, setupPullToSearch } from './ptr.js';
@@ -115,7 +116,10 @@ function syncThemeColor() {
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
 // Overlays (Sheets, Dialoge, Kontextmenü) kommen und gehen → Farbe nachziehen
 new MutationObserver(() => requestAnimationFrame(syncThemeColor)).observe(document.body, { childList: true });
-function toggleTheme(btn) {
+async function toggleTheme(btn) {
+  // Erst verwandelt sich das Symbol (Mond ⇄ Sonne), dann breitet sich das neue Design aus
+  const sm = btn?.querySelector?.('.sunmoon');
+  if (sm && !reduceMotion.matches) { sm.classList.toggle('is-sun'); sm.classList.add('morph'); haptic('light'); await new Promise((r) => setTimeout(r, 340)); }
   const dark = document.documentElement.dataset.theme === 'dark'
     || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
   const apply = () => { localStorage.setItem('wl-theme', dark ? 'light' : 'dark'); applyTheme(); return route(); };
@@ -139,7 +143,8 @@ const navStack = [];
 // Seitenübergang für den nächsten Routenwechsel: 'push' | 'pop' | 'fade' | 'none'
 let nextTransition = null;
 let pendingTransition = null;
-const scrollMemo = {};        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
+const scrollMemo = {};
+let keepScrollOnce = null;        // Scroll-Position je Seite, damit „Zurück“ dort weitermacht, wo man war
 let currentHash = null;
 let pendingScroll = 0;
 let pendingScrollWas = 0;
@@ -250,6 +255,7 @@ async function route() {
   const isBack = kind === 'pop' || kind === 'popvt' || kind === 'menuCloseR' || kind === 'menuCloseL';
   lastNavBack = isBack;
   pendingScroll = isBack ? (scrollMemo[h] || 0) : 0;
+  if (keepScrollOnce != null) { pendingScroll = keepScrollOnce; keepScrollOnce = null; }   // Live-Aktualisierung: an Ort und Stelle bleiben
   pendingScrollWas = pendingScroll;
   if (kind === 'push' || kind === 'menuR' || kind === 'menuL') delete scrollMemo[h];
   currentHash = h;
@@ -626,7 +632,7 @@ const dashHeader = () => `<header class="dash-nav">
         ${brandLogo()}
         <span class="dash-nav-title" aria-hidden="true">Übersicht</span>
         <span class="dash-nav-right">
-          <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel">${icon(isDark() ? 'sun' : 'moon', 21)}</button>
+          <button class="glass-btn" data-act="theme" aria-label="Hell/Dunkel"><span class="sunmoon ${isDark() ? 'is-sun' : ''}">${icon('moon', 21)}${icon('sun', 21)}</span></button>
           <button class="glass-btn" data-act="scan" aria-label="Scannen">${icon('scan', 21)}</button>
           <button class="glass-btn" data-act="menu" aria-label="Menü">${icon('menu', 22)}</button>
         </span>
@@ -658,7 +664,11 @@ const greetIcon = (kind) => (kind === 'sunrise' || kind === 'sun')
 const dashHead = () => {
   const g = greeting();
   const date = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  // Tageszeit-Himmel hinter der Begrüßung (Sterne nur abends/nachts, Positionen fest, damit nichts springt)
+  const stars = g.kind === 'night' || g.kind === 'moon'
+    ? Array.from({ length: g.kind === 'night' ? 18 : 8 }, (_, i) => `<i style="left:${(i * 37 + 11) % 97}%;top:${(i * 53 + 7) % 70}%;--d:${(i % 6) * 0.45}s;--s:${1 + (i % 3) * 0.6}px"></i>`).join('') : '';
   return `<div class="dash-head">
+        <div class="sky sky-${g.kind}" aria-hidden="true"><span class="sky-glow"></span>${stars}</div>
         <p class="dash-greet">${greetIcon(g.kind)}<span>${esc(g.text)}</span></p>
         <p class="dash-date">${esc(date)}</p>
         <h1 class="dash-title lt-collapse">Übersicht</h1>
@@ -1061,6 +1071,7 @@ async function viewFav() {
   attachGyro(root);
   fillSparkline(root.querySelector('[data-spark]'));
   setupQuickReorder(root);
+  setupEasterEgg(root);
   fillRecapCard(root.querySelector('[data-recap]'), mats, isLow, recapThumb);
   on(root, 'backup-later', (el) => {
     try { localStorage.setItem('ss-backup-snooze', String(Date.now() + 3 * 864e5)); } catch { /* egal */ }
@@ -1080,6 +1091,21 @@ async function viewFav() {
     const m = await db.findByCode(code);
     if (m) { foundToast(m); go(`/m/${m.id}`); }
     else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
+  });
+}
+
+/** Easter Egg: fünfmal schnell aufs Logo tippen → das S dreht sich wie ein Zahnrad, Zahnräder regnen */
+let eggTaps = []; let eggBusy = false;
+function setupEasterEgg(root) {
+  const logo = root.querySelector('.dash-nav .brand'); if (!logo) return;
+  logo.addEventListener('click', () => {
+    const now = Date.now(); eggTaps = eggTaps.filter((t) => now - t < 1800).concat(now);
+    const s = logo.querySelector('.brand-s');
+    s.classList.remove('egg-tap'); void s.offsetWidth; s.classList.add('egg-tap');     // kleiner Hüpfer pro Tipp
+    if (eggTaps.length < 5 || eggBusy) return;
+    eggTaps = []; eggBusy = true;
+    s.classList.add('egg-spin'); gearRain();
+    setTimeout(() => { s.classList.remove('egg-spin'); eggBusy = false; }, 2200);
   });
 }
 
@@ -1429,13 +1455,15 @@ async function viewList(q) {
   root.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => { listState[b.dataset.clear] = b.dataset.clear === 'low' ? false : ''; saveListState(); viewList({}); }));
   setupPullToRefresh(root, refreshAll, () => viewList({}));
   on(root, 'menu', () => openMenu('L'));
-  on(root, 'add', async () => {
-    const v = await actionSheet('Neu anlegen', [
-      { label: 'Ersatzteil anlegen', value: 'part', icon: 'box' },
-      { label: 'Werkzeug anlegen', value: 'tool', icon: 'wrench' },
-      { label: 'Material Gruppe', value: 'grp', icon: 'boxes' },
-      { label: 'Lagerort', value: 'loc', icon: 'shelf' },
-    ]);
+  on(root, 'add', async (b) => {
+    const items = [
+      { label: 'Ersatzteil', value: 'part', icon: 'box', tone: 'primary' },
+      { label: 'Werkzeug', value: 'tool', icon: 'wrench', tone: 'indigo' },
+      { label: 'Gruppe', value: 'grp', icon: 'boxes', tone: 'orange' },
+      { label: 'Lagerort', value: 'loc', icon: 'shelf', tone: 'teal' },
+    ];
+    const v = b?.getBoundingClientRect && !reduceMotion.matches ? await speedDial(b, items)
+      : await actionSheet('Neu anlegen', items.map((x) => ({ ...x, label: x.value === 'part' || x.value === 'tool' ? `${x.label} anlegen` : x.label })));
     if (v === 'part' || v === 'tool') go(`/new?kind=${v}`);
     if (v === 'grp') go('/groups'); if (v === 'loc') go('/locations');
   });
@@ -1691,7 +1719,7 @@ async function openBooking(m, type, onDone, preset = {}) {
       const step = (d) => {
         const old = qty.value; const next = Math.max(0, (+qty.value || 0) + d);
         if (String(next) === old) return false;
-        qty.value = next; haptic('selection');
+        qty.value = next; haptic('selection'); sfx.tick();
         odometer(qty, old, d > 0 ? 1 : -1);
         return true;
       };
@@ -1704,7 +1732,7 @@ async function openBooking(m, type, onDone, preset = {}) {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
           rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
-          haptic('success');
+          haptic('success'); sfx.ping();
           const booked = { material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null };
           const hashAtBooking = location.hash;
           const lowWarn = () => { if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); };
@@ -1715,6 +1743,11 @@ async function openBooking(m, type, onDone, preset = {}) {
             onTimeout: lowWarn,                      // Meldebestand-Hinweis erst, wenn nicht rückgängig gemacht
           });
           await onDone?.(total);
+          if (type === 'out' || type === 'in') {
+            const vis = (el) => { if (!el) return false; const q = el.getBoundingClientRect(); return q.width > 0 && q.top > 0 && q.bottom < innerHeight; };
+            const anchor = ['.stock-ring-card .sr-val', '.total-row [data-pop]', '.mov-list .mov:first-child .mov-right b'].map((q) => document.querySelector(q)).find(vis);
+            requestAnimationFrame(() => floatDelta({ text: `${type === 'out' ? '−' : '+'}${fmtQty(booked.qty)}`, kind: type, anchor }));
+          }
         } catch (err) { errToast(err); b.disabled = false; }
       };
     },
@@ -1783,7 +1816,7 @@ async function viewMaterial(id, q) {
   const cached = cache.materials?.find((x) => x.id === id);
   const m = cached || await db.getMaterial(id);
   if (!m) { toast('Material nicht gefunden', 'err'); return go('/list', true); }
-  const reload = () => { detailMemo.tasks.delete(id); detailMemo.movs.delete(id); invalidate('materials', 'locations', 'groups'); viewMaterial(id, { tab }); };
+  const reload = () => { detailMemo.tasks.delete(id); detailMemo.movs.delete(id); invalidate('materials', 'locations', 'groups'); return viewMaterial(id, { tab }); };
   const setTab = (t) => { replaceHash(`#/m/${id}?tab=${t}`); viewMaterial(id, { tab: t }); };
 
   const tasks = detailMemo.tasks.get(id);            // undefined = noch nicht geladen → Platzhalter
@@ -1843,7 +1876,17 @@ async function viewMaterial(id, q) {
     if (!src) return;
     const files = await pickFiles({ capture: src === 'cam' });
     if (!files.length) return;
-    try { toast('Bild wird hochgeladen…'); for (const f of files) await db.addFile(id, await compressImage(f), f.name, 'image'); toast('Bild gespeichert'); reload(); } catch (e) { errToast(e); }
+    if (src === 'cam') cameraFlash();
+    try {
+      toast('Bild wird hochgeladen…');
+      let last = null;
+      for (const f of files) { last = await compressImage(f); await db.addFile(id, last, f.name, 'image'); }
+      toast('Bild gespeichert');
+      await reload(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 120)));
+      // das neue Foto fällt sichtbar in die Galerie
+      const target = document.querySelector('.gal-main') || document.querySelector('.gallery');
+      if (last && target) photoDrop(last, target);
+    } catch (e) { errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
   setupGallery(root, m, reload);
@@ -2084,6 +2127,7 @@ async function addToCartFlow(m) {
   if (!n || !(+n > 0)) return;
   try {
     await db.addToCart('cart', m.id, +n); invalidate('cart');
+    sfx.cash();
     const flew = flyToCart(m, () => toast('Im Warenkorb', 'ok', { sub: `${fmtQty(n)} × ${m.name}` }));
     if (!flew) successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`);
   } catch (e) { errToast(e); }
@@ -2149,9 +2193,22 @@ async function deleteMaterialFlow(m, refresh) {
   if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
   // Erst nur ausblenden – endgültig gelöscht wird nach 5 Sekunden, solange niemand „Rückgängig“ tippt
   const hash = location.hash;
+  // Zeile merken, bevor die Liste neu aufgebaut wird → danach fließt sie in den Papierkorb im Hinweis
+  const row = [...document.querySelectorAll(`.mrow[data-id="${m.id}"], [data-m="${m.id}"]`)].find((el) => el.getBoundingClientRect().height > 0);
+  const ghostSrc = row?.closest('.swipe-wrap') || row;
+  const ghost = ghostSrc?.cloneNode(true); const rect = ghostSrc?.getBoundingClientRect();
   if (cache.materials) cache.materials = cache.materials.filter((x) => x.id !== m.id);
   refresh();
   haptic('medium');
+  if (ghost && rect) {
+    requestAnimationFrame(() => {
+      const ic = document.querySelector('.di-ic, .toast .ic');
+      if (!ic) return;
+      const holder = document.createElement('div'); holder.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;pointer-events:none`;
+      holder.appendChild(ghost); document.body.appendChild(holder);
+      genieInto(holder, ic); holder.remove();
+    });
+  }
   toast(`${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} gelöscht`, 'ok', {
     sub: `${m.number}: ${m.name}`, icon: 'trash',
     action: {
@@ -2258,12 +2315,30 @@ function stockRing(m) {
         <circle class="sr-fill" cx="32" cy="32" r="${R}"/>
         ${minAngle != null && minAngle < 360 ? `<line class="sr-mark" x1="32" y1="3" x2="32" y2="9" transform="rotate(${minAngle.toFixed(1)} 32 32)"/>` : ''}
       </svg>
+      <span class="sr-tank" style="--lvl:${(frac * 100).toFixed(1)}%"><span class="sr-liquid"><i class="w1"></i><i class="w2"></i></span></span>
       <span class="sr-val">${fmtQty(total)}</span>
       <div class="sr-text"><b>${text}</b>
         <small>Meldebestand ${fmtQty(min)}${max ? ` · Maximalbestand ${fmtQty(max)}` : ''}</small>
         ${max && total < max ? `<small>Bis voll: ${fmtQty(max - total)}</small>` : ''}</div>
     </div>`;
 }
+
+// Flüssigkeit im Bestands-Tank schwappt mit der Handy-Neigung (Feder-Glättung, nur wenn ein Tank da ist)
+let sloshTarget = 0; let sloshCur = 0; let sloshVel = 0; let sloshRaf = 0;
+function sloshTick() {
+  sloshRaf = 0;
+  const tanks = document.querySelectorAll('.sr-liquid'); if (!tanks.length) return;
+  sloshVel += (sloshTarget - sloshCur) * 0.08; sloshVel *= 0.86; sloshCur += sloshVel;
+  tanks.forEach((t) => t.style.setProperty('--slosh', `${sloshCur.toFixed(2)}deg`));
+  if (Math.abs(sloshVel) > 0.02 || Math.abs(sloshTarget - sloshCur) > 0.05) sloshRaf = requestAnimationFrame(sloshTick);
+}
+addEventListener('deviceorientation', (e) => {
+  if (e.gamma == null || reduceMotion.matches || !document.querySelector('.sr-liquid')) return;
+  const angle = (screen.orientation?.angle ?? 0) % 360;
+  const g = angle === 90 ? e.beta : angle === 270 || angle === -90 ? -e.beta : e.gamma;
+  sloshTarget = Math.max(-28, Math.min(28, -g));               // Wasser bleibt waagerecht → kippt gegen das Handy
+  if (!sloshRaf) sloshRaf = requestAnimationFrame(sloshTick);
+}, { passive: true });
 
 function infosTab(m, tasks) {
   const loading = !tasks;                  // Aufgaben werden gerade nachgeladen
@@ -3514,6 +3589,8 @@ async function viewSettings() {
           <select data-act-markup>${[20, 25, 30, 40, 50, 60, 75, 100, 150].concat([markupCfg().pct]).filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map((v) => `<option value="${v}" ${+markupCfg().pct === v ? 'selected' : ''}>+${v} %</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-green">${icon('tag', 19)}</i><span>Verkaufspreis runden</span>
           <select data-act-round>${Object.entries(MARKUP_ROUND).map(([k, t]) => `<option value="${k}" ${markupCfg().round === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-indigo">${icon('bell', 19)}</i><span>Töne<small>Klick, Ping und Kasse beim Buchen</small></span>
+          <input type="checkbox" class="switch" data-act-sounds ${sfx.soundsOn() ? 'checked' : ''}></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
@@ -3527,6 +3604,7 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-sounds]').onchange = (e) => { sfx.setSoundsOn(e.target.checked); if (e.target.checked) sfx.ping(); haptic('light'); };
   root.querySelector('[data-act-markup]').onchange = (e) => { setMarkup({ pct: +e.target.value }); haptic('light'); };
   root.querySelector('[data-act-round]').onchange = (e) => { setMarkup({ round: e.target.value }); haptic('light'); };
   root.querySelector('[data-act-style]').onchange = (e) => {
@@ -3834,6 +3912,30 @@ installHaptics();
 // iOS: ohne touchstart-Listener zeigt Safari den :active-Zustand (Hineindrücken) nicht an
 document.addEventListener('touchstart', () => {}, { passive: true });
 if (!db.isDemo) db.sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT' || ev === 'SIGNED_IN') { invalidate(); } });
+
+// ---------- Live: Buchungen von anderen Geräten sofort anzeigen ----------
+const LIVE_VERB = { out: 'entnommen', in: 'dazugebucht', transfer: 'umgebucht', inventory: 'gezählt' };
+let liveTimer = 0;
+db.onRemoteMovement(async (x) => {
+  invalidate('materials', 'locations'); detailMemo.movs.delete(x.material_id);
+  let m = null; try { m = (await getMats()).find((z) => z.id === x.material_id); } catch { /* egal */ }
+  const n = x.type === 'inventory' ? fmtQty(x.stock_after) : `${fmtQty(Math.abs(+x.qty))}×`;
+  toast('Anderes Gerät', 'info', { icon: 'refresh', sub: `${n} ${m ? m.name : 'Teil'} ${LIVE_VERB[x.type] || 'gebucht'}`, duration: 3500 });
+  haptic('light');
+  // Liste: nur die betroffene Zeile austauschen und kurz aufleuchten lassen
+  if (m) {
+    patchListRow(m);
+    document.querySelectorAll(`.mrow[data-id="${m.id}"], .ios-row[data-m="${m.id}"]`).forEach((r) => { r.classList.remove('live-flash'); void r.offsetWidth; r.classList.add('live-flash'); });
+  }
+  // Übersicht oder Detailseite dieses Teils: still neu aufbauen (Zahlen zählen weiter), wenn gerade nichts offen ist
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => {
+    const { path } = parseHash();
+    const busy = document.querySelector('.layer, .sd-layer, .alert-layer') || ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if (busy) return;
+    if (path === '/fav' || path === `/m/${x.material_id}`) { keepScrollOnce = window.scrollY; nextTransition = 'none'; route(); }
+  }, 400);
+});
 
 // Splashscreen-Video (steht in index.html): blendet aus, sobald das Video zu Ende ist UND die App geladen hat
 route().finally(() => {

@@ -510,8 +510,36 @@ export async function deleteFile(file) {
 //  BUCHUNGEN
 // =====================================================================
 /** type: 'in' | 'out' | 'transfer' | 'inventory'  – liefert neuen Gesamtbestand */
+// ---------- Live-Updates: Buchungen von anderen Geräten ----------
+// Eigene Buchungen merken, damit sie nicht als „von einem anderen Gerät“ gemeldet werden
+const localBooks = [];
+const demoLive = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ss-demo-live') : null;   // Demo: zwischen Browser-Tabs
+function isOwnBooking(row) {
+  const now = Date.now();
+  while (localBooks.length && now - localBooks[0].at > 15000) localBooks.shift();
+  const i = localBooks.findIndex((b) => b.material_id === row.material_id && b.type === row.type);
+  if (i < 0) return false;
+  localBooks.splice(i, 1); return true;
+}
+let liveSub = null;
+/** cb(row) für jede neue Buchung, die NICHT von diesem Gerät kommt. Liefert eine Funktion zum Abmelden. */
+export function onRemoteMovement(cb) {
+  if (isDemo) {
+    if (!demoLive) return () => {};
+    const h = (e) => { if (e.data?.type === 'movement') { store = null; cb(e.data.row); } };   // anderen Tab-Stand neu einlesen
+    demoLive.addEventListener('message', h);
+    return () => demoLive.removeEventListener('message', h);
+  }
+  liveSub?.unsubscribe?.();
+  liveSub = sb.channel('lager-live')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lager_movements' }, (p) => { if (p?.new && !isOwnBooking(p.new)) cb(p.new); })
+    .subscribe();
+  return () => { liveSub?.unsubscribe?.(); liveSub = null; };
+}
+
 export async function book({ material_id, type, qty, location_id, to_location_id = null, note = null }) {
   qty = +qty;
+  localBooks.push({ material_id, type, at: Date.now() });
   if (!location_id) throw new Error('Bitte Lagerort wählen');
   if (!(qty >= 0)) throw new Error('Ungültige Menge');
   if (type !== 'inventory' && qty === 0) throw new Error('Menge muss größer 0 sein');
@@ -543,7 +571,9 @@ export async function book({ material_id, type, qty, location_id, to_location_id
   s.movements.push({ id: uid(), material_id, type, qty: diff, from_location_id: location_id,
     to_location_id: type === 'transfer' ? to_location_id : null, stock_after: total, note, created_at: now() });
   const m = s.materials.find((x) => x.id === material_id); if (m) m.updated_at = now();
-  save(); return total;
+  save();
+  try { demoLive?.postMessage({ type: 'movement', row: s.movements[s.movements.length - 1] }); } catch { /* egal */ }
+  return total;
 }
 export async function listMovements(material_id, limit = 200) {
   if (isDemo) {

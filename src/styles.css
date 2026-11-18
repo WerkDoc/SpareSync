@@ -2373,3 +2373,108 @@ span.pv-btn { background: none; }
 .inv-progress.finished .ir-val { color: var(--green); }
 .inv-progress.finished .ir-val svg { width: 34px; height: 34px; }
 .inv-ring .ir-val svg { transform: none; }
+
+/* =====================================================================
+   Mond ⇄ Sonne (Kopfzeile): Mond dreht weg, Sonne dreht mit Strahlen herein
+   ===================================================================== */
+.sunmoon { position: relative; display: grid; width: 21px; height: 21px; }
+.sunmoon > svg { grid-area: 1 / 1; transition: transform .42s cubic-bezier(.34, 1.4, .64, 1), opacity .25s; }
+.sunmoon > svg:last-child { opacity: 0; transform: rotate(-120deg) scale(.3); color: #ff9f0a; }
+.sunmoon.is-sun > svg:first-child { opacity: 0; transform: rotate(90deg) scale(.3) translate(4px, -4px); }
+.sunmoon.is-sun > svg:last-child { opacity: 1; transform: none; }
+.sunmoon.morph.is-sun > svg:last-child { animation: sun-glow .6s ease-out; }
+@keyframes sun-glow { 40% { filter: drop-shadow(0 0 6px #ffcc00); } }
+@media (prefers-reduced-motion: reduce) { .sunmoon > svg { transition: opacity .2s; } }
+
+/* Easter Egg am Logo */
+.dash-nav .brand { cursor: default; -webkit-tap-highlight-color: transparent; }
+.brand-s.egg-tap { animation: egg-tap .25s ease; }
+.brand-s.egg-spin { animation: egg-spin 2s cubic-bezier(.3, .1, .2, 1); }
+@keyframes egg-tap { 50% { transform: scale(.85) rotate(-12deg); } }
+@keyframes egg-spin { 0% { transform: none; } 15% { transform: scale(.8); } 75% { transform: rotate(1080deg) scale(1.15); } 100% { transform: rotate(1080deg); } }
+
+/* =====================================================================
+   Tageszeit-Himmel (Übersicht): ganz dezenter Verlauf hinter Begrüßung und Kopfzeile
+   ===================================================================== */
+.dash-head { position: relative; isolation: isolate; }
+.sky { position: absolute; z-index: -1; left: -16px; right: -16px; top: -150px; height: 360px; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent); mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  animation: sky-in 1.6s ease both; }
+.sky-glow { position: absolute; width: 260px; height: 260px; border-radius: 50%; filter: blur(40px); }
+.sky-sunrise { background: linear-gradient(180deg, rgba(255, 196, 150, .30), rgba(255, 226, 190, .12) 70%, transparent); }
+.sky-sunrise .sky-glow { right: -40px; top: 170px; background: rgba(255, 160, 80, .45); animation: sky-rise 3s cubic-bezier(.2, .8, .2, 1) both; }
+.sky-sun { background: linear-gradient(180deg, rgba(150, 200, 255, .22), rgba(200, 228, 255, .10) 70%, transparent); }
+.sky-sun .sky-glow { right: -60px; top: 40px; background: rgba(255, 220, 120, .45); animation: sky-pulse 6s ease-in-out infinite; }
+.sky-moon { background: linear-gradient(180deg, rgba(110, 90, 200, .26), rgba(255, 140, 150, .14) 65%, transparent); }
+.sky-moon .sky-glow { left: -60px; top: 160px; background: rgba(255, 130, 110, .30); }
+.sky-night { background: linear-gradient(180deg, rgba(18, 36, 100, .36), rgba(40, 60, 140, .14) 70%, transparent); }
+.sky-night .sky-glow { right: 10px; top: 80px; width: 160px; height: 160px; background: rgba(170, 190, 255, .28); }
+.sky i { position: absolute; width: var(--s); height: var(--s); border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, .9);
+  animation: sky-twinkle 3.2s ease-in-out infinite; animation-delay: var(--d); }
+:root[data-theme="dark"] .sky { opacity: .75; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sky { opacity: .75; } }
+@keyframes sky-in { from { opacity: 0; } }
+@keyframes sky-rise { from { transform: translateY(60px); opacity: .3; } }
+@keyframes sky-pulse { 50% { transform: scale(1.12); opacity: .8; } }
+@keyframes sky-twinkle { 0%, 100% { opacity: .25; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.2); } }
+@media (prefers-reduced-motion: reduce) { .sky, .sky-glow, .sky i { animation: none; } }
+
+/* =====================================================================
+   Bestand als Flüssigkeit: kleiner Tank im Ring, Welle läuft, schwappt mit der Neigung
+   ===================================================================== */
+.stock-ring-card { position: relative; }
+.sr-tank { position: absolute; left: 26px; top: 50%; width: 40px; height: 40px; margin-top: -20px; border-radius: 50%; overflow: hidden; pointer-events: none;
+  background: color-mix(in srgb, var(--ring, var(--green)) 8%, transparent); }
+.sr-liquid { position: absolute; left: -50%; right: -50%; bottom: 0; height: calc(var(--lvl) + 4px); transform: rotate(var(--slosh, 0deg)); transform-origin: 50% 100%;
+  animation: tank-fill 1.4s cubic-bezier(.22, 1, .36, 1) both; }
+.sr-liquid i { position: absolute; left: 0; top: -6px; width: 200%; height: calc(100% + 6px);
+  background: color-mix(in srgb, var(--ring, var(--green)) 55%, transparent);
+  -webkit-mask: radial-gradient(10px 7px at 10px 0, transparent 98%, #000) 0 0 / 20px 100% repeat-x; mask: radial-gradient(10px 7px at 10px 0, transparent 98%, #000) 0 0 / 20px 100% repeat-x;
+  animation: tank-wave 2.4s linear infinite; }
+.sr-liquid i.w2 { top: -4px; opacity: .55; animation-duration: 3.6s; animation-direction: reverse; background: color-mix(in srgb, var(--ring, var(--green)) 85%, transparent); }
+.stock-ring-card .sr-val { z-index: 1; text-shadow: 0 0 6px var(--surface), 0 0 2px var(--surface); }
+@keyframes tank-wave { to { transform: translateX(-20px); } }
+@keyframes tank-fill { from { height: 0; } }
+@media (prefers-reduced-motion: reduce) { .sr-liquid, .sr-liquid i { animation: none; } }
+
+/* Fliegende Zahl + Funken beim Buchen */
+.float-delta { position: fixed; z-index: 380; pointer-events: none; font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  text-shadow: 0 4px 14px rgba(0, 0, 0, .18); will-change: transform, opacity; }
+.float-delta.out { color: var(--red); } .float-delta.in { color: var(--green); }
+.float-spark { position: fixed; z-index: 379; width: 7px; height: 7px; border-radius: 50%; pointer-events: none; }
+.float-spark.out { background: radial-gradient(circle, #ffd27a, var(--red)); } .float-spark.in { background: radial-gradient(circle, #d6ffd9, var(--green)); }
+
+/* =====================================================================
+   Fächer-Menü am + (Teile-Liste)
+   ===================================================================== */
+.sd-layer { position: fixed; inset: 0; z-index: 150; }
+.sd-dim { position: absolute; inset: 0; background: rgba(10, 20, 40, .28); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity .25s; }
+.sd-layer.open .sd-dim { opacity: 1; }
+.sd-item { position: absolute; width: 0; height: 0; display: grid; place-items: center; transform: translate(0, 0); }
+.sd-item > * { pointer-events: none; }
+.sd-bubble { position: absolute; width: 58px; height: 58px; margin: -29px 0 0 -29px; left: 0; top: 0; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); box-shadow: 0 10px 26px rgba(0, 0, 0, .22); color: var(--primary);
+  transform: translate(0, 0) scale(.2); opacity: 0; transition: transform .5s cubic-bezier(.34, 1.45, .64, 1), opacity .2s; transition-delay: calc(var(--i) * 45ms); pointer-events: auto; }
+.sd-bubble.tone-indigo { color: var(--indigo); } .sd-bubble.tone-orange { color: var(--orange); } .sd-bubble.tone-teal { color: var(--teal); }
+.sd-label { position: absolute; left: 0; top: 0; transform: translate(var(--x), var(--y)) translate(calc(-100% - 40px), -50%); white-space: nowrap; font-size: 13px; font-weight: 700; color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .45); opacity: 0; transition: opacity .25s; transition-delay: calc(var(--i) * 45ms + .15s); }
+.sd-layer.open .sd-bubble { transform: translate(var(--x), var(--y)) scale(1); opacity: 1; }
+.sd-layer.open .sd-label { opacity: 1; }
+.sd-layer.closing .sd-bubble { transition-duration: .25s; transition-delay: 0s; }
+.sd-item:active .sd-bubble, .sd-bubble:active { transform: translate(var(--x), var(--y)) scale(.92); }
+.sd-close { position: fixed; z-index: 2; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--primary); box-shadow: 0 8px 22px rgba(0, 0, 0, .25); }
+.sd-close svg { transition: transform .4s cubic-bezier(.34, 1.45, .64, 1); }
+.sd-layer.open .sd-close svg { transform: rotate(135deg); }
+:root[data-style="neu"] .sd-bubble { background: var(--neu); box-shadow: 8px 8px 18px rgba(0, 0, 0, .25), -3px -3px 10px var(--neu-hi); }
+:root[data-style="neu"] .sd-close { background: var(--neu-grad); }
+
+/* Kamera-Blitz + Foto fällt in die Galerie */
+.cam-flash { position: fixed; inset: 0; z-index: 500; background: #fff; pointer-events: none; }
+.photo-drop { position: fixed; z-index: 390; padding: 8px 8px 22px; border-radius: 6px; background: #fff; box-shadow: 0 18px 40px rgba(0, 0, 0, .3); pointer-events: none; transform-origin: 50% 50%; will-change: transform, opacity; }
+.photo-drop img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 2px; }
+.genie-ghost { position: fixed; z-index: 420; pointer-events: none; margin: 0; background: var(--surface); border-radius: 14px; overflow: hidden; will-change: transform, clip-path; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+:root[data-style="neu"] .genie-ghost { background: var(--neu); }
+
+/* Live-Buchung von einem anderen Gerät: Zeile leuchtet kurz auf */
+.live-flash { animation: live-flash 1.6s ease-out; }
+@keyframes live-flash { 0%, 30% { background-color: color-mix(in srgb, var(--primary) 18%, transparent); box-shadow: inset 3px 0 0 var(--primary); } 100% { background-color: transparent; } }
