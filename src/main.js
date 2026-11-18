@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto, flipCard,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -280,6 +280,7 @@ async function route() {
     [/^\/stats$/, () => viewStats()],
     [/^\/dupes$/, () => viewDupes()],
     [/^\/prices$/, () => viewPrices()],
+    [/^\/device$/, () => viewDevice(q)],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -581,8 +582,61 @@ const chargeKey = (m) => Object.keys(m.custom_fields || {}).find((k) => CHARGE_R
 const chargeOf = (m) => { const k = chargeKey(m); return k ? String(m.custom_fields[k]).trim() : ''; };
 const natCmp = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
+// ---------- Tippfehler-tolerante Suche: „ipohne 12 dispaly“ findet „iPhone 12 Display“ ----------
+/** Damerau-Levenshtein (mit Vertauschung zweier Buchstaben), bricht ab, sobald max überschritten ist */
+function editDist(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let best = Infinity;
+    for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      best = Math.min(best, d[i][j]);
+    }
+    if (best > max) return max + 1;
+  }
+  return d[a.length][b.length];
+}
+const fuzzyMax = (w) => (w.length <= 3 ? 0 : w.length <= 6 ? 1 : 2);
+/** Wie gut passt ein Suchwort zu einem Wort des Teils? 0 = genau, höher = mehr Tippfehler, Infinity = gar nicht */
+function wordScore(w, tokens) {
+  let best = Infinity;
+  for (const t of tokens) {
+    if (t.includes(w)) return 0;
+    // kurze Wörter („aku“) dürfen nur gegen kurze Wörter („akku“) einen Fehler haben – sonst passt alles
+    const max = w.length === 3 ? (t.length <= 5 ? 1 : 0) : fuzzyMax(w);
+    if (!max) continue;
+    // auch angefangene Wörter: „dispa“ ~ „display“ → mit dem Wortanfang vergleichen
+    const d = Math.min(editDist(w, t, max), t.length > w.length ? editDist(w, t.slice(0, w.length), max) : max + 1);
+    if (d <= max && d < best) best = d;
+  }
+  return best;
+}
+function fuzzyFilter(mats, words) {
+  const scored = [];
+  for (const m of mats) {
+    const tokens = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${(m.fits || []).join(' ')}`.toLowerCase().split(/[^a-z0-9äöüß]+/).filter(Boolean);
+    let sum = 0;
+    for (const w of words) { const sc = wordScore(w, tokens); if (sc === Infinity) { sum = -1; break; } sum += sc; }
+    if (sum >= 0) scored.push([m, sum]);
+  }
+  return scored.sort((a, b) => a[1] - b[1]).map(([m]) => m);
+}
+
 function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const exact = filterMatsExact(mats, { q, group, low, loc, charge, fav }, words);
+  // Nichts gefunden? Dann großzügig nach Tippfehlern suchen (nur wenn auch wirklich gesucht wurde)
+  if (exact.length || !words.length || q.trim().length < 4) return exact;
+  const base = filterMatsExact(mats, { group, low, loc, charge, fav }, []);
+  const res = fuzzyFilter(base, words.map((w) => w.replace(/[^a-z0-9äöüß]/g, '')).filter(Boolean));
+  res.fuzzy = true;
+  return res;
+}
+function filterMatsExact(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}, words = []) {
   const ch = String(charge || '').trim().toLowerCase();
   return mats.filter((m) => {
     if (group && m.group_id !== group) return false;
@@ -1354,9 +1408,12 @@ async function viewList(q) {
     else if (s === 'charge') f.sort((a, b) => { const x = chargeOf(a); const y = chargeOf(b); return (!x) - (!y) || natCmp(x, y) || a.number - b.number; });
     else f.sort((a, b) => a.number - b.number);
     visible = f;
+    const dev = listState.q && listState.tab === 'part' && f.length >= 2 ? deviceGroups(f) : null;
     rows.innerHTML = f.length ? `
+      ${dev && dev.groups.length >= 2 ? `<a class="device-chip" href="#/device?q=${encodeURIComponent(listState.q)}">
+        <span class="dc-ic">${icon('device', 20, 2)}</span><span class="dc-text"><b>Geräte-Ansicht: ${esc(listState.q)}</b><small>${f.length} Teile in ${dev.groups.length} Bereichen${dev.missing.length ? ` · fehlt: ${dev.missing.join(', ')}` : ''}</small></span>${icon('chevR', 18)}</a>` : ''}
       <div class="list-tools">
-        ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.length} Einträge</span>`}
+        ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.fuzzy ? `<span class="fuzzy-hint">${icon('sparkle', 13, 2.2)} Ähnliche Treffer</span> · ` : ''}${f.length} Einträge</span>`}
         <button class="text-btn strong" data-act="sel-toggle">${sel.on ? 'Fertig' : 'Auswählen'}</button>
       </div>
       <div class="mlist ${stagger ? 'stagger' : ''}">${f.map((m, i) => materialRow(m, undefined, stagger ? i : -1)).join('')}</div>`
@@ -1383,6 +1440,7 @@ async function viewList(q) {
       updateSel();
     };
     updateSel();
+    setupScrubber(root, rows, f, listState.sort);
   };
   // Kaskade nur beim Öffnen der Seite (nicht beim Zurückkommen an die alte Scroll-Position oder beim Tippen in der Suche)
   renderRows(pendingScrollWas === 0 && !lastNavBack);
@@ -1889,6 +1947,8 @@ async function viewMaterial(id, q) {
     } catch (e) { errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
+  // Lange auf das Teilebild drücken → Karte dreht sich um, hinten der QR-Code groß zum Scannen
+  setupFlip(root, m);
   setupGallery(root, m, reload);
 
   if (tab === 'infos') {
@@ -2108,6 +2168,25 @@ function setupGallery(root, m, reload) {
 }
 
 // ---------- Gemeinsame Material-Aktionen (Detailseite + Kontextmenü) ----------
+function setupFlip(root, m) {
+  const g = root.querySelector('.gallery'); if (!g) return;
+  let t = 0; let sx = 0; let sy = 0; let fired = false;
+  g.addEventListener('pointerdown', (e) => {
+    fired = false; sx = e.clientX; sy = e.clientY;
+    clearTimeout(t);
+    t = setTimeout(() => {
+      fired = true; haptic('medium');
+      const im = m.images?.[0];
+      const code = m.barcode && m.barcode.length <= 20 ? m.barcode : String(m.number);   // wie beim Etikett
+      flipCard({ title: m.name, number: m.number, code, sub: code !== String(m.number) ? `Nr. ${m.number}` : '', img: im ? (im.thumb || im.url) : '' });
+    }, 520);
+  });
+  g.addEventListener('pointermove', (e) => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 10) clearTimeout(t); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => g.addEventListener(ev, () => clearTimeout(t)));
+  g.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
+  g.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
 function openLabel(m) {
   // 2. Zeile: Chargennummer/Platz (eigenes Feld), sonst Artikelnummer
   const cf = m.custom_fields || {};
@@ -2644,6 +2723,103 @@ function setupHeatmap(root, movs, mats) {
     info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
     info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
   }));
+}
+
+/**
+ * Schnell-Leiste am rechten Rand (wie bei den iPhone-Kontakten): am Rand entlangwischen → springt durch die Liste.
+ * Bei Sortierung nach Name Buchstaben, sonst Artikelnummern. Eine Blase zeigt, wo man gerade ist.
+ */
+function setupScrubber(root, rows, list, sort) {
+  root.querySelector('.scrubber')?.remove();
+  if (list.length < 30 || listState.q) return;
+  const byName = sort === 'name';
+  const label = (m) => (byName ? ((m.name || '#').trim()[0] || '#').toUpperCase().replace(/[^A-ZÄÖÜ]/, '#') : String(m.number ?? '–'));
+  // Markierungen: bei Namen jeder Anfangsbuchstabe, bei Nummern ~12 gleichmäßige Stufen
+  let marks;
+  if (byName) { const seen = new Map(); list.forEach((m, i) => { const l = label(m); if (!seen.has(l)) seen.set(l, i); }); marks = [...seen].map(([l, i]) => ({ l, i })); }
+  else { const n = Math.min(12, list.length); marks = Array.from({ length: n }, (_, k) => { const i = Math.round((k * (list.length - 1)) / (n - 1)); return { l: label(list[i]), i }; }); }
+  const bar = document.createElement('div');
+  bar.className = 'scrubber'; bar.setAttribute('aria-hidden', 'true');
+  bar.innerHTML = `<div class="scr-track">${marks.map((x) => `<span>${esc(x.l)}</span>`).join('')}</div><div class="scr-bubble"><b></b><small></small></div>`;
+  root.appendChild(bar);
+  const track = bar.querySelector('.scr-track'); const bub = bar.querySelector('.scr-bubble');
+  let last = -1;
+  const jump = (y) => {
+    const r = track.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (y - r.top) / r.height));
+    const idx = byName ? marks[Math.min(marks.length - 1, Math.floor(frac * marks.length))].i : Math.round(frac * (list.length - 1));
+    if (idx === last) return; last = idx;
+    const row = rows.querySelectorAll('.mrow')[idx]; if (!row) return;
+    const head = Math.max(...[...root.querySelectorAll('.navbar, .list-nav, .segment')].map((el) => el.getBoundingClientRect().bottom), 120);
+    window.scrollTo({ top: row.getBoundingClientRect().top + window.scrollY - head - 8, behavior: 'auto' });
+    const m = list[idx];
+    bub.querySelector('b').textContent = label(m);
+    bub.querySelector('small').textContent = m.name;
+    bub.style.top = `${Math.max(r.top, Math.min(r.bottom, y)) - bar.getBoundingClientRect().top}px`;
+    haptic('selection');
+  };
+  bar.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); try { bar.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    bar.classList.add('active'); last = -1; jump(e.clientY);
+  });
+  bar.addEventListener('pointermove', (e) => { if (bar.classList.contains('active')) jump(e.clientY); });
+  const end = () => bar.classList.remove('active');
+  bar.addEventListener('pointerup', end); bar.addEventListener('pointercancel', end);
+  bar.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+}
+
+// =====================================================================
+//  GERÄTE-ANSICHT: alle Teile zu einem Gerät, sortiert nach Bauteil (Display, Akku, Kamera …)
+// =====================================================================
+const DEVICE_CATS = [
+  { id: 'display', label: 'Display & Glas', icon: 'phone', rx: /display|lcd|oled|touch|digitizer|glas|glass|oca|screen|bildschirm/i, main: true },
+  { id: 'akku', label: 'Akku', icon: 'battery', rx: /akku|batter|accu/i, main: true },
+  { id: 'kamera', label: 'Kamera', icon: 'camera', rx: /kamera|camera|linse|lens|objektiv/i, main: true },
+  { id: 'port', label: 'Ladebuchse & Flex', icon: 'plug', rx: /lade|charg|buchse|port|dock|connector|stecker|flex|kabel|cable/i, main: true },
+  { id: 'gehaeuse', label: 'Gehäuse & Rückseite', icon: 'device', rx: /back|rück|gehäuse|gehaeuse|housing|rahmen|frame|cover|deckel/i },
+  { id: 'ton', label: 'Ton & Vibration', icon: 'speaker', rx: /lautsprecher|speaker|hörmuschel|earpiece|mikro|mic|taptic|vibra|buzzer/i },
+  { id: 'klein', label: 'Kleber & Kleinteile', icon: 'screw', rx: /kleb|adhes|sticker|tape|schraube|screw|dichtung|gasket|aufkleber|pad/i },
+];
+// Erkennung von genau nach grob: „LCD Flex Kabel“ ist ein Flex, „LCD Kleber“ ein Kleinteil, erst dann „LCD“ = Display
+const DETECT_ORDER = ['klein', 'port', 'akku', 'kamera', 'ton', 'gehaeuse', 'display'];
+function deviceCat(m) {
+  const txt = `${m.name} ${m.group_name || ''}`;
+  for (const id of DETECT_ORDER) { const c = DEVICE_CATS.find((x) => x.id === id); if (c.rx.test(txt)) return c; }
+  return { id: 'sonst', label: 'Sonstiges', icon: 'box' };
+}
+function deviceGroups(mats) {
+  const map = new Map();
+  for (const m of mats) { const c = deviceCat(m); if (!map.has(c.id)) map.set(c.id, { cat: c, items: [] }); map.get(c.id).items.push(m); }
+  const order = [...DEVICE_CATS.map((c) => c.id), 'sonst'];
+  const groups = [...map.values()].sort((a, b) => order.indexOf(a.cat.id) - order.indexOf(b.cat.id));
+  const missing = DEVICE_CATS.filter((c) => c.main && !map.has(c.id)).map((c) => c.label.split(' ')[0]);
+  return { groups, missing };
+}
+async function viewDevice(q) {
+  const term = String(q?.q || '').trim();
+  const mats = (await getMats()).filter((m) => m.kind === 'part');
+  const f = filterMats(mats, { q: term });
+  const { groups, missing } = deviceGroups(f);
+  const stockOf = (arr) => arr.reduce((a, m) => a + Math.max(0, +m.total || 0), 0);
+  const root = screen({
+    header: navbar({ left: backBtn(), title: esc(term || 'Gerät') }),
+    body: `<div class="dev-hero">
+        <span class="dev-ic">${icon('device', 34, 1.8)}</span>
+        <div><h2>${esc(term)}</h2><p>${fmtQty(f.length)} ${f.length === 1 ? 'Teil' : 'Teile'} · ${fmtQty(stockOf(f))} Stück auf Lager${f.fuzzy ? ' · ähnliche Treffer' : ''}</p></div>
+      </div>
+      <div class="dev-chips">${groups.map((g) => `<a class="dev-chip ${stockOf(g.items) ? '' : 'empty'}" href="#dev-${g.cat.id}" data-jump="${g.cat.id}">${icon(g.cat.icon, 16, 2)} ${esc(g.cat.label.split(' ')[0])} <b>${fmtQty(stockOf(g.items))}</b></a>`).join('')}
+        ${missing.map((x) => `<span class="dev-chip missing">${icon('x', 14, 2.4)} ${esc(x)}</span>`).join('')}</div>
+      ${groups.map((g, gi) => `<section class="dev-sec" id="dev-${g.cat.id}" style="--gi:${gi}">
+          <h2 class="dash-sec">${icon(g.cat.icon, 20, 2)} ${esc(g.cat.label)} <small>${fmtQty(g.items.length)}</small></h2>
+          <div class="mlist">${g.items.sort((a, b) => a.number - b.number).map((m) => materialRow(m)).join('')}</div>
+        </section>`).join('') || empty('search', `Nichts gefunden für „${esc(term)}“`)}
+      ${missing.length ? `<p class="muted small center pad">Nicht im Lager für dieses Gerät: ${missing.map(esc).join(', ')}</p>` : ''}`,
+  });
+  root.querySelectorAll('[data-jump]').forEach((a) => (a.onclick = (e) => {
+    e.preventDefault(); haptic('light');
+    const t = root.querySelector(`#dev-${a.dataset.jump}`); if (t) window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 110, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+  }));
+  return root;
 }
 
 // =====================================================================

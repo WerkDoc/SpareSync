@@ -2478,3 +2478,96 @@ span.pv-btn { background: none; }
 /* Live-Buchung von einem anderen Gerät: Zeile leuchtet kurz auf */
 .live-flash { animation: live-flash 1.6s ease-out; }
 @keyframes live-flash { 0%, 30% { background-color: color-mix(in srgb, var(--primary) 18%, transparent); box-shadow: inset 3px 0 0 var(--primary); } 100% { background-color: transparent; } }
+.fuzzy-hint { display: inline-flex; align-items: center; gap: 3px; color: var(--primary); font-weight: 600; }
+
+/* =====================================================================
+   Geräte-Ansicht
+   ===================================================================== */
+.device-chip { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 12px 14px; border-radius: var(--r); color: var(--text);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface)); box-shadow: var(--card-shadow); animation: detail-fade .3s ease both; }
+.device-chip > svg { color: var(--text-3); flex-shrink: 0; }
+.dc-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; color: var(--primary); background: var(--surface); }
+.dc-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dc-text b { font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-text small { font-size: 13px; color: var(--text-2); }
+:root[data-style="neu"] .device-chip { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .device-chip:active { box-shadow: var(--sink); }
+:root[data-style="neu"] .dc-ic { background: var(--neu); box-shadow: var(--raise-xs); }
+.dev-hero { display: flex; align-items: center; gap: 16px; margin: 6px 2px 14px; }
+.dev-hero h2 { margin: 0; font-size: 28px; line-height: 1.1; }
+.dev-hero p { margin: 4px 0 0; color: var(--text-2); font-size: 14.5px; }
+.dev-ic { width: 64px; height: 64px; flex-shrink: 0; border-radius: 20px; display: grid; place-items: center; color: var(--primary); background: var(--surface); box-shadow: var(--card-shadow); }
+:root[data-style="neu"] .dev-ic { background: var(--neu); box-shadow: var(--raise); }
+.dev-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.dev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 16px; font-size: 14px; font-weight: 600; color: var(--text); background: var(--surface); box-shadow: var(--card-shadow); }
+.dev-chip b { color: var(--primary); }
+.dev-chip.empty b { color: var(--red); }
+.dev-chip.missing { color: var(--text-3); background: transparent; box-shadow: inset 0 0 0 1.5px var(--sep); }
+:root[data-style="neu"] .dev-chip { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); }
+:root[data-style="neu"] .dev-chip:active { box-shadow: var(--press-s); }
+:root[data-style="neu"] .dev-chip.missing { background: transparent; box-shadow: var(--press-s); }
+.dev-sec { animation: detail-fade .4s ease both; animation-delay: calc(var(--gi) * 70ms); }
+.dev-sec .dash-sec { display: flex; align-items: center; gap: 8px; }
+.dev-sec .dash-sec small { margin-left: auto; font-size: 14px; font-weight: 600; color: var(--text-3); }
+@media (prefers-reduced-motion: reduce) { .dev-sec, .device-chip { animation: none; } }
+
+/* =====================================================================
+   Schnell-Leiste am rechten Rand der Teile-Liste
+   ===================================================================== */
+.scrubber { position: fixed; z-index: 30; right: max(2px, env(safe-area-inset-right)); top: 170px; bottom: calc(var(--tabbar-h, 84px) + 16px); width: 26px; touch-action: none; user-select: none; -webkit-user-select: none; }
+.scr-track { height: 100%; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 6px 0; border-radius: 13px; transition: background .2s; }
+.scr-track span { font-size: 10.5px; font-weight: 700; color: var(--primary); line-height: 1; font-variant-numeric: tabular-nums; transform-origin: right center; }
+.scrubber.active .scr-track { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.scr-bubble { position: absolute; right: 38px; top: 0; min-width: 64px; max-width: 220px; padding: 8px 14px; border-radius: 16px; transform: translateY(-50%) scale(.6); opacity: 0;
+  transform-origin: right center; pointer-events: none; transition: opacity .15s, transform .2s cubic-bezier(.34, 1.5, .64, 1);
+  background: var(--primary); color: #fff; box-shadow: 0 10px 26px rgba(0, 0, 0, .25); display: flex; flex-direction: column; }
+.scr-bubble b { font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.scr-bubble small { font-size: 12px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scrubber.active .scr-bubble { opacity: 1; transform: translateY(-50%) scale(1); }
+:root[data-style="neu"] .scrubber.active .scr-track { background: var(--neu); box-shadow: var(--press-s); }
+:root[data-style="neu"] .scr-bubble { background: var(--neu-grad); }
+@media (min-width: 900px) { .scrubber { right: calc((100vw - 900px) / 2 + 2px); } }
+
+/* =====================================================================
+   Karte umdrehen (Detailseite: lange aufs Bild drücken)
+   ===================================================================== */
+.flip-layer { z-index: 165; }
+.flip-dim { position: absolute; inset: 0; background: rgba(8, 16, 34, .45); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); opacity: 0; transition: opacity .25s; }
+.flip-layer.show .flip-dim { opacity: 1; }
+.flip-stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; perspective: 1200px; pointer-events: none; }
+.flip-card { position: relative; width: min(78vw, 320px); aspect-ratio: 3 / 4; transform-style: preserve-3d; pointer-events: auto; cursor: pointer;
+  transform: scale(.85) rotateY(0deg); opacity: 0; transition: transform .75s cubic-bezier(.34, 1.25, .5, 1), opacity .25s; }
+.flip-layer.show .flip-card { transform: scale(1) rotateY(0deg); opacity: 1; }
+.flip-layer.show .flip-card.flipped { transform: scale(1) rotateY(180deg); }
+.flip-face { position: absolute; inset: 0; border-radius: 26px; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 22px; text-align: center;
+  background: var(--surface); color: var(--text); box-shadow: 0 30px 70px rgba(0, 0, 0, .35); }
+.flip-face img { width: 100%; flex: 1; min-height: 0; object-fit: contain; border-radius: 16px; background: #fff; }
+.flip-face b { font-size: 17px; line-height: 1.25; }
+.flip-face small { font-size: 13.5px; color: var(--text-2); }
+.flip-face.back { transform: rotateY(180deg); background: #fff; color: #111; }
+.flip-face.back small { color: #555; }
+.flip-qr { width: 100%; flex: 1; min-height: 0; display: grid; place-items: center; }
+.flip-qr svg { width: 100%; height: 100%; max-height: 100%; }
+.flip-hint { margin: 0; color: rgba(255, 255, 255, .85); font-size: 13.5px; pointer-events: auto; text-shadow: 0 1px 6px rgba(0, 0, 0, .4); }
+:root[data-style="neu"] .flip-face.front { background: var(--neu); }
+@media (prefers-reduced-motion: reduce) { .flip-card { transition: opacity .2s; } .flip-layer.show .flip-card.flipped { transform: none; } .flip-card.flipped .front { visibility: hidden; } .flip-card.flipped .back { transform: none; } }
+
+/* =====================================================================
+   Plastischer Lade-Schimmer: Platzhalter sind eingedrückte Mulden, ein sanfter Lichtstreifen wandert darüber
+   ===================================================================== */
+:root[data-style="neu"] .skel {
+  background: var(--neu); border-radius: 9px;
+  box-shadow: inset 2px 2px 5px var(--neu-sh), inset -2px -2px 5px var(--neu-hi);
+}
+:root[data-style="neu"] .skel::after {
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--neu-hi) 85%, transparent) 50%, transparent 80%);
+  mix-blend-mode: screen; animation-duration: 1.7s;
+}
+/* Mulden für Bilder/Symbole dürfen tiefer wirken */
+:root[data-style="neu"] .skel-thumb, :root[data-style="neu"] .skel-ic, :root[data-style="neu"] .skel-qic { box-shadow: var(--press-s); border-radius: 14px; }
+:root[data-style="neu"] .skel-qic { border-radius: 50%; }
+/* die Platzhalter-Karten selbst atmen ganz leicht, damit man sieht: es lädt */
+:root[data-style="neu"] .skel-card { animation: skel-breathe 2.4s ease-in-out infinite; }
+@keyframes skel-breathe { 50% { box-shadow: 4px 4px 9px var(--neu-sh), -4px -4px 9px var(--neu-hi); } }
+@media (prefers-reduced-motion: reduce) { :root[data-style="neu"] .skel-card, :root[data-style="neu"] .skel::after { animation: none; } }
