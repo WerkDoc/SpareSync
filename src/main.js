@@ -3289,6 +3289,13 @@ function invSave(id, counts) {
   } catch { /* egal */ }
 }
 function invClear(id) { try { localStorage.removeItem(INV_KEY(id)); sessionStorage.removeItem(`wl-inv-${id}`); } catch { /* egal */ } }
+// Letzter Abschluss pro Lagerort (wann, wie viel gezählt, wie viel korrigiert) – bleibt 30 Tage sichtbar
+const INV_DONE = (id) => `ss-inv-done-${id}`;
+function invDoneLoad(id) {
+  try { const d = JSON.parse(localStorage.getItem(INV_DONE(id)) || 'null'); return d && Date.now() - d.at < INV_MAX_AGE ? d : null; } catch { return null; }
+}
+function invDoneSave(id, info) { try { localStorage.setItem(INV_DONE(id), JSON.stringify({ at: Date.now(), ...info })); } catch { /* egal */ } }
+const invWhen = (at) => { const d = new Date(at); return new Date().toDateString() === d.toDateString() ? `heute ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : `am ${d.toLocaleDateString('de-DE')}`; };
 
 async function viewInventory(q) {
   const locs = await getLocs();
@@ -3296,7 +3303,7 @@ async function viewInventory(q) {
     const root = screen({
       header: navbar({ left: backBtn(), title: 'Material Inventur' }),
       body: `<p class="hint">Lagerort wählen, dann den tatsächlichen Bestand zählen und eintragen. Nur geänderte Mengen werden gebucht.</p>
-        <div class="plain-list">${locs.map((l) => { const st = invLoad(l.id); return `<a class="plain-row" href="#/inventory?loc=${l.id}"><span>${icon('shelf', 22)} ${esc(l.name)}</span><small class="muted">${st ? `<span class="inv-badge">begonnen · ${st.counts.length} gezählt</span> ` : ''}${l.count} Teile ${icon('chevR', 16)}</small></a>`; }).join('')
+        <div class="plain-list">${locs.map((l) => { const st = invLoad(l.id); const dn = !st && invDoneLoad(l.id); return `<a class="plain-row" href="#/inventory?loc=${l.id}"><span>${icon('shelf', 22)} ${esc(l.name)}</span><small class="muted">${st ? `<span class="inv-badge">begonnen · ${st.counts.length} gezählt</span> ` : dn ? `<span class="inv-badge done">${icon('check', 12, 3)} gezählt ${invWhen(dn.at).replace(/ \d\d:\d\d$/, '')}</span> ` : ''}${l.count} Teile ${icon('chevR', 16)}</small></a>`; }).join('')
           || empty('shelf', 'Noch keine Lagerorte', '<a class="btn-tinted" href="#/locations">Lagerort anlegen</a>')}</div>`,
     });
     return root;
@@ -3307,6 +3314,7 @@ async function viewInventory(q) {
   const rows = mats.filter((m) => m.locations.some((l) => l.location_id === loc.id));
   const soll = (m) => m.locations.find((l) => l.location_id === loc.id)?.qty ?? 0;
   const saved = invLoad(loc.id);
+  let doneInfo = saved?.counts.length ? null : invDoneLoad(loc.id);   // „abgeschlossen“-Ansicht, bis neu gezählt wird
   const counts = new Map(saved?.counts || []);
   const persist = () => invSave(loc.id, counts);
   if (saved?.counts.length) {
@@ -3335,6 +3343,17 @@ async function viewInventory(q) {
   let justCounted = null;                  // diese Zeile bekommt beim nächsten Aufbau das kurze Häkchen
   let wasComplete = false; let progressReady = false;   // Konfetti nur beim Übergang auf 100 %, nicht beim Öffnen
   const updateProgress = () => {
+    const card0 = root.querySelector('.inv-progress');
+    card0.classList.toggle('finished', !!doneInfo);
+    if (doneInfo) {                                    // zuletzt abgeschlossene Inventur anzeigen
+      const ip = (k) => root.querySelector(`[data-ip=${k}]`);
+      ip('text').textContent = 'Inventur abgeschlossen';
+      ip('pct').innerHTML = icon('check', 34, 3);
+      ip('bar').style.strokeDashoffset = '0';
+      ip('sub').textContent = `${invWhen(doneInfo.at)} · ${fmtQty(doneInfo.counted)} gezählt · ${doneInfo.changes ? `${fmtQty(doneInfo.changes)} ${doneInfo.changes === 1 ? 'Bestand' : 'Bestände'} korrigiert` : 'alles stimmte'}`;
+      card0.classList.add('complete'); card0.hidden = !rows.length; wasComplete = true; progressReady = true;
+      return;
+    }
     const done = rows.filter((m) => (counts.get(m.id) ?? '') !== '').length;
     const pct = rows.length ? Math.round((done / rows.length) * 100) : 0;
     const ip = (k) => root.querySelector(`[data-ip=${k}]`);
@@ -3355,7 +3374,7 @@ async function viewInventory(q) {
     const b = root.querySelector('[data-act=commit]');
     // Alles gezählt und alles stimmt → Zählung trotzdem abschließen können
     const all = rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '');
-    b.textContent = n ? `Inventur buchen (${n} Änderung${n > 1 ? 'en' : ''})` : counted ? (all ? 'Zählung abschließen – alles stimmt' : 'Zählung abschließen (nichts zu buchen)') : 'Keine Änderungen';
+    b.textContent = n ? `Inventur buchen (${n} Änderung${n > 1 ? 'en' : ''})` : counted ? (all ? 'Zählung abschließen – alles stimmt' : 'Zählung abschließen (nichts zu buchen)') : doneInfo ? 'Abgeschlossen – zum Neuzählen Ist eintragen' : 'Keine Änderungen';
     b.disabled = !n && !counted;
     root.querySelector('[data-act=discard]').hidden = !counted;
   };
@@ -3371,6 +3390,7 @@ async function viewInventory(q) {
       const inp = r.querySelector('input');
       inp.onchange = () => {
         const was = counts.get(r.dataset.m) ?? '';
+        if (doneInfo && inp.value !== '') { doneInfo = null; wasComplete = false; }   // neue Zählung beginnt
         counts.set(r.dataset.m, inp.value); persist();
         justCounted = was === '' && inp.value !== '' ? r.dataset.m : null;
         if (justCounted) haptic('light');
@@ -3408,6 +3428,7 @@ async function viewInventory(q) {
     const changes = [...counts].filter(([mid, v]) => v !== '' && rows.some((m) => m.id === mid) && +v !== soll(rows.find((m) => m.id === mid)));
     if (!changes.length) {
       if (![...counts].some(([, v]) => v !== '')) return;
+      invDoneSave(loc.id, { counted: [...counts].filter(([, v]) => v !== '').length, changes: 0 });
       invClear(loc.id); successHUD('Bestand stimmt', loc.name);
       if (rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '')) confetti();
       go('/inventory', true); return;
@@ -3416,6 +3437,7 @@ async function viewInventory(q) {
     b.disabled = true;
     try {
       for (const [mid, v] of changes) await db.book({ material_id: mid, type: 'inventory', qty: +v, location_id: loc.id, note: 'Inventur' });
+      invDoneSave(loc.id, { counted: [...counts].filter(([, v]) => v !== '').length, changes: changes.length });
       invClear(loc.id); invalidate(); successHUD('Inventur gebucht');
       if (rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '')) confetti();   // ganzer Lagerort gezählt
       go('/inventory', true);

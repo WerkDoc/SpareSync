@@ -2368,3 +2368,8 @@ span.pv-btn { background: none; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .shelf-boxes { --plank: #3a3d45; } }
 :root[data-style="neu"] .shelf-boxes { --plank: color-mix(in srgb, var(--neu-sh) 85%, #8a7a60); }
 .inv-badge { display: inline-block; margin-right: 6px; padding: 2px 8px; border-radius: 9px; font-size: 12px; font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+[data-act="discard"][hidden] { display: none !important; }
+.inv-badge.done { color: #1f9d55; background: color-mix(in srgb, #34c759 15%, transparent); display: inline-flex; align-items: center; gap: 3px; }
+.inv-progress.finished .ir-val { color: var(--green); }
+.inv-progress.finished .ir-val svg { width: 34px; height: 34px; }
+.inv-ring .ir-val svg { transform: none; }
