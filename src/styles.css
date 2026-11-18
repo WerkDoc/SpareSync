@@ -2300,3 +2300,14 @@ span.pv-btn { background: none; }
 @media (prefers-reduced-motion: reduce) { .ir-fill { transition: none; } .inv-progress.done-pop .inv-ring { animation: none; } }
 :root[data-style="neu"] .inv-row input { background: var(--neu); border: 0; border-radius: 16px; box-shadow: var(--press-s); }
 :root[data-style="neu"] .inv-row input:focus { outline: none; box-shadow: var(--press-s), 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
+
+/* Verkaufspreis-Vorschlag (Formular) + Marge (Details) */
+.sale-suggest { display: flex; align-items: center; gap: 6px; width: 100%; margin: -2px 0 10px; padding: 10px 14px; border-radius: 12px; font-size: 14.5px; color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent); text-align: left; animation: detail-fade .25s ease both; }
+.sale-suggest small { color: var(--text-2); }
+.sale-suggest:active { transform: scale(.98); }
+.margin-chip { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 9px; font-size: 13px; font-weight: 600; vertical-align: 2px;
+  color: #1f9d55; background: color-mix(in srgb, #34c759 15%, transparent); }
+.margin-chip.neg { color: var(--red); background: color-mix(in srgb, var(--red) 13%, transparent); }
+:root[data-style="neu"] .sale-suggest { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); border-radius: 16px; }
+:root[data-style="neu"] .sale-suggest:active { box-shadow: var(--press-s); }

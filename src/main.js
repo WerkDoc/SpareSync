@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -2353,6 +2353,42 @@ function bookingTab(m, mov) {
     ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map((x, i) => movementRow(x, i, m.purchase_price)).join('')}</div>` : ''}`;
 }
 
+// ---------- Verkaufspreis-Rechner: Aufschlag auf den Einkaufspreis + Rundung ----------
+const MARKUP_KEY = 'ss-markup';
+const MARKUP_ROUND = { '0': 'nicht runden', '0.5': 'auf 0,50 €', '1': 'auf ganze Euro', '0.9': 'auf ,90 €' };
+function markupCfg() { try { return { pct: 40, round: '1', ...JSON.parse(localStorage.getItem(MARKUP_KEY) || '{}') }; } catch { return { pct: 40, round: '1' }; } }
+function setMarkup(patch) { try { localStorage.setItem(MARKUP_KEY, JSON.stringify({ ...markupCfg(), ...patch })); } catch { /* egal */ } }
+function suggestSale(ek) {
+  ek = +ek; if (!(ek > 0)) return null;
+  const { pct, round } = markupCfg();
+  let v = ek * (1 + (+pct || 0) / 100);
+  if (round === '1') v = Math.ceil(v - 1e-9);
+  else if (round === '0.5') v = Math.ceil(v * 2 - 1e-9) / 2;
+  else if (round === '0.9') { const f = Math.floor(v); v = v <= f + 0.9 + 1e-9 ? f + 0.9 : f + 1.9; }
+  return Math.round(v * 100) / 100;
+}
+function marginInfo(m) {
+  const sale = +m.sale_price; const buy = +m.purchase_price;
+  if (!(sale > 0 && buy > 0)) return null;
+  const d = sale - buy;
+  return { d, pct: Math.round((d / sale) * 100), neg: d < 0 };
+}
+/** Im Formular: Vorschlag für den Verkaufspreis direkt unter dem Einkaufspreis */
+function setupSaleSuggest(root) {
+  const ek = root.querySelector('input[name="purchase_price"]'); const vk = root.querySelector('input[name="sale_price"]');
+  if (!ek || !vk) return;
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'sale-suggest'; btn.hidden = true;
+  ek.closest('.field').after(btn);
+  const upd = () => {
+    const v = suggestSale(ek.value);
+    btn.hidden = v == null || +vk.value === v;
+    if (v != null) btn.innerHTML = `${icon('sparkle', 16, 2.2)} VK-Vorschlag <b>${fmtEUR(v)}</b> <small>(+${markupCfg().pct} %)</small> übernehmen`;
+  };
+  ek.addEventListener('input', upd); vk.addEventListener('input', upd);
+  btn.onclick = () => { const v = suggestSale(ek.value); if (v == null) return; vk.value = v.toFixed(2); vk.dispatchEvent(new Event('input', { bubbles: true })); haptic('light'); pop(vk); upd(); };
+  upd();
+}
+
 function detailsTab(m, defs = []) {
   const row = (label, value, quick, extra = '') => `
     <button class="drow" ${quick ? `data-quick="${quick}"` : 'disabled'}>
@@ -2364,7 +2400,7 @@ function detailsTab(m, defs = []) {
       ${row('Artikelnummer', m.number, null)}
       ${row('Barcode', esc(m.barcode || '—'), 'barcode', m.barcode ? `<span class="icon-btn" data-act="copy-bc">${icon('copy', 22)}</span>` : '')}
       ${row('Einheit', esc(m.unit || '—'), 'unit')}
-      ${row('Verkaufspreis', fmtEUR(m.sale_price), 'sale_price')}
+      ${row('Verkaufspreis', fmtEUR(m.sale_price) + (() => { const g = marginInfo(m); return g ? ` <span class="margin-chip ${g.neg ? 'neg' : ''}">Marge ${fmtEUR(g.d)} · ${g.pct} %</span>` : ''; })(), 'sale_price')}
       ${row('Einkaufspreis', m.purchase_price != null ? fmtEUR(m.purchase_price) : '—', 'purchase_price')}
       ${row('Buchungsart', esc(m.booking_type || 'Einheit'), 'booking_type')}
       ${row(m.kind === 'tool' ? 'Gruppe' : 'Ersatzteil Gruppe', esc(m.group_name || '—'), 'group')}
@@ -2816,6 +2852,7 @@ async function viewForm(id, q) {
   };
   renderDefs();
   setupFitsInput(root, st);
+  setupSaleSuggest(root);
   const renderCF = () => {
     root.querySelector('#cf').innerHTML = st.custom.map(([k, val], i) => `
       <div class="field cf-row"><label><small>${esc(k)}</small><input data-cf="${i}" value="${esc(val)}" placeholder="${esc(k)}"></label>
@@ -3284,6 +3321,10 @@ async function viewSettings() {
           <select data-act-theme><option value="" ${!theme ? 'selected' : ''}>System</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Hell</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Dunkel</option></select></label>
         <label class="set-row"><i class="tone-primary">${icon('layers', 19)}</i><span>Design<small>Plastisch: Tasten wirken eingedrückt</small></span>
           <select data-act-style><option value="neu" ${designStyle() === 'neu' ? 'selected' : ''}>Plastisch</option><option value="classic" ${designStyle() === 'classic' ? 'selected' : ''}>Klassisch</option></select></label>
+        <label class="set-row"><i class="tone-green">${icon('euro', 19)}</i><span>Aufschlag Verkaufspreis<small>Vorschlag aus dem Einkaufspreis</small></span>
+          <select data-act-markup>${[20, 25, 30, 40, 50, 60, 75, 100, 150].concat([markupCfg().pct]).filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map((v) => `<option value="${v}" ${+markupCfg().pct === v ? 'selected' : ''}>+${v} %</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-green">${icon('tag', 19)}</i><span>Verkaufspreis runden</span>
+          <select data-act-round>${Object.entries(MARKUP_ROUND).map(([k, t]) => `<option value="${k}" ${markupCfg().round === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-teal">${icon('corners', 19)}</i><span>3D-Kacheln<small>Kacheln neigen sich mit dem Handy</small></span>
           <input type="checkbox" class="switch" data-act-gyro ${gyroEnabled() ? 'checked' : ''}></label>
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
@@ -3297,6 +3338,8 @@ async function viewSettings() {
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
+  root.querySelector('[data-act-markup]').onchange = (e) => { setMarkup({ pct: +e.target.value }); haptic('light'); };
+  root.querySelector('[data-act-round]').onchange = (e) => { setMarkup({ round: e.target.value }); haptic('light'); };
   root.querySelector('[data-act-style]').onchange = (e) => {
     try { localStorage.setItem('ss-style', e.target.value); } catch { /* egal */ }
     // weich überblenden statt hart umspringen
