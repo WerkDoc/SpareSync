@@ -2281,12 +2281,30 @@ function stockRing(m) {
         <circle class="sr-fill" cx="32" cy="32" r="${R}"/>
         ${minAngle != null && minAngle < 360 ? `<line class="sr-mark" x1="32" y1="3" x2="32" y2="9" transform="rotate(${minAngle.toFixed(1)} 32 32)"/>` : ''}
       </svg>
+      <span class="sr-tank" style="--lvl:${(frac * 100).toFixed(1)}%"><span class="sr-liquid"><i class="w1"></i><i class="w2"></i></span></span>
       <span class="sr-val">${fmtQty(total)}</span>
       <div class="sr-text"><b>${text}</b>
         <small>Meldebestand ${fmtQty(min)}${max ? ` · Maximalbestand ${fmtQty(max)}` : ''}</small>
         ${max && total < max ? `<small>Bis voll: ${fmtQty(max - total)}</small>` : ''}</div>
     </div>`;
 }
+
+// Flüssigkeit im Bestands-Tank schwappt mit der Handy-Neigung (Feder-Glättung, nur wenn ein Tank da ist)
+let sloshTarget = 0; let sloshCur = 0; let sloshVel = 0; let sloshRaf = 0;
+function sloshTick() {
+  sloshRaf = 0;
+  const tanks = document.querySelectorAll('.sr-liquid'); if (!tanks.length) return;
+  sloshVel += (sloshTarget - sloshCur) * 0.08; sloshVel *= 0.86; sloshCur += sloshVel;
+  tanks.forEach((t) => t.style.setProperty('--slosh', `${sloshCur.toFixed(2)}deg`));
+  if (Math.abs(sloshVel) > 0.02 || Math.abs(sloshTarget - sloshCur) > 0.05) sloshRaf = requestAnimationFrame(sloshTick);
+}
+addEventListener('deviceorientation', (e) => {
+  if (e.gamma == null || reduceMotion.matches || !document.querySelector('.sr-liquid')) return;
+  const angle = (screen.orientation?.angle ?? 0) % 360;
+  const g = angle === 90 ? e.beta : angle === 270 || angle === -90 ? -e.beta : e.gamma;
+  sloshTarget = Math.max(-28, Math.min(28, -g));               // Wasser bleibt waagerecht → kippt gegen das Handy
+  if (!sloshRaf) sloshRaf = requestAnimationFrame(sloshTick);
+}, { passive: true });
 
 function infosTab(m, tasks) {
   const loading = !tasks;                  // Aufgaben werden gerade nachgeladen

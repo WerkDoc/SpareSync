@@ -2418,3 +2418,21 @@ span.pv-btn { background: none; }
 @keyframes sky-pulse { 50% { transform: scale(1.12); opacity: .8; } }
 @keyframes sky-twinkle { 0%, 100% { opacity: .25; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.2); } }
 @media (prefers-reduced-motion: reduce) { .sky, .sky-glow, .sky i { animation: none; } }
+
+/* =====================================================================
+   Bestand als Flüssigkeit: kleiner Tank im Ring, Welle läuft, schwappt mit der Neigung
+   ===================================================================== */
+.stock-ring-card { position: relative; }
+.sr-tank { position: absolute; left: 26px; top: 50%; width: 40px; height: 40px; margin-top: -20px; border-radius: 50%; overflow: hidden; pointer-events: none;
+  background: color-mix(in srgb, var(--ring, var(--green)) 8%, transparent); }
+.sr-liquid { position: absolute; left: -50%; right: -50%; bottom: 0; height: calc(var(--lvl) + 4px); transform: rotate(var(--slosh, 0deg)); transform-origin: 50% 100%;
+  animation: tank-fill 1.4s cubic-bezier(.22, 1, .36, 1) both; }
+.sr-liquid i { position: absolute; left: 0; top: -6px; width: 200%; height: calc(100% + 6px);
+  background: color-mix(in srgb, var(--ring, var(--green)) 55%, transparent);
+  -webkit-mask: radial-gradient(10px 7px at 10px 0, transparent 98%, #000) 0 0 / 20px 100% repeat-x; mask: radial-gradient(10px 7px at 10px 0, transparent 98%, #000) 0 0 / 20px 100% repeat-x;
+  animation: tank-wave 2.4s linear infinite; }
+.sr-liquid i.w2 { top: -4px; opacity: .55; animation-duration: 3.6s; animation-direction: reverse; background: color-mix(in srgb, var(--ring, var(--green)) 85%, transparent); }
+.stock-ring-card .sr-val { z-index: 1; text-shadow: 0 0 6px var(--surface), 0 0 2px var(--surface); }
+@keyframes tank-wave { to { transform: translateX(-20px); } }
+@keyframes tank-fill { from { height: 0; } }
+@media (prefers-reduced-motion: reduce) { .sr-liquid, .sr-liquid i { animation: none; } }
