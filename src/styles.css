@@ -2552,3 +2552,22 @@ span.pv-btn { background: none; }
 .flip-hint { margin: 0; color: rgba(255, 255, 255, .85); font-size: 13.5px; pointer-events: auto; text-shadow: 0 1px 6px rgba(0, 0, 0, .4); }
 :root[data-style="neu"] .flip-face.front { background: var(--neu); }
 @media (prefers-reduced-motion: reduce) { .flip-card { transition: opacity .2s; } .flip-layer.show .flip-card.flipped { transform: none; } .flip-card.flipped .front { visibility: hidden; } .flip-card.flipped .back { transform: none; } }
+
+/* =====================================================================
+   Plastischer Lade-Schimmer: Platzhalter sind eingedrückte Mulden, ein sanfter Lichtstreifen wandert darüber
+   ===================================================================== */
+:root[data-style="neu"] .skel {
+  background: var(--neu); border-radius: 9px;
+  box-shadow: inset 2px 2px 5px var(--neu-sh), inset -2px -2px 5px var(--neu-hi);
+}
+:root[data-style="neu"] .skel::after {
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--neu-hi) 85%, transparent) 50%, transparent 80%);
+  mix-blend-mode: screen; animation-duration: 1.7s;
+}
+/* Mulden für Bilder/Symbole dürfen tiefer wirken */
+:root[data-style="neu"] .skel-thumb, :root[data-style="neu"] .skel-ic, :root[data-style="neu"] .skel-qic { box-shadow: var(--press-s); border-radius: 14px; }
+:root[data-style="neu"] .skel-qic { border-radius: 50%; }
+/* die Platzhalter-Karten selbst atmen ganz leicht, damit man sieht: es lädt */
+:root[data-style="neu"] .skel-card { animation: skel-breathe 2.4s ease-in-out infinite; }
+@keyframes skel-breathe { 50% { box-shadow: 4px 4px 9px var(--neu-sh), -4px -4px 9px var(--neu-hi); } }
+@media (prefers-reduced-motion: reduce) { :root[data-style="neu"] .skel-card, :root[data-style="neu"] .skel::after { animation: none; } }
