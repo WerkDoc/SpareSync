@@ -36,6 +36,7 @@ const P = {
   tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   cartPlus: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11.5L21 7H13"/><path d="M15 2v6M12 5h6"/>',
   cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11.5L21 6H6"/>',
+  euro: '<path d="M17.5 6.5A7 7 0 1 0 17.5 17.5"/><path d="M4 10.5h9M4 13.5h9"/>',
   chevR: '<path d="m9 6 6 6-6 6"/>',
   chevD: '<path d="m6 9 6 6 6-6"/>',
   chevU: '<path d="m6 15 6-6 6 6"/>',

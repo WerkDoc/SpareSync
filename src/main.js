@@ -903,6 +903,23 @@ function lagerHealth(parts) {
   const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
   return { ok, low, empty, total: parts.length, pct, state };
 }
+// ---------- Lagerwert (Einkauf) ----------
+function lagerValue(parts) {
+  const stock = (m) => Math.max(0, +m.total || 0);
+  const buy = parts.reduce((a, m) => a + stock(m) * (+m.purchase_price || 0), 0);
+  const missing = parts.filter((m) => stock(m) > 0 && !(+m.purchase_price > 0)).length;
+  const top = parts.map((m) => ({ m, v: stock(m) * (+m.purchase_price || 0) })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v)[0];
+  return { buy, missing, top };
+}
+function valueCard(v, cu) {
+  if (!(v.buy > 0)) return '';
+  return `<a class="value-card" href="#/stats" aria-label="Lagerwert im Einkauf">
+      <span class="v-ic">${icon('euro', 22, 2.2)}</span>
+      <div class="v-main"><small>Lagerwert (Einkauf)</small><b>${cu('value')} €</b>
+        <small>${v.missing ? `${fmtQty(v.missing)} ${v.missing === 1 ? 'Teil' : 'Teile'} noch ohne Einkaufspreis` : 'Alle Teile mit Einkaufspreis'}${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small></div>
+      ${icon('chevR', 18)}
+    </a>`;
+}
 const HEALTH_R = 40; const HEALTH_C = +(2 * Math.PI * HEALTH_R).toFixed(2);
 function healthCard(h, cu) {
   if (!h.total) return '';
@@ -952,7 +969,8 @@ async function viewFav() {
   const FAV_MAX = 6;
   const favs = mats.filter((m) => m.is_favorite).sort((a, b) => a.number - b.number);
   const hl = lagerHealth(parts);
-  const nums = { parts: parts.length, units, low: low.length, cart: cartN, health: hl.pct };
+  const val = lagerValue(parts);
+  const nums = { parts: parts.length, units, low: low.length, cart: cartN, health: hl.pct, value: Math.round(val.buy) };
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
 
@@ -987,6 +1005,7 @@ async function viewFav() {
       ${backupHint(mats)}
       <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
       ${healthCard(hl, cu)}
+      ${valueCard(val, cu)}
       <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
         ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
@@ -2271,7 +2290,7 @@ const typeInfo = {
   in: { label: 'Dazu gebucht', cls: 'green', ic: 'plus' }, out: { label: 'Entnommen', cls: 'red', ic: 'minus' },
   transfer: { label: 'Umgebucht', cls: 'blue', ic: 'swap' }, inventory: { label: 'Inventur', cls: 'gray', ic: 'tally' },
 };
-const movementRow = (x, showAfter = false) => {
+const movementRow = (x, showAfter = false, price = 0) => {
   const t = typeInfo[x.type];
   const where = x.type === 'transfer' ? `${esc(x.from_name)} → ${esc(x.to_name)}` : esc(x.from_name);
   const sign = x.type === 'transfer' ? '' : x.qty > 0 ? '+' : '';
@@ -2280,7 +2299,8 @@ const movementRow = (x, showAfter = false) => {
     <div class="mov-main"><b>${t.label}</b><div class="small muted">${where}</div>
       ${x.note ? `<div class="mov-note">${icon('tag', 13, 2.2)}<span>${esc(x.note)}</span></div>` : ''}
       ${showAfter && x.stock_after != null ? `<div class="small muted">Gesamtbestand danach: ${fmtQty(x.stock_after)}</div>` : ''}</div>
-    <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div></div>
+    <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div>
+      ${x.type === 'out' && +price > 0 ? `<div class="mov-cost">≈ ${fmtEUR(Math.abs(+x.qty) * +price)}</div>` : ''}</div>
   </div>`;
 };
 
@@ -2293,7 +2313,7 @@ function bookingTab(m, mov) {
     <button class="book-card green" data-act="book-in"><i>${icon('plus', 34, 2.6)}</i><span>Dazu buchen</span></button>
     <button class="book-card blue" data-act="book-transfer"><i>${icon('swap', 34, 2.4)}</i><span>Umbuchen</span></button>
     <button class="link-row muted" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>
-    ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map(movementRow).join('')}</div>` : ''}`;
+    ${loading ? `<div class="mov-list mov-loading">${skelRows(2)}</div>` : mov.length ? `<div class="mov-list fade-in">${mov.map((x, i) => movementRow(x, i, m.purchase_price)).join('')}</div>` : ''}`;
 }
 
 function detailsTab(m, defs = []) {
@@ -2343,7 +2363,7 @@ async function viewHistory(id) {
   const [m, mov] = await Promise.all([db.getMaterial(id), db.listMovements(id)]);
   screen({
     header: navbar({ left: backBtn('arrow'), title: `<div class="two-line">Bestandsänderungen<br><small>${m ? esc(m.name) : ''}</small></div>` }),
-    body: mov.length ? `<div class="mov-list">${mov.map((x) => movementRow(x, true)).join('')}</div>`
+    body: mov.length ? `<div class="mov-list">${mov.map((x) => movementRow(x, true, m?.purchase_price)).join('')}</div>`
       : empty('history', 'Noch keine Bestandsänderungen'),
   });
 }
