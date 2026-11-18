@@ -1441,7 +1441,6 @@ async function viewList(q) {
       updateSel();
     };
     updateSel();
-    setupScrubber(root, rows, f, listState.sort);
   };
   // Kaskade nur beim Öffnen der Seite (nicht beim Zurückkommen an die alte Scroll-Position oder beim Tippen in der Suche)
   renderRows(pendingScrollWas === 0 && !lastNavBack);
@@ -2724,49 +2723,6 @@ function setupHeatmap(root, movs, mats) {
     info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
     info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
   }));
-}
-
-/**
- * Schnell-Leiste am rechten Rand (wie bei den iPhone-Kontakten): am Rand entlangwischen → springt durch die Liste.
- * Bei Sortierung nach Name Buchstaben, sonst Artikelnummern. Eine Blase zeigt, wo man gerade ist.
- */
-function setupScrubber(root, rows, list, sort) {
-  root.querySelector('.scrubber')?.remove();
-  if (list.length < 30 || listState.q) return;
-  const byName = sort === 'name';
-  const label = (m) => (byName ? ((m.name || '#').trim()[0] || '#').toUpperCase().replace(/[^A-ZÄÖÜ]/, '#') : String(m.number ?? '–'));
-  // Markierungen: bei Namen jeder Anfangsbuchstabe, bei Nummern ~12 gleichmäßige Stufen
-  let marks;
-  if (byName) { const seen = new Map(); list.forEach((m, i) => { const l = label(m); if (!seen.has(l)) seen.set(l, i); }); marks = [...seen].map(([l, i]) => ({ l, i })); }
-  else { const n = Math.min(12, list.length); marks = Array.from({ length: n }, (_, k) => { const i = Math.round((k * (list.length - 1)) / (n - 1)); return { l: label(list[i]), i }; }); }
-  const bar = document.createElement('div');
-  bar.className = 'scrubber'; bar.setAttribute('aria-hidden', 'true');
-  bar.innerHTML = `<div class="scr-track">${marks.map((x) => `<span>${esc(x.l)}</span>`).join('')}</div><div class="scr-bubble"><b></b><small></small></div>`;
-  root.appendChild(bar);
-  const track = bar.querySelector('.scr-track'); const bub = bar.querySelector('.scr-bubble');
-  let last = -1;
-  const jump = (y) => {
-    const r = track.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (y - r.top) / r.height));
-    const idx = byName ? marks[Math.min(marks.length - 1, Math.floor(frac * marks.length))].i : Math.round(frac * (list.length - 1));
-    if (idx === last) return; last = idx;
-    const row = rows.querySelectorAll('.mrow')[idx]; if (!row) return;
-    const head = Math.max(...[...root.querySelectorAll('.navbar, .list-nav, .segment')].map((el) => el.getBoundingClientRect().bottom), 120);
-    window.scrollTo({ top: row.getBoundingClientRect().top + window.scrollY - head - 8, behavior: 'auto' });
-    const m = list[idx];
-    bub.querySelector('b').textContent = label(m);
-    bub.querySelector('small').textContent = m.name;
-    bub.style.top = `${Math.max(r.top, Math.min(r.bottom, y)) - bar.getBoundingClientRect().top}px`;
-    haptic('selection');
-  };
-  bar.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); try { bar.setPointerCapture(e.pointerId); } catch { /* egal */ }
-    bar.classList.add('active'); last = -1; jump(e.clientY);
-  });
-  bar.addEventListener('pointermove', (e) => { if (bar.classList.contains('active')) jump(e.clientY); });
-  const end = () => bar.classList.remove('active');
-  bar.addEventListener('pointerup', end); bar.addEventListener('pointercancel', end);
-  bar.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 }
 
 // =====================================================================

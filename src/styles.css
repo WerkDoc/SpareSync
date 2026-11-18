@@ -2512,23 +2512,6 @@ span.pv-btn { background: none; }
 @media (prefers-reduced-motion: reduce) { .dev-sec, .device-chip { animation: none; } }
 
 /* =====================================================================
-   Schnell-Leiste am rechten Rand der Teile-Liste
-   ===================================================================== */
-.scrubber { position: fixed; z-index: 30; right: max(2px, env(safe-area-inset-right)); top: 170px; bottom: calc(var(--tabbar-h, 84px) + 16px); width: 26px; touch-action: none; user-select: none; -webkit-user-select: none; }
-.scr-track { height: 100%; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 6px 0; border-radius: 13px; transition: background .2s; }
-.scr-track span { font-size: 10.5px; font-weight: 700; color: var(--primary); line-height: 1; font-variant-numeric: tabular-nums; transform-origin: right center; }
-.scrubber.active .scr-track { background: color-mix(in srgb, var(--primary) 12%, transparent); }
-.scr-bubble { position: absolute; right: 38px; top: 0; min-width: 64px; max-width: 220px; padding: 8px 14px; border-radius: 16px; transform: translateY(-50%) scale(.6); opacity: 0;
-  transform-origin: right center; pointer-events: none; transition: opacity .15s, transform .2s cubic-bezier(.34, 1.5, .64, 1);
-  background: var(--primary); color: #fff; box-shadow: 0 10px 26px rgba(0, 0, 0, .25); display: flex; flex-direction: column; }
-.scr-bubble b { font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.scr-bubble small { font-size: 12px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scrubber.active .scr-bubble { opacity: 1; transform: translateY(-50%) scale(1); }
-:root[data-style="neu"] .scrubber.active .scr-track { background: var(--neu); box-shadow: var(--press-s); }
-:root[data-style="neu"] .scr-bubble { background: var(--neu-grad); }
-@media (min-width: 900px) { .scrubber { right: calc((100vw - 900px) / 2 + 2px); } }
-
-/* =====================================================================
    Karte umdrehen (Detailseite: lange aufs Bild drücken)
    ===================================================================== */
 .flip-layer { z-index: 165; }
