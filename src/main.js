@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta,
+  countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
@@ -1452,13 +1452,15 @@ async function viewList(q) {
   root.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => { listState[b.dataset.clear] = b.dataset.clear === 'low' ? false : ''; saveListState(); viewList({}); }));
   setupPullToRefresh(root, refreshAll, () => viewList({}));
   on(root, 'menu', () => openMenu('L'));
-  on(root, 'add', async () => {
-    const v = await actionSheet('Neu anlegen', [
-      { label: 'Ersatzteil anlegen', value: 'part', icon: 'box' },
-      { label: 'Werkzeug anlegen', value: 'tool', icon: 'wrench' },
-      { label: 'Material Gruppe', value: 'grp', icon: 'boxes' },
-      { label: 'Lagerort', value: 'loc', icon: 'shelf' },
-    ]);
+  on(root, 'add', async (b) => {
+    const items = [
+      { label: 'Ersatzteil', value: 'part', icon: 'box', tone: 'primary' },
+      { label: 'Werkzeug', value: 'tool', icon: 'wrench', tone: 'indigo' },
+      { label: 'Gruppe', value: 'grp', icon: 'boxes', tone: 'orange' },
+      { label: 'Lagerort', value: 'loc', icon: 'shelf', tone: 'teal' },
+    ];
+    const v = b?.getBoundingClientRect && !reduceMotion.matches ? await speedDial(b, items)
+      : await actionSheet('Neu anlegen', items.map((x) => ({ ...x, label: x.value === 'part' || x.value === 'tool' ? `${x.label} anlegen` : x.label })));
     if (v === 'part' || v === 'tool') go(`/new?kind=${v}`);
     if (v === 'grp') go('/groups'); if (v === 'loc') go('/locations');
   });

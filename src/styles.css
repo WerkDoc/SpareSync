@@ -2443,3 +2443,27 @@ span.pv-btn { background: none; }
 .float-delta.out { color: var(--red); } .float-delta.in { color: var(--green); }
 .float-spark { position: fixed; z-index: 379; width: 7px; height: 7px; border-radius: 50%; pointer-events: none; }
 .float-spark.out { background: radial-gradient(circle, #ffd27a, var(--red)); } .float-spark.in { background: radial-gradient(circle, #d6ffd9, var(--green)); }
+
+/* =====================================================================
+   Fächer-Menü am + (Teile-Liste)
+   ===================================================================== */
+.sd-layer { position: fixed; inset: 0; z-index: 150; }
+.sd-dim { position: absolute; inset: 0; background: rgba(10, 20, 40, .28); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity .25s; }
+.sd-layer.open .sd-dim { opacity: 1; }
+.sd-item { position: absolute; width: 0; height: 0; display: grid; place-items: center; transform: translate(0, 0); }
+.sd-item > * { pointer-events: none; }
+.sd-bubble { position: absolute; width: 58px; height: 58px; margin: -29px 0 0 -29px; left: 0; top: 0; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); box-shadow: 0 10px 26px rgba(0, 0, 0, .22); color: var(--primary);
+  transform: translate(0, 0) scale(.2); opacity: 0; transition: transform .5s cubic-bezier(.34, 1.45, .64, 1), opacity .2s; transition-delay: calc(var(--i) * 45ms); pointer-events: auto; }
+.sd-bubble.tone-indigo { color: var(--indigo); } .sd-bubble.tone-orange { color: var(--orange); } .sd-bubble.tone-teal { color: var(--teal); }
+.sd-label { position: absolute; left: 0; top: 0; transform: translate(var(--x), var(--y)) translate(calc(-100% - 40px), -50%); white-space: nowrap; font-size: 13px; font-weight: 700; color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .45); opacity: 0; transition: opacity .25s; transition-delay: calc(var(--i) * 45ms + .15s); }
+.sd-layer.open .sd-bubble { transform: translate(var(--x), var(--y)) scale(1); opacity: 1; }
+.sd-layer.open .sd-label { opacity: 1; }
+.sd-layer.closing .sd-bubble { transition-duration: .25s; transition-delay: 0s; }
+.sd-item:active .sd-bubble, .sd-bubble:active { transform: translate(var(--x), var(--y)) scale(.92); }
+.sd-close { position: fixed; z-index: 2; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--primary); box-shadow: 0 8px 22px rgba(0, 0, 0, .25); }
+.sd-close svg { transition: transform .4s cubic-bezier(.34, 1.45, .64, 1); }
+.sd-layer.open .sd-close svg { transform: rotate(135deg); }
+:root[data-style="neu"] .sd-bubble { background: var(--neu); box-shadow: 8px 8px 18px rgba(0, 0, 0, .25), -3px -3px 10px var(--neu-hi); }
+:root[data-style="neu"] .sd-close { background: var(--neu-grad); }

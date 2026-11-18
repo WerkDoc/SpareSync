@@ -1326,3 +1326,38 @@ export function floatDelta({ text, kind = 'out', anchor = null } = {}) {
     if (anchor?.animate) anchor.animate([{ transform: 'scale(1)' }, { transform: `scale(${up ? .88 : 1.18})` }, { transform: 'scale(1)' }], { duration: 380, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
   };
 }
+
+// =====================================================================
+//  Fächer-Menü („Speed Dial“): das + dreht sich zum ×, Optionen fächern sich als runde Bubbles im Bogen auf
+// =====================================================================
+export function speedDial(btn, items, { radius = 170 } = {}) {
+  return new Promise((resolve) => {
+    const r = btn.getBoundingClientRect();
+    const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+    const ov = document.createElement('div'); ov.className = 'sd-layer';
+    const n = items.length;
+    // Bubbles fächern sich in einem nach links gewölbten Bogen unter dem Knopf auf (Abstand je 72 px, Beschriftung links daneben)
+    const pos = items.map((_, i) => ({ x: -18 - (radius * 0.42) * Math.sin((Math.PI * (i + 0.5)) / n), y: 74 + i * 72 }));
+    ov.innerHTML = `<div class="sd-dim"></div>
+      ${items.map((it, i) => `<button class="sd-item" data-v="${esc(it.value)}" style="left:${cx}px;top:${cy}px;--x:${pos[i].x.toFixed(1)}px;--y:${pos[i].y.toFixed(1)}px;--i:${i}">
+        <span class="sd-bubble ${it.tone ? `tone-${it.tone}` : ''}">${icon(it.icon, 24, 2.1)}</span><span class="sd-label">${esc(it.label)}</span></button>`).join('')}
+      <button class="sd-close" style="left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px" aria-label="Schließen">${icon('plus', 22, 2.3)}</button>`;
+    document.body.appendChild(ov);
+    btn.style.visibility = 'hidden';
+    haptic('light');
+    requestAnimationFrame(() => ov.classList.add('open'));
+    const done = (v) => {
+      ov.classList.remove('open'); ov.classList.add('closing');
+      setTimeout(() => { ov.remove(); btn.style.visibility = ''; }, 320);
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', (e) => {
+      const it = e.target.closest('.sd-item');
+      if (it) { haptic('selection'); done(it.dataset.v); return; }
+      done(null);
+    });
+  });
+}
