@@ -1589,11 +1589,16 @@ async function openBooking(m, type, onDone, preset = {}) {
       ${type === 'transfer' ? `<label class="frow"><span>Nach Lagerort</span><select data-f="to">${opts(locs.find((l) => l.id !== fromDefault)?.id, null)}</select></label>` : ''}
       <div class="frow"><span>Bestand hier</span><b data-f="here">${fmtQty(qtyAt(fromDefault))}</b></div>
     </div>
-    <div class="stepper big">
+    <div class="stepper big has-dial">
       <button data-s="-1" aria-label="Weniger">${icon('minus', 28, 2.6)}</button>
-      <span class="odo"><input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty"></span>
+      <div class="dial" data-dial data-no-sheet-drag>
+        <div class="dial-ring">${Array.from({ length: 24 }, (_, i) => `<i style="--a:${i * 15}deg"></i>`).join('')}</div>
+        <div class="dial-knob"><b class="dial-dot"></b></div>
+        <span class="odo"><input type="number" inputmode="decimal" min="0" step="any" value="${preset.qty || 1}" data-f="qty" aria-label="Menge"></span>
+      </div>
       <button data-s="1" aria-label="Mehr">${icon('plus', 28, 2.6)}</button>
     </div>
+    <p class="dial-hint">Drehen zum Einstellen · Tippen zum Eintippen</p>
     <div class="form-group"><label class="frow col"><span>${type === 'out' ? 'Wofür? (Notiz, optional)' : 'Notiz (optional)'}</span><input data-f="note" placeholder="${type === 'out' ? 'z.B. Kunde Müller, Auftrag 2410-17' : 'z.B. Lieferung, Lieferant'}" value="${esc(preset.note || '')}" autocomplete="off" enterkeyhint="done"></label></div>
     ${recentNotes(type).length ? `<div class="note-chips" aria-label="Zuletzt verwendete Notizen">${recentNotes(type).map((n) => `<button type="button" class="chip" data-note="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
     <button class="btn-action ${conf.cls} full" data-a="ok">${icon(conf.icon, 22, 2.6)} ${conf.title}</button>`,
@@ -1614,12 +1619,15 @@ async function openBooking(m, type, onDone, preset = {}) {
       let prevFrom = f('from').value; let prevTo = f('to')?.value;
       f('from').onchange = async () => { await handleNew(f('from'), prevFrom); prevFrom = f('from').value; f('here').textContent = fmtQty(qtyAt(prevFrom)); };
       if (f('to')) f('to').onchange = async () => { await handleNew(f('to'), prevTo); prevTo = f('to').value; };
-      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => {
-        const old = qty.value; const next = Math.max(0, (+qty.value || 0) + +b.dataset.s);
-        if (String(next) === old) return;
-        qty.value = next; haptic();
-        odometer(qty, old, +b.dataset.s > 0 ? 1 : -1);
-      }));
+      const step = (d) => {
+        const old = qty.value; const next = Math.max(0, (+qty.value || 0) + d);
+        if (String(next) === old) return false;
+        qty.value = next; haptic('selection');
+        odometer(qty, old, d > 0 ? 1 : -1);
+        return true;
+      };
+      root.querySelectorAll('[data-s]').forEach((b) => (b.onclick = () => { if (step(+b.dataset.s)) dial?.nudge(+b.dataset.s); }));
+      const dial = setupDial(root.querySelector('[data-dial]'), qty, step);
       root.querySelectorAll('[data-note]').forEach((b) => (b.onclick = () => { f('note').value = b.dataset.note; haptic(); }));
       root.querySelector('[data-a=ok]').onclick = async (e) => {
         const b = e.currentTarget; b.disabled = true;
@@ -1642,6 +1650,50 @@ async function openBooking(m, type, onDone, preset = {}) {
       };
     },
   });
+}
+
+/**
+ * Drehregler für die Menge (wie ein Lautstärke-Knopf): im Uhrzeigersinn mehr, dagegen weniger.
+ * Alle 30° ein Schritt mit leichtem Klick (Haptik). Tippen ohne Drehen öffnet die Tastatur.
+ */
+const DIAL_STEP = 30;
+function setupDial(el, input, step) {
+  if (!el) return null;
+  const knob = el.querySelector('.dial-knob');
+  let rot = 0; let acc = 0; let last = null; let moved = 0; let id = null;
+  const show = (anim) => { knob.style.transition = anim ? 'transform .35s cubic-bezier(.34,1.5,.64,1)' : 'none'; knob.style.transform = `rotate(${rot}deg)`; };
+  const angle = (e) => { const r = el.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    id = e.pointerId; last = angle(e); moved = 0; acc = 0;
+    el.classList.add('turning');
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== id || last == null) return;
+    const a = angle(e); let d = a - last; last = a;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    moved += Math.abs(d);
+    if (moved < 8) return;                                   // kleines Zittern beim Tippen ignorieren
+    if (moved - Math.abs(d) < 8) { try { el.setPointerCapture(id); } catch { /* egal */ } input.blur(); }
+    acc += d;
+    while (acc >= DIAL_STEP) { acc -= DIAL_STEP; if (step(1)) rot += DIAL_STEP; }
+    while (acc <= -DIAL_STEP) { acc += DIAL_STEP; if (step(-1)) rot -= DIAL_STEP; else acc = 0; }   // bei 0 bleibt der Knopf stehen
+    knob.style.transition = 'none';
+    knob.style.transform = `rotate(${rot + acc * 0.35}deg)`;     // leicht „zwischen den Rasten“ mitgehen
+  });
+  const end = (e) => {
+    if (e.pointerId !== id) return;
+    id = null; last = null; el.classList.remove('turning');
+    show(true);                                              // in die nächste Raste federn
+    if (moved >= 8) e.preventDefault();
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('click', (e) => { if (moved >= 8) { e.preventDefault(); return; } input.focus(); input.select?.(); });
+  // Während des Drehens nicht scrollen und das Sheet nicht ziehen
+  el.addEventListener('touchmove', (e) => { if (id != null && moved >= 8) e.preventDefault(); }, { passive: false });
+  show(false);
+  return { nudge: (d) => { rot += d * DIAL_STEP; show(true); } };
 }
 
 // =====================================================================

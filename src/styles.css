@@ -2077,3 +2077,33 @@ span.pv-btn { background: none; }
 }
 :root[data-style="neu"] .btn-filled:active { filter: none; transform: scale(.99); box-shadow: inset 4px 4px 10px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
 :root[data-style="neu"] .btn-row { gap: 14px; }
+
+/* =====================================================================
+   Drehregler für die Menge (Buchen)
+   ===================================================================== */
+.stepper.big.has-dial { gap: 12px; margin: 18px 0 4px; align-items: center; }
+.dial { position: relative; width: 172px; height: 172px; flex-shrink: 0; border-radius: 50%; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab;
+  background: var(--surface); box-shadow: var(--card-shadow); }
+.dial.turning { cursor: grabbing; }
+.dial-ring { position: absolute; inset: 0; pointer-events: none; }
+.dial-ring i { position: absolute; left: 50%; top: 7px; width: 2px; height: 7px; margin-left: -1px; border-radius: 1px; background: var(--text-3); opacity: .55;
+  transform-origin: 1px 79px; transform: rotate(var(--a)); }
+.dial-ring i:nth-child(2n+1) { height: 10px; opacity: .8; }
+.dial-knob { position: absolute; inset: 22px; border-radius: 50%; background: var(--surface);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .14), inset 0 1px 0 rgba(255, 255, 255, .6); will-change: transform; }
+.dial-dot { position: absolute; left: 50%; top: 9px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--primary);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 60%, transparent); }
+.stepper.big.has-dial .dial .odo { position: absolute; left: 50%; top: 50%; width: 86px; height: 86px; margin: -43px 0 0 -43px; border-radius: 50%; border: 0;
+  background: var(--fill); box-shadow: inset 2px 2px 6px rgba(0, 0, 0, .12); }
+.stepper.big.has-dial .dial .odo input { font-size: 30px; }
+.dial-hint { margin: 2px 0 6px; text-align: center; font-size: 12.5px; color: var(--text-3); }
+.dial.turning .dial-dot { box-shadow: 0 0 14px var(--primary); }
+.stepper.big.has-dial button { flex-shrink: 0; width: 56px; height: 56px; }
+
+/* plastisch: Ring erhaben, Knopf erhaben, Zahl in einer Mulde */
+:root[data-style="neu"] .dial { background: var(--neu); box-shadow: var(--raise); }
+:root[data-style="neu"] .dial-knob { background: var(--neu); box-shadow: 6px 6px 14px var(--neu-sh), -6px -6px 14px var(--neu-hi); }
+:root[data-style="neu"] .stepper.big.has-dial .dial .odo { background: var(--neu); box-shadow: var(--press); }
+:root[data-style="neu"] .stepper.big.has-dial .dial .odo input { box-shadow: none; background: transparent; height: 100%; }
+:root[data-style="neu"] .stepper.big.has-dial button { width: 56px; height: 56px; border-radius: 18px; }
+@media (max-width: 359px) { .dial { width: 150px; height: 150px; } .dial-ring i { transform-origin: 1px 68px; } .stepper.big.has-dial .dial .odo { width: 76px; height: 76px; margin: -38px 0 0 -38px; } }
