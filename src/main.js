@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
   scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
-  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer,
+  countUp, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo,
 } from './ui.js';
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { exportCSV, importCSV } from './csv.js';
@@ -2075,7 +2075,21 @@ async function addToCartFlow(m) {
   const sug = Math.max(1, (+m.max_stock || 0) - m.total) || 1;
   const n = await prompt({ title: 'In den Warenkorb', message: m.name, value: sug, type: 'number', okText: 'Hinzufügen' });
   if (!n || !(+n > 0)) return;
-  try { await db.addToCart('cart', m.id, +n); invalidate('cart'); successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`); } catch (e) { errToast(e); }
+  try {
+    await db.addToCart('cart', m.id, +n); invalidate('cart');
+    const flew = flyToCart(m, () => toast('Im Warenkorb', 'ok', { sub: `${fmtQty(n)} × ${m.name}` }));
+    if (!flew) successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`);
+  } catch (e) { errToast(e); }
+}
+/** Teilebild fliegt zum nächsten sichtbaren Warenkorb (Segment in der Liste, Widget auf der Übersicht, sonst Tab „Teile“) */
+function flyToCart(m, onLand) {
+  const visible = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
+  const to = ['.segment [data-tab="cart"]', '.widget[href="#/list?tab=cart"] .w-ic', '.tabbar .tab[href="#/list"] svg']
+    .map((q) => document.querySelector(q)).find(visible);
+  const from = [document.querySelector('.gal-main .cur img'), document.querySelector('[data-act="cart"] i'), document.querySelector(`[data-m="${m.id}"] .thumb`)].find(visible)
+    || { left: innerWidth / 2 - 30, top: innerHeight / 2 - 30, width: 60, height: 60 };
+  const img = m.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '';
+  return flyTo({ from, to, img, onLand });
 }
 
 /** Haptic Touch: langes Drücken auf einen Eintrag → Kontextmenü mit den wichtigsten Aktionen */
@@ -2194,6 +2208,7 @@ function reachHtml(m, r) {
   const total = Math.max(0, +m.total || 0); const min = +m.min_stock || 0;
   const rate = `Ø ${fmtQty(+r.perWeek.toFixed(1))} Stück pro Woche · letzte ${r.days} Tage${r.n < 3 ? ' · grobe Schätzung' : ''}`;
   if (r.perWeek <= 0) {
+    if (r.days < 30) return '';                 // zu wenig Verlauf für eine Aussage
     return `<div class="reach-card r-idle">${icon('history', 22, 2.2)}<div><b>In den letzten ${r.days} Tagen nicht entnommen</b><small>Keine Reichweite berechenbar</small></div></div>`;
   }
   const weeks = total / r.perWeek;
