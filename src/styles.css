@@ -1786,7 +1786,7 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] {
   --raise: 7px 7px 16px var(--neu-sh), -7px -7px 16px var(--neu-hi);
   --raise-s: 4px 4px 10px var(--neu-sh), -4px -4px 10px var(--neu-hi);
-  --press: inset 5px 5px 11px var(--neu-sh), inset -5px -5px 11px var(--neu-hi);
+  --sink: inset 5px 5px 11px var(--neu-sh), inset -5px -5px 11px var(--neu-hi);
   --press-s: inset 3px 3px 7px var(--neu-sh), inset -3px -3px 7px var(--neu-hi);
   --neu-ease: cubic-bezier(.2, .8, .2, 1);
 }
@@ -1798,7 +1798,7 @@ span.pv-btn { background: none; }
   transition: box-shadow .22s var(--neu-ease), transform .22s var(--neu-ease);
 }
 :root[data-style="neu"] .quick:active,
-:root[data-style="neu"] .dash-screen.gyro .quick:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .dash-screen.gyro .quick:active { box-shadow: var(--sink); transform: scale(.99); }
 :root[data-style="neu"] .quick .q-ic {
   background: var(--neu); box-shadow: var(--raise-s);
   transition: box-shadow .22s var(--neu-ease);
@@ -1817,7 +1817,7 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .stepper.big button[data-s="1"] { background: var(--neu-grad); color: #fff; box-shadow: 5px 5px 12px var(--neu-glow), -4px -4px 10px var(--neu-hi); }
 :root[data-style="neu"] .stepper.big button:active { box-shadow: var(--press-s); transform: scale(.95); }
 :root[data-style="neu"] .stepper.big button[data-s="1"]:active { box-shadow: inset 4px 4px 9px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
-:root[data-style="neu"] .stepper.big input { height: 68px; border: 0; border-radius: 20px; background: var(--neu); box-shadow: var(--press); }
+:root[data-style="neu"] .stepper.big input { height: 68px; border: 0; border-radius: 20px; background: var(--neu); box-shadow: var(--sink); }
 :root[data-style="neu"] .btn-action {
   border-radius: 30px; min-height: 60px; background: var(--neu-grad);
   box-shadow: 6px 6px 14px var(--neu-glow), -5px -5px 12px var(--neu-hi);
@@ -1827,7 +1827,7 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .btn-action:active { filter: none; transform: scale(.99); box-shadow: inset 4px 4px 10px rgba(0, 0, 0, .25), inset -3px -3px 8px rgba(255, 255, 255, .15); }
 /* Buchungs-Karten auf der Detailseite (Dazu buchen / Entnehmen / Umbuchen) */
 :root[data-style="neu"] .book-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
-:root[data-style="neu"] .book-card:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .book-card:active { box-shadow: var(--sink); transform: scale(.99); }
 :root[data-style="neu"] .book-card i { background: var(--neu) !important; box-shadow: var(--raise-s); transition: box-shadow .2s var(--neu-ease); }
 :root[data-style="neu"] .book-card:active i { box-shadow: var(--press-s); }
 
@@ -1892,8 +1892,8 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .widget.is-alert,
 :root[data-style="neu"] .dash-screen.gyro .widget.is-alert { box-shadow: var(--raise), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 40%, transparent); }
 :root[data-style="neu"] .widget:active, :root[data-style="neu"] .dash-screen.gyro .widget:active,
-:root[data-style="neu"] .spark-card:active { box-shadow: var(--press); transform: scale(.99); }
-:root[data-style="neu"] .widget.is-alert:active { box-shadow: var(--press), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 40%, transparent); }
+:root[data-style="neu"] .spark-card:active { box-shadow: var(--sink); transform: scale(.99); }
+:root[data-style="neu"] .widget.is-alert:active { box-shadow: var(--sink), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 40%, transparent); }
 :root[data-style="neu"] .widget .w-ic { background: var(--neu); border-radius: 50%; box-shadow: 3px 3px 6px var(--neu-sh), -3px -3px 6px var(--neu-hi); }
 :root[data-style="neu"] .widgets .widget::after { opacity: .5; }     /* Glanz dezenter, sonst wirkt die Fläche speckig */
 :root[data-style="neu"] .widgets { gap: 12px; }
@@ -1991,7 +1991,7 @@ span.pv-btn { background: none; }
   background: var(--neu); border-radius: 50%; box-shadow: 3px 3px 6px var(--neu-sh), -3px -3px 6px var(--neu-hi);
 }
 :root[data-style="neu"] .card-btn i { background: var(--neu); box-shadow: 3px 3px 7px var(--neu-sh), -3px -3px 7px var(--neu-hi); transition: box-shadow .2s var(--neu-ease); }
-:root[data-style="neu"] .card-btn:active { box-shadow: var(--press); transform: scale(.99); }
+:root[data-style="neu"] .card-btn:active { box-shadow: var(--sink); transform: scale(.99); }
 :root[data-style="neu"] .card-btn:active i { box-shadow: var(--press-s); }
 
 /* Vorschaubilder überall in einer kleinen Mulde; hell: weißer Foto-Hintergrund verschmilzt mit der Fläche */
@@ -2103,7 +2103,25 @@ span.pv-btn { background: none; }
 /* plastisch: Ring erhaben, Knopf erhaben, Zahl in einer Mulde */
 :root[data-style="neu"] .dial { background: var(--neu); box-shadow: var(--raise); }
 :root[data-style="neu"] .dial-knob { background: var(--neu); box-shadow: 6px 6px 14px var(--neu-sh), -6px -6px 14px var(--neu-hi); }
-:root[data-style="neu"] .stepper.big.has-dial .dial .odo { background: var(--neu); box-shadow: var(--press); }
+:root[data-style="neu"] .stepper.big.has-dial .dial .odo { background: var(--neu); box-shadow: var(--sink); }
 :root[data-style="neu"] .stepper.big.has-dial .dial .odo input { box-shadow: none; background: transparent; height: 100%; }
 :root[data-style="neu"] .stepper.big.has-dial button { width: 56px; height: 56px; border-radius: 18px; }
 @media (max-width: 359px) { .dial { width: 150px; height: 150px; } .dial-ring i { transform-origin: 1px 68px; } .stepper.big.has-dial .dial .odo { width: 76px; height: 76px; margin: -38px 0 0 -38px; } }
+
+/* =====================================================================
+   Plastisch + Neigung: das Licht bleibt „im Raum“ stehen – neigt man das Handy,
+   wandern Licht und Schatten der Tasten gegenläufig mit (--tx/--ty kommen aus motion.js, −1 … 1)
+   ===================================================================== */
+:root[data-style="neu"] .dash-screen.gyro {
+  --sx: calc(7px - var(--tx, 0) * 6px);
+  --sy: calc(7px - var(--ty, 0) * 6px);
+  --raise: var(--sx) var(--sy) 16px var(--neu-sh), calc(var(--sx) * -1) calc(var(--sy) * -1) 16px var(--neu-hi);
+  --raise-s: calc(var(--sx) * .6) calc(var(--sy) * .6) 10px var(--neu-sh), calc(var(--sx) * -.6) calc(var(--sy) * -.6) 10px var(--neu-hi);
+  --raise-xs: calc(var(--sx) * .45) calc(var(--sy) * .45) 7px var(--neu-sh), calc(var(--sx) * -.45) calc(var(--sy) * -.45) 7px var(--neu-hi);
+  --sink: inset calc(var(--sx) * .7) calc(var(--sy) * .7) 11px var(--neu-sh), inset calc(var(--sx) * -.7) calc(var(--sy) * -.7) 11px var(--neu-hi);
+  --press-s: inset calc(var(--sx) * .45) calc(var(--sy) * .45) 7px var(--neu-sh), inset calc(var(--sx) * -.45) calc(var(--sy) * -.45) 7px var(--neu-hi);
+}
+:root[data-style="neu"] .dash-screen.gyro :is(.w-ic, .r-ic, .glass-btn) { box-shadow: var(--raise-xs); }
+:root[data-style="neu"] .dash-screen.gyro .glass-btn:active { box-shadow: var(--press-s); }
+/* Schatten folgen der Neigung ohne eigene Verzögerung (die Glättung macht motion.js) */
+:root[data-style="neu"] .dash-screen.gyro :is(.widget, .quick, .spark-card, .ios-list, .q-ic, .w-ic, .r-ic, .glass-btn) { transition-property: transform, --press; }
