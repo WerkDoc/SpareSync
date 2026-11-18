@@ -3194,6 +3194,33 @@ function shelfCard(l, st, i) {
     </button>`;
 }
 
+/**
+ * 3D-Regal: die Fächer liegen wie auf einer Walze – beim Scrollen kippen sie oben nach hinten und unten nach vorn,
+ * das Fach in der Bildschirmmitte steht gerade. Ändert nur eine CSS-Variable pro Karte (läuft auf der GPU).
+ */
+function setupShelf3D(root) {
+  const list = root.querySelector('.shelf-list'); if (!list || reduceMotion.matches) return;
+  list.classList.add('shelf-3d');
+  const cards = [...list.querySelectorAll('.shelf-card')];
+  let raf = 0;
+  const tick = () => {
+    raf = 0;
+    if (!list.isConnected) { removeEventListener('scroll', onScroll); return; }
+    const mid = innerHeight * 0.52;
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      if (r.bottom < -100 || r.top > innerHeight + 100) continue;
+      const d = Math.max(-1, Math.min(1, (r.top + r.height / 2 - mid) / (innerHeight * 0.75)));
+      c.style.setProperty('--rx', `${(-d * 16).toFixed(2)}deg`);
+      c.style.setProperty('--tz', `${(-Math.abs(d) * 40).toFixed(1)}px`);
+    }
+  };
+  const onScroll = () => { if (!raf) raf = requestAnimationFrame(tick); };
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll, { passive: true });
+  tick();
+}
+
 async function viewLocations() {
   const [locs, mats] = await Promise.all([getLocs(), getMats()]);
   const stats = new Map(locs.map((l) => [l.id, shelfStats(l, mats)]));
@@ -3206,6 +3233,7 @@ async function viewLocations() {
         : empty('shelf', 'Noch keine Lagerorte')}`,
     footer: `<footer class="bottom-bar"><button class="icon-btn blue" data-act="add" aria-label="Neuer Lagerort">${icon('plusCircle', 34, 1.8)}</button></footer>`,
   });
+  setupShelf3D(root);
   on(root, 'refresh', () => { invalidate('locations'); viewLocations(); });
   on(root, 'add', async () => {
     const n = await prompt({ title: 'Neuer Lagerort', placeholder: 'z.B. Kleinteilemagazin, Regal A3' }); if (!n) return;
