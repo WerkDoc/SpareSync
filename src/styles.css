@@ -2392,3 +2392,29 @@ span.pv-btn { background: none; }
 .brand-s.egg-spin { animation: egg-spin 2s cubic-bezier(.3, .1, .2, 1); }
 @keyframes egg-tap { 50% { transform: scale(.85) rotate(-12deg); } }
 @keyframes egg-spin { 0% { transform: none; } 15% { transform: scale(.8); } 75% { transform: rotate(1080deg) scale(1.15); } 100% { transform: rotate(1080deg); } }
+
+/* =====================================================================
+   Tageszeit-Himmel (Übersicht): ganz dezenter Verlauf hinter Begrüßung und Kopfzeile
+   ===================================================================== */
+.dash-head { position: relative; isolation: isolate; }
+.sky { position: absolute; z-index: -1; left: -16px; right: -16px; top: -150px; height: 360px; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent); mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  animation: sky-in 1.6s ease both; }
+.sky-glow { position: absolute; width: 260px; height: 260px; border-radius: 50%; filter: blur(40px); }
+.sky-sunrise { background: linear-gradient(180deg, rgba(255, 196, 150, .30), rgba(255, 226, 190, .12) 70%, transparent); }
+.sky-sunrise .sky-glow { right: -40px; top: 170px; background: rgba(255, 160, 80, .45); animation: sky-rise 3s cubic-bezier(.2, .8, .2, 1) both; }
+.sky-sun { background: linear-gradient(180deg, rgba(150, 200, 255, .22), rgba(200, 228, 255, .10) 70%, transparent); }
+.sky-sun .sky-glow { right: -60px; top: 40px; background: rgba(255, 220, 120, .45); animation: sky-pulse 6s ease-in-out infinite; }
+.sky-moon { background: linear-gradient(180deg, rgba(110, 90, 200, .26), rgba(255, 140, 150, .14) 65%, transparent); }
+.sky-moon .sky-glow { left: -60px; top: 160px; background: rgba(255, 130, 110, .30); }
+.sky-night { background: linear-gradient(180deg, rgba(18, 36, 100, .36), rgba(40, 60, 140, .14) 70%, transparent); }
+.sky-night .sky-glow { right: 10px; top: 80px; width: 160px; height: 160px; background: rgba(170, 190, 255, .28); }
+.sky i { position: absolute; width: var(--s); height: var(--s); border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, .9);
+  animation: sky-twinkle 3.2s ease-in-out infinite; animation-delay: var(--d); }
+:root[data-theme="dark"] .sky { opacity: .75; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sky { opacity: .75; } }
+@keyframes sky-in { from { opacity: 0; } }
+@keyframes sky-rise { from { transform: translateY(60px); opacity: .3; } }
+@keyframes sky-pulse { 50% { transform: scale(1.12); opacity: .8; } }
+@keyframes sky-twinkle { 0%, 100% { opacity: .25; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.2); } }
+@media (prefers-reduced-motion: reduce) { .sky, .sky-glow, .sky i { animation: none; } }

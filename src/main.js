@@ -661,7 +661,11 @@ const greetIcon = (kind) => (kind === 'sunrise' || kind === 'sun')
 const dashHead = () => {
   const g = greeting();
   const date = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  // Tageszeit-Himmel hinter der Begrüßung (Sterne nur abends/nachts, Positionen fest, damit nichts springt)
+  const stars = g.kind === 'night' || g.kind === 'moon'
+    ? Array.from({ length: g.kind === 'night' ? 18 : 8 }, (_, i) => `<i style="left:${(i * 37 + 11) % 97}%;top:${(i * 53 + 7) % 70}%;--d:${(i % 6) * 0.45}s;--s:${1 + (i % 3) * 0.6}px"></i>`).join('') : '';
   return `<div class="dash-head">
+        <div class="sky sky-${g.kind}" aria-hidden="true"><span class="sky-glow"></span>${stars}</div>
         <p class="dash-greet">${greetIcon(g.kind)}<span>${esc(g.text)}</span></p>
         <p class="dash-date">${esc(date)}</p>
         <h1 class="dash-title lt-collapse">Übersicht</h1>
