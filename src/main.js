@@ -3263,13 +3263,40 @@ async function viewLocations() {
 // =====================================================================
 //  INVENTUR
 // =====================================================================
+// Zählstand dauerhaft auf dem Gerät (localStorage) – übersteht das Schließen der App.
+// Wird beim Buchen/Abschließen/Verwerfen gelöscht, alte Zählungen verfallen nach 30 Tagen.
+const INV_KEY = (id) => `ss-inv-${id}`;
+const INV_MAX_AGE = 30 * 864e5;
+function invLoad(id) {
+  try {
+    const raw = localStorage.getItem(INV_KEY(id));
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (d && Array.isArray(d.counts) && Date.now() - (d.at || 0) < INV_MAX_AGE) return d;
+      localStorage.removeItem(INV_KEY(id));
+    }
+    const old = sessionStorage.getItem(`wl-inv-${id}`);          // Stand aus der alten Version übernehmen
+    if (old) return { at: Date.now(), counts: JSON.parse(old) };
+  } catch { /* egal */ }
+  return null;
+}
+function invSave(id, counts) {
+  try {
+    const list = [...counts].filter(([, v]) => v !== '');
+    if (list.length) localStorage.setItem(INV_KEY(id), JSON.stringify({ at: Date.now(), counts: list }));
+    else localStorage.removeItem(INV_KEY(id));
+    sessionStorage.removeItem(`wl-inv-${id}`);
+  } catch { /* egal */ }
+}
+function invClear(id) { try { localStorage.removeItem(INV_KEY(id)); sessionStorage.removeItem(`wl-inv-${id}`); } catch { /* egal */ } }
+
 async function viewInventory(q) {
   const locs = await getLocs();
   if (!q.loc) {
     const root = screen({
       header: navbar({ left: backBtn(), title: 'Material Inventur' }),
       body: `<p class="hint">Lagerort wählen, dann den tatsächlichen Bestand zählen und eintragen. Nur geänderte Mengen werden gebucht.</p>
-        <div class="plain-list">${locs.map((l) => `<a class="plain-row" href="#/inventory?loc=${l.id}"><span>${icon('shelf', 22)} ${esc(l.name)}</span><small class="muted">${l.count} Teile ${icon('chevR', 16)}</small></a>`).join('')
+        <div class="plain-list">${locs.map((l) => { const st = invLoad(l.id); return `<a class="plain-row" href="#/inventory?loc=${l.id}"><span>${icon('shelf', 22)} ${esc(l.name)}</span><small class="muted">${st ? `<span class="inv-badge">begonnen · ${st.counts.length} gezählt</span> ` : ''}${l.count} Teile ${icon('chevR', 16)}</small></a>`; }).join('')
           || empty('shelf', 'Noch keine Lagerorte', '<a class="btn-tinted" href="#/locations">Lagerort anlegen</a>')}</div>`,
     });
     return root;
@@ -3279,8 +3306,13 @@ async function viewInventory(q) {
   const mats = await getMats();
   const rows = mats.filter((m) => m.locations.some((l) => l.location_id === loc.id));
   const soll = (m) => m.locations.find((l) => l.location_id === loc.id)?.qty ?? 0;
-  const counts = new Map(JSON.parse(sessionStorage.getItem(`wl-inv-${loc.id}`) || '[]'));
-  const persist = () => sessionStorage.setItem(`wl-inv-${loc.id}`, JSON.stringify([...counts]));
+  const saved = invLoad(loc.id);
+  const counts = new Map(saved?.counts || []);
+  const persist = () => invSave(loc.id, counts);
+  if (saved?.counts.length) {
+    const when = new Date(saved.at); const today = new Date().toDateString() === when.toDateString();
+    setTimeout(() => toast('Zählung fortgesetzt', 'ok', { sub: `${saved.counts.length} schon gezählt · ${today ? `heute ${when.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : when.toLocaleDateString('de-DE')}` }), 400);
+  }
 
   const root = screen({
     header: navbar({ left: backBtn(), title: `<div class="two-line">Inventur<br><small>${esc(loc.name)}</small></div>`, right: btn('scan', 'scan', 'Scannen') }),
@@ -3295,7 +3327,8 @@ async function viewInventory(q) {
       </div>
       <label class="search-field">${icon('search', 20)}<input type="search" id="iq" placeholder="Material suchen"></label>
       <div id="irows" class="inv-list mt"></div>
-      <button class="btn-tinted full mt" data-act="add-mat">${icon('plus', 18)} Material zu diesem Lagerort hinzufügen</button>`,
+      <button class="btn-tinted full mt" data-act="add-mat">${icon('plus', 18)} Material zu diesem Lagerort hinzufügen</button>
+      <button class="btn-plain danger-text full" data-act="discard" hidden>${icon('trash', 18)} Zählung verwerfen</button>`,
     footer: `<footer class="bottom-bar wide"><button class="btn-filled full" data-act="commit">Inventur buchen</button></footer>`,
   });
   const box = root.querySelector('#irows');
@@ -3318,7 +3351,13 @@ async function viewInventory(q) {
   };
   const updateCommit = () => {
     const n = [...counts].filter(([mid, v]) => v !== '' && +v !== soll(rows.find((m) => m.id === mid) || { locations: [] })).length;
-    const b = root.querySelector('[data-act=commit]'); b.textContent = n ? `Inventur buchen (${n} Änderung${n > 1 ? 'en' : ''})` : 'Keine Änderungen'; b.disabled = !n;
+    const counted = [...counts].filter(([, v]) => v !== '').length;
+    const b = root.querySelector('[data-act=commit]');
+    // Alles gezählt und alles stimmt → Zählung trotzdem abschließen können
+    const all = rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '');
+    b.textContent = n ? `Inventur buchen (${n} Änderung${n > 1 ? 'en' : ''})` : counted ? (all ? 'Zählung abschließen – alles stimmt' : 'Zählung abschließen (nichts zu buchen)') : 'Keine Änderungen';
+    b.disabled = !n && !counted;
+    root.querySelector('[data-act=discard]').hidden = !counted;
   };
   const render = (term = '') => {
     const f = filterMats(rows, { q: term });
@@ -3356,6 +3395,10 @@ async function viewInventory(q) {
     if (!rows.some((x) => x.id === m.id)) { const full = mats.find((x) => x.id === m.id); full.locations.push({ location_id: loc.id, name: loc.name, qty: 0 }); rows.push(full); }
     focusRow(m.id);
   });
+  on(root, 'discard', async () => {
+    if (!await confirmBox({ title: 'Zählung verwerfen?', message: 'Alle eingetragenen Ist-Mengen dieses Lagerorts werden gelöscht. Gebucht wird nichts.', okText: 'Verwerfen', danger: true })) return;
+    counts.clear(); invClear(loc.id); haptic('light'); render(root.querySelector('#iq').value);
+  });
   on(root, 'add-mat', async () => {
     const v = await pickFrom({ title: 'Material hinzufügen', items: mats.filter((m) => !rows.includes(m)).map((m) => ({ value: m.id, label: `${m.number}: ${m.name}` })) });
     if (!v) return;
@@ -3363,12 +3406,17 @@ async function viewInventory(q) {
   });
   on(root, 'commit', async (b) => {
     const changes = [...counts].filter(([mid, v]) => v !== '' && rows.some((m) => m.id === mid) && +v !== soll(rows.find((m) => m.id === mid)));
-    if (!changes.length) return;
+    if (!changes.length) {
+      if (![...counts].some(([, v]) => v !== '')) return;
+      invClear(loc.id); successHUD('Bestand stimmt', loc.name);
+      if (rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '')) confetti();
+      go('/inventory', true); return;
+    }
     if (!await confirmBox({ title: 'Inventur buchen?', message: `${changes.length} Bestand/Bestände an „${loc.name}“ werden auf die gezählte Menge gesetzt.`, okText: 'Buchen' })) return;
     b.disabled = true;
     try {
       for (const [mid, v] of changes) await db.book({ material_id: mid, type: 'inventory', qty: +v, location_id: loc.id, note: 'Inventur' });
-      sessionStorage.removeItem(`wl-inv-${loc.id}`); invalidate(); successHUD('Inventur gebucht');
+      invClear(loc.id); invalidate(); successHUD('Inventur gebucht');
       if (rows.length && rows.every((m) => (counts.get(m.id) ?? '') !== '')) confetti();   // ganzer Lagerort gezählt
       go('/inventory', true);
     } catch (e) { errToast(e); b.disabled = false; }
