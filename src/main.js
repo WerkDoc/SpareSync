@@ -1553,7 +1553,7 @@ function renderCart(rows, mats, cart) {
     const c = items.find((x) => x.id === r.dataset.cid);
     r.querySelectorAll('[data-cq]').forEach((b) => (b.onclick = async () => {
       const nq = +c.qty + +b.dataset.cq;
-      try { if (nq <= 0) await db.deleteCart(c.id); else await db.updateCart(c.id, nq); haptic(); await reload(); } catch (e) { errToast(e); }
+      try { if (nq <= 0) await removeCartItem(c, byId[c.material_id], r, reload); else { await db.updateCart(c.id, nq); haptic(); await reload(); } } catch (e) { errToast(e); }
     }));
     r.querySelector('[data-cmore]').onclick = async () => {
       const m = byId[c.material_id];
@@ -1563,7 +1563,7 @@ function renderCart(rows, mats, cart) {
         { label: 'Entfernen', value: 'del', icon: 'trash', danger: true },
       ]);
       try {
-        if (v === 'del') { await db.deleteCart(c.id); await reload(); }
+        if (v === 'del') await removeCartItem(c, m, r, reload);
         if (v === 'qty') { const n = await prompt({ title: 'Menge', value: c.qty, type: 'number' }); if (n && +n > 0) { await db.updateCart(c.id, +n); await reload(); } }
         if (v === 'in' || v === 'out') {
           const lastInCart = c.list === 'cart' && order.length === 1;      // letzter offener Posten der Bestellliste
@@ -2189,6 +2189,31 @@ async function toggleFavorite(m, refresh) {
   } catch (e) { errToast(e); }
 }
 /** Löschen mit Sicherheitsabfrage (Kontextmenü + Wisch-Aktion) */
+/** Zeile jetzt abfotografieren; der zurückgegebene Aufruf lässt sie (nach Neuaufbau + Hinweis) in den Papierkorb fließen */
+function captureForGenie(el) {
+  if (!el || !el.getBoundingClientRect().height) return () => {};
+  const ghost = el.cloneNode(true); const rect = el.getBoundingClientRect();
+  return () => requestAnimationFrame(() => {
+    const ic = document.querySelector('.di-ic, .toast .ic'); if (!ic) return;
+    const holder = document.createElement('div');
+    holder.style.cssText = `position:fixed;left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;pointer-events:none`;
+    holder.appendChild(ghost); document.body.appendChild(holder);
+    genieInto(holder, ic); holder.remove();
+  });
+}
+/** Aus Warenkorb/Kommission entfernen – mit Papierkorb-Effekt und „Rückgängig“ */
+async function removeCartItem(c, m, rowEl, reload) {
+  const fly = captureForGenie(rowEl);
+  await db.deleteCart(c.id);
+  await reload();
+  haptic('medium');
+  toast(c.list === 'cart' ? 'Aus dem Warenkorb entfernt' : 'Aus der Kommission entfernt', 'ok', {
+    sub: `${fmtQty(c.qty)} × ${m?.name || 'Teil'}`, icon: 'trash',
+    action: { label: 'Rückgängig', onClick: async () => { try { await db.addToCart(c.list, c.material_id, c.qty, c.commission); await reload(); } catch (e) { errToast(e); } } },
+  });
+  fly();
+}
+
 async function deleteMaterialFlow(m, refresh) {
   if (!await confirmBox({ title: `${m.kind === 'tool' ? 'Werkzeug' : 'Teil'} löschen?`, message: `${m.name} inkl. Bestand, Historie und Bildern wird gelöscht.`, okText: 'Löschen', danger: true })) return;
   // Erst nur ausblenden – endgültig gelöscht wird nach 5 Sekunden, solange niemand „Rückgängig“ tippt
