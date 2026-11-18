@@ -2367,3 +2367,4 @@ span.pv-btn { background: none; }
 :root[data-theme="dark"] .shelf-boxes { --plank: #3a3d45; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .shelf-boxes { --plank: #3a3d45; } }
 :root[data-style="neu"] .shelf-boxes { --plank: color-mix(in srgb, var(--neu-sh) 85%, #8a7a60); }
+.inv-badge { display: inline-block; margin-right: 6px; padding: 2px 8px; border-radius: 9px; font-size: 12px; font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
