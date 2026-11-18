@@ -2478,3 +2478,4 @@ span.pv-btn { background: none; }
 /* Live-Buchung von einem anderen Gerät: Zeile leuchtet kurz auf */
 .live-flash { animation: live-flash 1.6s ease-out; }
 @keyframes live-flash { 0%, 30% { background-color: color-mix(in srgb, var(--primary) 18%, transparent); box-shadow: inset 3px 0 0 var(--primary); } 100% { background-color: transparent; } }
+.fuzzy-hint { display: inline-flex; align-items: center; gap: 3px; color: var(--primary); font-weight: 600; }

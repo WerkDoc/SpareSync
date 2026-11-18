@@ -581,8 +581,61 @@ const chargeKey = (m) => Object.keys(m.custom_fields || {}).find((k) => CHARGE_R
 const chargeOf = (m) => { const k = chargeKey(m); return k ? String(m.custom_fields[k]).trim() : ''; };
 const natCmp = (a, b) => a.localeCompare(b, 'de', { numeric: true, sensitivity: 'base' });
 
+// ---------- Tippfehler-tolerante Suche: „ipohne 12 dispaly“ findet „iPhone 12 Display“ ----------
+/** Damerau-Levenshtein (mit Vertauschung zweier Buchstaben), bricht ab, sobald max überschritten ist */
+function editDist(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let best = Infinity;
+    for (let j = 1; j <= b.length; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      best = Math.min(best, d[i][j]);
+    }
+    if (best > max) return max + 1;
+  }
+  return d[a.length][b.length];
+}
+const fuzzyMax = (w) => (w.length <= 3 ? 0 : w.length <= 6 ? 1 : 2);
+/** Wie gut passt ein Suchwort zu einem Wort des Teils? 0 = genau, höher = mehr Tippfehler, Infinity = gar nicht */
+function wordScore(w, tokens) {
+  let best = Infinity;
+  for (const t of tokens) {
+    if (t.includes(w)) return 0;
+    // kurze Wörter („aku“) dürfen nur gegen kurze Wörter („akku“) einen Fehler haben – sonst passt alles
+    const max = w.length === 3 ? (t.length <= 5 ? 1 : 0) : fuzzyMax(w);
+    if (!max) continue;
+    // auch angefangene Wörter: „dispa“ ~ „display“ → mit dem Wortanfang vergleichen
+    const d = Math.min(editDist(w, t, max), t.length > w.length ? editDist(w, t.slice(0, w.length), max) : max + 1);
+    if (d <= max && d < best) best = d;
+  }
+  return best;
+}
+function fuzzyFilter(mats, words) {
+  const scored = [];
+  for (const m of mats) {
+    const tokens = `${m.number} ${m.name} ${m.barcode || ''} ${m.group_name} ${(m.fits || []).join(' ')}`.toLowerCase().split(/[^a-z0-9äöüß]+/).filter(Boolean);
+    let sum = 0;
+    for (const w of words) { const sc = wordScore(w, tokens); if (sc === Infinity) { sum = -1; break; } sum += sc; }
+    if (sum >= 0) scored.push([m, sum]);
+  }
+  return scored.sort((a, b) => a[1] - b[1]).map(([m]) => m);
+}
+
 function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const exact = filterMatsExact(mats, { q, group, low, loc, charge, fav }, words);
+  // Nichts gefunden? Dann großzügig nach Tippfehlern suchen (nur wenn auch wirklich gesucht wurde)
+  if (exact.length || !words.length || q.trim().length < 4) return exact;
+  const base = filterMatsExact(mats, { group, low, loc, charge, fav }, []);
+  const res = fuzzyFilter(base, words.map((w) => w.replace(/[^a-z0-9äöüß]/g, '')).filter(Boolean));
+  res.fuzzy = true;
+  return res;
+}
+function filterMatsExact(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}, words = []) {
   const ch = String(charge || '').trim().toLowerCase();
   return mats.filter((m) => {
     if (group && m.group_id !== group) return false;
@@ -1356,7 +1409,7 @@ async function viewList(q) {
     visible = f;
     rows.innerHTML = f.length ? `
       <div class="list-tools">
-        ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.length} Einträge</span>`}
+        ${sel.on ? `<button class="text-btn" data-act="sel-all">Alle auswählen</button>` : `<span class="muted small">${f.fuzzy ? `<span class="fuzzy-hint">${icon('sparkle', 13, 2.2)} Ähnliche Treffer</span> · ` : ''}${f.length} Einträge</span>`}
         <button class="text-btn strong" data-act="sel-toggle">${sel.on ? 'Fertig' : 'Auswählen'}</button>
       </div>
       <div class="mlist ${stagger ? 'stagger' : ''}">${f.map((m, i) => materialRow(m, undefined, stagger ? i : -1)).join('')}</div>`
