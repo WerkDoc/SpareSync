@@ -273,6 +273,7 @@ async function route() {
     [/^\/groups$/, () => viewGroups()],
     [/^\/stats$/, () => viewStats()],
     [/^\/dupes$/, () => viewDupes()],
+    [/^\/prices$/, () => viewPrices()],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
     [/^\/settings$/, () => viewSettings()],
@@ -904,7 +905,7 @@ function lagerHealth(parts) {
   const state = pct >= 85 ? 'ok' : pct >= 60 ? 'warn' : 'bad';
   return { ok, low, empty, total: parts.length, pct, state };
 }
-const recapThumb = (m) => (m?.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '');
+const recapThumb = (m) => (m?.images?.[0] ? (m.images[0].thumb || m.images[0].url) : '');
 
 // ---------- Lagerwert (Einkauf) ----------
 function lagerValue(parts) {
@@ -916,10 +917,11 @@ function lagerValue(parts) {
 }
 function valueCard(v, cu) {
   if (!(v.buy > 0)) return '';
-  return `<a class="value-card" href="#/stats" aria-label="Lagerwert im Einkauf">
+  return `<a class="value-card" href="#/${v.missing ? 'prices' : 'stats'}" aria-label="${v.missing ? 'Fehlende Einkaufspreise nachtragen' : 'Lagerwert im Einkauf'}">
       <span class="v-ic">${icon('euro', 22, 2.2)}</span>
       <div class="v-main"><small>Lagerwert (Einkauf)</small><b>${cu('value')} €</b>
-        <small>${v.missing ? `${fmtQty(v.missing)} ${v.missing === 1 ? 'Teil' : 'Teile'} noch ohne Einkaufspreis` : 'Alle Teile mit Einkaufspreis'}${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small></div>
+        <small>Bestand × Einkaufspreis${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small>
+        ${v.missing ? `<span class="v-todo">${icon('sparkle', 14, 2.2)} ${fmtQty(v.missing)} ${v.missing === 1 ? 'Preis' : 'Preise'} nachtragen</span>` : ''}</div>
       ${icon('chevR', 18)}
     </a>`;
 }
@@ -2093,7 +2095,7 @@ function flyToCart(m, onLand) {
     .map((q) => document.querySelector(q)).find(visible);
   const from = [document.querySelector('.gal-main .cur img'), document.querySelector('[data-act="cart"] i'), document.querySelector(`[data-m="${m.id}"] .thumb`)].find(visible)
     || { left: innerWidth / 2 - 30, top: innerHeight / 2 - 30, width: 60, height: 60 };
-  const img = m.images?.[0] ? (m.images[0].thumb_url || m.images[0].url) : '';
+  const img = m.images?.[0] ? (m.images[0].thumb || m.images[0].url) : '';
   return flyTo({ from, to, img, onLand });
 }
 
@@ -2542,6 +2544,94 @@ function setupHeatmap(root, movs, mats) {
     info.innerHTML = `<b>${d}</b> · ${fmtQty(v)} entnommen: ${top.join(', ')}${per.size > 3 ? ` +${per.size - 3}` : ''}`;
     info.classList.remove('pop'); void info.offsetWidth; info.classList.add('pop');
   }));
+}
+
+// =====================================================================
+//  PREISE NACHTRAGEN: ein Teil nach dem anderen, Einkaufspreis eintippen → weiter
+// =====================================================================
+const PRICE_SKIP = 'ss-price-skip';
+async function viewPrices() {
+  invalidate('materials');
+  const mats = await getMats();
+  let skipped = new Set(); try { skipped = new Set(JSON.parse(sessionStorage.getItem(PRICE_SKIP) || '[]')); } catch { /* egal */ }
+  // Teile mit Bestand zuerst (die zählen für den Lagerwert), dann nach Artikelnummer
+  const todo = mats.filter((m) => m.kind === 'part' && !(+m.purchase_price > 0))
+    .sort((a, b) => ((+b.total > 0) - (+a.total > 0)) || ((a.number ?? 1e9) - (b.number ?? 1e9)));
+  const queue = todo.filter((m) => !skipped.has(m.id)).concat(todo.filter((m) => skipped.has(m.id)));
+  const start = queue.length; let done = 0; let idx = 0;
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Preise nachtragen' }),
+    body: `<div class="pr-head"><b data-pr="left"></b><span class="pr-bar"><i data-pr="bar"></i></span></div>
+      <div class="pr-stage" data-pr="stage"></div>`,
+  });
+  const stage = root.querySelector('[data-pr=stage]');
+  const head = () => {
+    const left = queue.length - idx;
+    root.querySelector('[data-pr=left]').textContent = left ? `Noch ${fmtQty(left)} ${left === 1 ? 'Teil' : 'Teile'} ohne Einkaufspreis` : 'Fertig';
+    root.querySelector('[data-pr=bar]').style.width = `${start ? Math.round(((idx) / start) * 100) : 100}%`;
+  };
+  const card = (m) => {
+    const hasVk = +m.sale_price > 0;
+    return `<div class="pr-card">
+        <div class="pr-img">${thumb(m, 'md')}</div>
+        <div class="pr-name"><span class="nr">${m.number ?? ''}</span> ${esc(m.name)}</div>
+        <div class="pr-meta">Bestand ${fmtQty(Math.max(0, +m.total || 0))}${hasVk ? ` · VK ${fmtEUR(m.sale_price)}` : ''}${m.supplier ? ` · ${esc(m.supplier)}` : ''}</div>
+        <label class="pr-input"><span>Einkaufspreis</span><input type="number" inputmode="decimal" step="0.01" min="0" placeholder="0,00" data-pr="ek" enterkeyhint="next"><em>€</em></label>
+        <label class="pr-vk ${hasVk ? 'keep' : ''}" data-pr="vkrow" hidden>
+          <span data-pr="vktext"></span>${hasVk ? '' : '<input type="checkbox" class="switch" data-pr="vk" checked>'}
+        </label>
+        <div class="pr-btns"><button class="btn-gray" data-pr="skip">Überspringen</button><button class="btn-filled" data-pr="save" disabled>Speichern ${icon('chevR', 18)}</button></div>
+      </div>`;
+  };
+  const show = (dir = 1) => {
+    head();
+    const m = queue[idx];
+    if (!m) {
+      const open = queue.length - done;                  // übersprungen und noch ohne Preis
+      stage.innerHTML = `<div class="pr-done">${icon('check', 46, 2.4)}<h2>${open ? 'Runde geschafft' : 'Alle Preise eingetragen'}</h2>
+        <p>${done ? `${fmtQty(done)} ${done === 1 ? 'Preis' : 'Preise'} eingetragen` : 'Kein Preis eingetragen'}${open ? ` · ${fmtQty(open)} übersprungen` : ''}</p>
+        ${open ? '<button class="btn-gray" data-pr="again">Übersprungene nochmal</button>' : ''}<a class="btn-filled" href="#/fav">Zur Übersicht</a></div>`;
+      if (done) { confetti(); haptic('success'); }
+      try { sessionStorage.removeItem(PRICE_SKIP); } catch { /* egal */ }
+      stage.querySelector('[data-pr=again]')?.addEventListener('click', () => viewPrices());
+      return;
+    }
+    const old = stage.firstElementChild;
+    const wrap = document.createElement('div'); wrap.className = 'pr-slide'; wrap.innerHTML = card(m);
+    stage.appendChild(wrap);
+    if (old && !reduceMotion.matches) {
+      old.animate([{ transform: 'none', opacity: 1 }, { transform: `translateX(${-40 * dir}%) scale(.94)`, opacity: 0 }], { duration: 320, easing: MENU_EASE }).onfinish = () => old.remove();
+      wrap.animate([{ transform: `translateX(${50 * dir}%) scale(.96)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 380, easing: MENU_EASE });
+    } else old?.remove();
+    const ek = wrap.querySelector('[data-pr=ek]'); const save = wrap.querySelector('[data-pr=save]');
+    const vkRow = wrap.querySelector('[data-pr=vkrow]'); const vkText = wrap.querySelector('[data-pr=vktext]'); const vkOn = wrap.querySelector('[data-pr=vk]');
+    const upd = () => {
+      const v = +ek.value; save.disabled = !(v > 0);
+      vkRow.hidden = !(v > 0);
+      if (!(v > 0)) return;
+      if (+m.sale_price > 0) { const d = +m.sale_price - v; vkText.innerHTML = `VK bleibt ${fmtEUR(m.sale_price)} · <b class="${d < 0 ? 'red' : 'green'}-text">Marge ${fmtEUR(d)}</b>`; }
+      else vkText.innerHTML = `Verkaufspreis ${fmtEUR(suggestSale(v))} setzen <small>(+${markupCfg().pct} %)</small>`;
+    };
+    ek.addEventListener('input', upd);
+    ek.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !save.disabled) { e.preventDefault(); save.click(); } });
+    wrap.querySelector('[data-pr=skip]').onclick = () => {
+      skipped.add(m.id); try { sessionStorage.setItem(PRICE_SKIP, JSON.stringify([...skipped])); } catch { /* egal */ }
+      idx++; haptic('light'); show(1);
+    };
+    save.onclick = async () => {
+      const v = Math.round(+ek.value * 100) / 100; if (!(v > 0)) return;
+      const data = { purchase_price: v };
+      if (!(+m.sale_price > 0) && vkOn?.checked) data.sale_price = suggestSale(v);
+      save.disabled = true;
+      try {
+        await db.saveMaterial(m.id, data); invalidate('materials');
+        done++; idx++; haptic('success'); show(1);
+      } catch (e) { save.disabled = false; errToast(e); }
+    };
+    setTimeout(() => { try { ek.focus({ preventScroll: true }); } catch { /* egal */ } }, reduceMotion.matches ? 0 : 200);
+  };
+  show();
+  return root;
 }
 
 async function viewStats() {
@@ -3292,6 +3382,7 @@ async function viewSettings() {
       <div class="set-group">
         ${item('refresh', 'Neu laden', 'reload', '', '', 'blue')}
         ${item('info', 'Lager Informationen', 'stock-info')}
+        ${item('euro', 'Preise nachtragen', 'go:/prices', '', '', 'green')}
       </div>
       <div class="set-group">
         ${item('list', 'Alle Ersatzteile', 'go:/list?tab=part')}
