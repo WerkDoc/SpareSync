@@ -1293,3 +1293,36 @@ export function gearRain({ count = 34, duration = 3200 } = {}) {
   };
   requestAnimationFrame(frame);
 }
+
+// =====================================================================
+//  Fliegende Zahl beim Buchen: „−2“ steigt aus dem Bestand auf und zerplatzt in Funken,
+//  „+5“ fällt von oben in den Bestand hinein
+// =====================================================================
+export function floatDelta({ text, kind = 'out', anchor = null } = {}) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = anchor?.getBoundingClientRect?.() || { left: innerWidth / 2 - 20, top: innerHeight * 0.45, width: 40, height: 40 };
+  const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+  const el = document.createElement('div');
+  el.className = `float-delta ${kind}`; el.textContent = text;
+  el.style.left = `${cx}px`; el.style.top = `${cy}px`;
+  document.body.appendChild(el);
+  const up = kind === 'out';
+  const a = el.animate(up
+    ? [{ transform: 'translate(-50%, -50%) scale(.6)', opacity: 0 }, { transform: 'translate(-50%, -90%) scale(1.15)', opacity: 1, offset: .25 }, { transform: 'translate(-50%, -260%) scale(1)', opacity: 1 }]
+    : [{ transform: 'translate(-50%, -360%) scale(1)', opacity: 0 }, { transform: 'translate(-50%, -260%) scale(1.1)', opacity: 1, offset: .3 }, { transform: 'translate(-50%, -50%) scale(.5)', opacity: .9 }],
+  { duration: up ? 760 : 680, easing: up ? 'cubic-bezier(.2, .8, .3, 1)' : 'cubic-bezier(.55, 0, .8, .4)', fill: 'forwards' });
+  a.onfinish = () => {
+    const b = el.getBoundingClientRect(); el.remove();
+    // Funken: beim Entnehmen dort, wo die Zahl zerplatzt, beim Dazubuchen am Bestand (Spritzer nach oben)
+    const x0 = up ? b.left + b.width / 2 : cx; const y0 = up ? b.top + b.height / 2 : cy;
+    for (let i = 0; i < 12; i++) {
+      const s = document.createElement('i'); s.className = `float-spark ${kind}`;
+      s.style.left = `${x0}px`; s.style.top = `${y0}px`; document.body.appendChild(s);
+      const ang = up ? (i / 12) * Math.PI * 2 : Math.PI + (i / 11) * Math.PI;   // in: nur nach oben spritzen
+      const d = 26 + Math.random() * 22;
+      s.animate([{ transform: 'translate(-50%, -50%) scale(1)', opacity: 1 }, { transform: `translate(calc(-50% + ${Math.cos(ang) * d}px), calc(-50% + ${Math.sin(ang) * d}px)) scale(.2)`, opacity: 0 }],
+        { duration: 520 + Math.random() * 200, easing: 'cubic-bezier(.2, .8, .3, 1)' }).onfinish = () => s.remove();
+    }
+    if (anchor?.animate) anchor.animate([{ transform: 'scale(1)' }, { transform: `scale(${up ? .88 : 1.18})` }, { transform: 'scale(1)' }], { duration: 380, easing: 'cubic-bezier(.34, 1.5, .64, 1)' });
+  };
+}

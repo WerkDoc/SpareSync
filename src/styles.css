@@ -2436,3 +2436,10 @@ span.pv-btn { background: none; }
 @keyframes tank-wave { to { transform: translateX(-20px); } }
 @keyframes tank-fill { from { height: 0; } }
 @media (prefers-reduced-motion: reduce) { .sr-liquid, .sr-liquid i { animation: none; } }
+
+/* Fliegende Zahl + Funken beim Buchen */
+.float-delta { position: fixed; z-index: 380; pointer-events: none; font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  text-shadow: 0 4px 14px rgba(0, 0, 0, .18); will-change: transform, opacity; }
+.float-delta.out { color: var(--red); } .float-delta.in { color: var(--green); }
+.float-spark { position: fixed; z-index: 379; width: 7px; height: 7px; border-radius: 50%; pointer-events: none; }
+.float-spark.out { background: radial-gradient(circle, #ffd27a, var(--red)); } .float-spark.in { background: radial-gradient(circle, #d6ffd9, var(--green)); }
