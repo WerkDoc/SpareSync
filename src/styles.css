@@ -2158,3 +2158,24 @@ span.pv-btn { background: none; }
 :root[data-style="neu"] .health-ring { box-shadow: var(--press-s); }
 :root[data-style="neu"] .hr-track { stroke: transparent; }
 :root[data-style="neu"] .health-chips i { background: var(--neu); box-shadow: 2px 2px 4px var(--neu-sh), -2px -2px 4px var(--neu-hi); }
+
+/* =====================================================================
+   Reichweite (Detailseite): „Reicht noch ca. X Wochen“
+   ===================================================================== */
+.reach-card { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; padding: 14px 16px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); }
+.reach-card > svg { flex-shrink: 0; margin-top: 1px; }
+.reach-card > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.reach-card b { font-size: 16.5px; }
+.reach-card small { font-size: 13.5px; color: var(--text-2); }
+.reach-card.r-ok > svg { color: #1f9d55; } .reach-card.r-warn > svg { color: #ff9500; } .reach-card.r-bad > svg { color: var(--red); } .reach-card.r-idle > svg { color: var(--text-3); }
+.reach-card.r-bad b { color: var(--red); }
+.reach-bar { display: block; height: 8px; margin-top: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.reach-bar i { display: block; height: 100%; width: var(--w); border-radius: 4px; animation: reach-grow 1.1s cubic-bezier(.16, 1, .3, 1) both; }
+.r-ok .reach-bar i { background: linear-gradient(90deg, #34c759, #1f9d55); }
+.r-warn .reach-bar i { background: linear-gradient(90deg, #ffcc00, #ff9500); }
+.r-bad .reach-bar i { background: linear-gradient(90deg, #ff7a6b, var(--red)); }
+.reach-in { animation: detail-fade .35s ease both; }
+@keyframes reach-grow { from { width: 0; } }
+:root[data-style="neu"] .reach-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .reach-bar { background: var(--neu); box-shadow: inset 2px 2px 4px var(--neu-sh), inset -2px -2px 4px var(--neu-hi); padding: 2px; height: 12px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .reach-bar i, .reach-in { animation: none; } }

@@ -1779,6 +1779,7 @@ async function viewMaterial(id, q) {
   root.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => setTab(b.dataset.t)));
   popChanged(root);
   setupHeroScroll(root);
+  if (tab === 'infos') fillReach(root, m);
 
   // Im Hintergrund frischen Stand holen; nur wenn sich etwas geändert hat, wird die Seite (ohne Animation) neu gezeichnet
   if (!q.fresh) {
@@ -2139,6 +2140,50 @@ async function undoBooking(b, title, onDone) {
   } catch (e) { errToast(e); }
 }
 
+// ---------- Reichweite: „Reicht noch ca. X Wochen“ aus dem bisherigen Verbrauch ----------
+const REACH_DAYS = 90;
+const reachMemo = new Map();          // Teil-ID → { perWeek, days, n }
+function reachStats(movs) {
+  const now = Date.now(); const since = now - REACH_DAYS * 864e5;
+  const outs = movs.filter((x) => x.type === 'out' && Date.parse(x.created_at) >= since);
+  // Zeitraum: 90 Tage – oder kürzer, wenn das Teil noch nicht so lange gebucht wird (mind. 14 Tage, sonst wird die Schätzung wild)
+  const first = movs.length ? Math.min(...movs.map((x) => Date.parse(x.created_at))) : now;
+  const days = Math.max(14, Math.min(REACH_DAYS, (now - first) / 864e5));
+  const used = outs.reduce((a, x) => a + Math.abs(+x.qty || 0), 0);
+  return { perWeek: used / (days / 7), days: Math.round(days), n: outs.length };
+}
+const weeksText = (w) => (w < 1 ? 'wenige Tage' : w < 26 ? `ca. ${Math.round(w)} ${Math.round(w) === 1 ? 'Woche' : 'Wochen'}` : w < 104 ? `ca. ${Math.round(w / 4.35)} Monate` : 'über 2 Jahre');
+function reachHtml(m, r) {
+  if (!r) return '';
+  const total = Math.max(0, +m.total || 0); const min = +m.min_stock || 0;
+  const rate = `Ø ${fmtQty(+r.perWeek.toFixed(1))} Stück pro Woche · letzte ${r.days} Tage${r.n < 3 ? ' · grobe Schätzung' : ''}`;
+  if (r.perWeek <= 0) {
+    return `<div class="reach-card r-idle">${icon('history', 22, 2.2)}<div><b>In den letzten ${r.days} Tagen nicht entnommen</b><small>Keine Reichweite berechenbar</small></div></div>`;
+  }
+  const weeks = total / r.perWeek;
+  const state = total <= 0 || weeks < 2 ? 'bad' : weeks < 4 ? 'warn' : 'ok';
+  const head = total <= 0 ? 'Leer – wird aber regelmäßig gebraucht' : `Reicht noch ${weeksText(weeks)}`;
+  const toMin = min > 0 && total > min ? (total - min) / r.perWeek : null;
+  // Balken: 8 Wochen = voll
+  const frac = Math.max(0.03, Math.min(1, weeks / 8));
+  return `<div class="reach-card r-${state}">${icon('clock', 22, 2.2)}<div>
+      <b>${head}</b>
+      <small>${rate}</small>
+      ${toMin != null ? `<small>Meldebestand in ${weeksText(toMin)} erreicht</small>` : ''}
+      <span class="reach-bar"><i style="--w:${(frac * 100).toFixed(1)}%"></i></span>
+    </div></div>`;
+}
+async function fillReach(root, m) {
+  const slot = root.querySelector('[data-reach]'); if (!slot) return;
+  try {
+    const r = reachStats(await db.listMovements(m.id, 500));
+    reachMemo.set(m.id, r);
+    if (!slot.isConnected) return;
+    const html = reachHtml(m, r);
+    if (slot.innerHTML.trim() !== html.trim()) { slot.innerHTML = html; slot.firstElementChild?.classList.add('reach-in'); }
+  } catch { /* offline: einfach weglassen */ }
+}
+
 /** Bestands-Ring: wie voll ist das Fach im Verhältnis zu Melde- und Maximalbestand? (nur wenn einer davon gesetzt ist) */
 function stockRing(m) {
   const min = +m.min_stock || 0; const max = +m.max_stock || 0; const total = Math.max(0, +m.total || 0);
@@ -2178,6 +2223,7 @@ function infosTab(m, tasks) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${stockRing(m)}
+    ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
     ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
     <button class="card-btn" data-act="label"><i>${icon('print', 24)}</i><span>Etikett drucken</span></button>
     <button class="card-btn" data-act="commission"><i>${icon('cartPlus', 26)}</i><span>Zu Kommission hinzufügen</span></button>
