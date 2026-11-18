@@ -1048,7 +1048,8 @@ async function viewFav() {
     cls: 'dash-screen',
     body: `
       ${dashHead()}
-      ${db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
+      ${db.isGuest ? `<button type="button" class="demo-banner guest-banner" data-guest-end="register">${icon('sparkle', 16)}<span><em><b>Gastmodus</b> · Testdaten nur auf diesem Gerät</em><small>Gefällt's dir? Jetzt kostenlos registrieren</small></span>${icon('chevR', 16)}</button>`
+        : db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
 
       <section class="widgets" aria-label="Status">
         <a class="widget" href="#/list?tab=part">
@@ -3751,7 +3752,7 @@ async function viewSettings() {
     body: `
       <h1 class="lt-collapse page-lt">Menü</h1>
       <div class="set-group">
-        <div class="set-row static"><i class="tone-${db.isDemo ? 'orange' : 'green'}">${icon('database', 19)}</i><span>${db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
+        <div class="set-row static"><i class="tone-${db.isDemo ? 'orange' : 'green'}">${icon('database', 19)}</i><span>${db.isGuest ? 'Gastmodus (nur dieses Gerät)' : db.isDemo ? 'Demo-Modus (lokal)' : 'Supabase verbunden'}<small>${esc(user?.email || '')}</small></span></div>
       </div>
       <div class="set-group">
         ${item('refresh', 'Neu laden', 'reload', '', '', 'blue')}
@@ -3798,9 +3799,11 @@ async function viewSettings() {
           <input type="checkbox" class="switch" data-act-badge ${badgeEnabled() ? 'checked' : ''}></label>` : ''}
       </div>
       <div class="set-group">
-        ${db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
+        ${db.isGuest ? item('user', 'Konto erstellen', 'guest-register', '', '', 'green') + item('refresh', 'Testdaten zurücksetzen', 'reset', ' ', 'danger-text') + item('logout', 'Gastmodus beenden', 'guest-exit', ' ', 'danger-text')
+          : db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
       </div>
-      ${db.isDemo ? `<p class="hint">Im Demo-Modus liegen alle Daten nur in diesem Browser. Für Cloud-Speicher & mehrere Geräte Supabase-Zugangsdaten in der <code>.env</code> eintragen (siehe README).</p>` : ''}
+      ${db.isGuest ? `<p class="hint">Im Gastmodus probierst du SpareSync mit Beispieldaten aus. Alles bleibt nur auf diesem Gerät. Mit einem Konto liegen deine Daten sicher in der Cloud und du kannst mehrere Geräte nutzen.</p>`
+        : db.isDemo ? `<p class="hint">Im Demo-Modus liegen alle Daten nur in diesem Browser. Für Cloud-Speicher & mehrere Geräte Supabase-Zugangsdaten in der <code>.env</code> eintragen (siehe README).</p>` : ''}
       <div class="menu-footer">${brandLogo('sm')}<span>Version 1.2</span></div>`,
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
@@ -3947,7 +3950,36 @@ async function viewSettings() {
     if (await confirmBox({ title: 'Demo-Daten zurücksetzen?', message: 'Alle lokalen Änderungen gehen verloren.', okText: 'Zurücksetzen', danger: true })) { db.resetDemo(); invalidate(); go('/fav'); }
   });
   on(root, 'logout', async () => { await db.signOut(); invalidate(); go('/login', true); });
+  on(root, 'guest-register', () => leaveGuest('register'));
+  on(root, 'guest-exit', () => leaveGuest('login'));
 }
+
+// =====================================================================
+//  GASTMODUS – App mit Beispieldaten ausprobieren, ohne Konto
+// =====================================================================
+function enterGuest() {
+  db.startGuest();
+  haptic('success');
+  document.documentElement.classList.add('guest-enter');
+  setTimeout(() => { location.hash = '#/fav'; location.reload(); }, reduceMotion.matches ? 0 : 420);
+}
+async function leaveGuest(target = 'login') {
+  const reg = target === 'register';
+  const ok = await confirmBox({
+    title: reg ? 'Jetzt registrieren?' : 'Gastmodus beenden?',
+    message: 'Deine Testdaten aus dem Gastmodus werden dabei von diesem Gerät gelöscht. Dein richtiges Lager startet leer.',
+    okText: reg ? 'Registrieren' : 'Beenden',
+    danger: !reg,
+  });
+  if (!ok) return;
+  db.endGuest();
+  location.hash = '#/' + target;
+  location.reload();
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('[data-guest-end]');
+  if (b) { e.preventDefault(); leaveGuest(b.dataset.guestEnd); }
+});
 
 // =====================================================================
 //  LOGIN (nur mit Supabase)
@@ -3974,6 +4006,12 @@ function viewLogin(_m, _id, startPanel = 'login') {
             <button class="auth-submit" type="submit">Anmelden</button>
           </form>
           <button type="button" class="auth-switch" data-go="register">Neues Konto erstellen</button>
+          <div class="auth-or"><span>oder</span></div>
+          <button type="button" class="auth-guest" data-guest>
+            <span class="ag-ic">${icon('sparkle', 20, 2.2)}</span>
+            <span class="ag-txt"><b>Als Gast ausprobieren</b><small>Mit Beispieldaten, ohne Anmeldung</small></span>
+            ${icon('chevR', 18)}
+          </button>
         </section>
 
         <!-- Registrieren -->
@@ -4023,6 +4061,7 @@ function viewLogin(_m, _id, startPanel = 'login') {
     }, 380);
   };
   root.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => show(b.dataset.go)));
+  root.querySelector('[data-guest]').onclick = enterGuest;
 
   // Passwort anzeigen / verbergen
   root.querySelectorAll('[data-eye]').forEach((b) => (b.onclick = () => {
