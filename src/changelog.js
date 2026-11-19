@@ -5,6 +5,16 @@
 // =====================================================================
 export const CHANGELOG = [
   {
+    version: '1.7',
+    date: '2026-11-19',
+    title: 'Qualität, Steckbrief & Offline',
+    items: [
+      { icon: 'tag', title: 'Qualitätsstufe', text: 'Original, Nachbau, Pulled oder Neuwertig als farbiges Abzeichen – automatisch aus dem Namen erkannt, im Filter auswählbar und auch im Thekenmodus sichtbar.' },
+      { icon: 'shelf', title: 'Lagerort-Steckbrief', text: 'Unter Lagerorte einen Lagerort antippen: Die Karte dreht sich um und zeigt Füllstand, Wert, knappe Teile und die letzte Inventur.' },
+      { icon: 'cloudOff', title: 'Offline buchen', text: 'Ohne Internet kannst du trotzdem buchen. Die Buchungen warten auf dem Gerät und werden gesendet, sobald du wieder online bist. Oben siehst du, wie viele noch warten.' },
+    ],
+  },
+  {
     version: '1.6',
     date: '2026-11-19',
     title: 'Scanner-Menü',
