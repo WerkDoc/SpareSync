@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
-  scan, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
+  scan, scanHistory, clearScanHistory, setScanLabeler, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
   countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto, flipCard,
   layer,
 } from './ui.js';
@@ -283,6 +283,7 @@ async function route() {
     [/^\/prices$/, () => viewPrices()],
     [/^\/device$/, () => viewDevice(q)],
     [/^\/counter$/, () => viewCounter()],
+    [/^\/scans$/, () => viewScans()],
     [/^\/map$/, () => viewMap(q)],
     [/^\/locations$/, () => viewLocations()],
     [/^\/inventory$/, () => viewInventory(q)],
@@ -834,7 +835,7 @@ function openSpotlight() {
     if (!q) {
       const recent = [...mats].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 5);
       hits = [];
-      results.innerHTML = recent.length ? `<p class="sp-label">Zuletzt bewegt</p><div class="sp-card mlist">${recent.map((m) => materialRow(m)).join('')}</div>` : '';
+      results.innerHTML = viewedStrip(mats) + (recent.length ? `<p class="sp-label">Zuletzt bewegt</p><div class="sp-card mlist">${recent.map((m) => materialRow(m)).join('')}</div>` : '');
       return;
     }
     hits = filterMats(mats, { q });
@@ -866,7 +867,7 @@ function openSpotlight() {
   });
   el.querySelector('.sp-cancel').onclick = close;
   el.querySelector('.sp-backdrop').onclick = close;
-  results.addEventListener('click', (e) => { if (e.target.closest('a.mrow')) close(); });   // Navigation macht der Router
+  results.addEventListener('click', (e) => { if (e.target.closest('a.mrow, a.viewed-card')) close(); });   // Navigation macht der Router
   // Nach oben wischen schließt
   let sy = 0;
   el.addEventListener('touchstart', (e) => { sy = e.touches[0].clientY; }, { passive: true });
@@ -1390,14 +1391,21 @@ async function viewList(q) {
   let visible = [];
   const selBar = document.createElement('div');
   selBar.className = 'select-bar'; selBar.hidden = true;
-  selBar.innerHTML = `<span class="sb-count"></span><button class="sb-delete" data-act="bulk-delete">${icon('trash', 19)} Löschen</button>`;
+  selBar.innerHTML = `<span class="sb-count"></span>
+    <div class="sb-acts">
+      <button class="sb-act" data-act="bulk-cart">${icon('cart', 22)}<span>Warenkorb</span></button>
+      <button class="sb-act" data-act="bulk-move">${icon('swap', 22)}<span>Umlagern</span></button>
+      <button class="sb-act" data-act="bulk-label">${icon('tag', 22)}<span>Etiketten</span></button>
+      <button class="sb-act sb-delete" data-act="bulk-delete">${icon('trash', 22)}<span>Löschen</span></button>
+    </div>`;
   root.appendChild(selBar);
   const updateSel = () => {
     const n = sel.ids.size;
     selBar.hidden = !sel.on;
     root.classList.toggle('selecting', sel.on);
     selBar.querySelector('.sb-count').textContent = n ? `${n} ausgewählt` : 'Teile antippen zum Auswählen';
-    selBar.querySelector('.sb-delete').disabled = !n;
+    selBar.querySelectorAll('.sb-act').forEach((b) => (b.disabled = !n));
+    selBar.querySelector('[data-act=bulk-cart]').hidden = listState.tab === 'tool';
     const all = rows.querySelector('[data-act=sel-all]');
     if (all) all.textContent = visible.length && visible.every((m) => sel.ids.has(m.id)) ? 'Keine auswählen' : 'Alle auswählen';
     rows.querySelectorAll('.mrow').forEach((r) => r.classList.toggle('is-selected', sel.ids.has(r.dataset.id)));
@@ -1464,6 +1472,51 @@ async function viewList(q) {
     } catch (e) { errToast(e); b.disabled = false; }
   };
 
+  const picked = async () => { const all = await getMats(); return [...sel.ids].map((id) => all.find((m) => m.id === id)).filter(Boolean); };
+  const doneSel = () => { sel.on = false; sel.ids.clear(); };
+  selBar.querySelector('[data-act=bulk-cart]').onclick = async () => {
+    const list = await picked(); if (!list.length) return;
+    const qty = (m) => Math.max(1, (+m.max_stock || 0) - m.total) || 1;
+    if (!await confirmBox({ title: `${list.length} ${list.length === 1 ? 'Teil' : 'Teile'} in den Warenkorb?`,
+      message: 'Menge je Teil: bis zum Maximalbestand, sonst 1 Stück. Im Warenkorb kannst du sie noch ändern.', okText: 'Hinzufügen' })) return;
+    try {
+      for (const m of list) await db.addToCart('cart', m.id, qty(m));
+      invalidate('cart'); sfx.cash(); haptic('success');
+      successHUD('Im Warenkorb', `${list.length} ${list.length === 1 ? 'Teil' : 'Teile'}`);
+      doneSel(); viewList({});
+    } catch (e) { errToast(e); }
+  };
+  selBar.querySelector('[data-act=bulk-label]').onclick = async () => {
+    const list = await picked(); if (!list.length) return;
+    showLabel(list.map(labelData));
+  };
+  selBar.querySelector('[data-act=bulk-move]').onclick = async () => {
+    const list = await picked(); if (!list.length) return;
+    const locs = await getLocs();
+    const to = await pickFrom({ title: `${list.length} ${list.length === 1 ? 'Teil' : 'Teile'} umlagern nach …`, items: locs.map((l) => ({ value: l.id, label: l.name })),
+      createLabel: 'Neuer Lagerort', onCreate: async () => { const n = await prompt({ title: 'Neuer Lagerort', okText: 'Anlegen' }); if (!n) return null; const l = await db.createLocation(n); invalidate('locations'); return l.id; } });
+    if (!to) return;
+    const target = (await getLocs()).find((l) => l.id === to);
+    const moves = list.flatMap((m) => m.locations.filter((l) => l.qty > 0 && l.location_id !== to).map((l) => ({ m, l })));
+    if (!await confirmBox({ title: `Nach „${target?.name || 'Lagerort'}“ umlagern?`,
+      message: `${moves.length ? `${moves.length} ${moves.length === 1 ? 'Bestand wird' : 'Bestände werden'} umgebucht. ` : ''}„${target?.name}“ wird bei ${list.length === 1 ? 'dem Teil' : `allen ${list.length} Teilen`} zum Standard-Lagerort.`, okText: 'Umlagern' })) return;
+    const count = selBar.querySelector('.sb-count');
+    try {
+      let i = 0;
+      for (const m of list) {
+        count.textContent = `Lagere um … ${++i}/${list.length}`;
+        for (const l of m.locations.filter((x) => x.qty > 0 && x.location_id !== to)) {
+          await db.book({ material_id: m.id, type: 'transfer', qty: l.qty, location_id: l.location_id, to_location_id: to, note: 'Sammel-Umlagerung' });
+        }
+        if (!m.locations.some((x) => x.location_id === to)) { try { await db.addStockLocation(m.id, to); } catch { /* existiert schon */ } }
+        if (m.default_location_id !== to) await db.saveMaterial(m.id, { default_location_id: to });
+      }
+      invalidate('materials', 'locations'); haptic('success');
+      successHUD('Umgelagert', `${list.length} ${list.length === 1 ? 'Teil' : 'Teile'} → ${target?.name || ''}`);
+      doneSel(); viewList({});
+    } catch (e) { errToast(e); invalidate('materials', 'locations'); viewList({}); }
+  };
+
   onLongPress(rows, '.mrow', (el) => materialContextMenu(el, () => viewList({})), { enabled: () => !sel.on && listState.tab !== 'cart' });
   // Wisch-Aktionen: nach links Bearbeiten/Löschen, nach rechts Dazu buchen/Entnehmen
   enableSwipeActions(rows, '.mrow', {
@@ -1496,14 +1549,30 @@ async function viewList(q) {
   root.appendChild(dim);
   const setDim = () => {
     const on = document.activeElement === qi && !qi.value;
-    if (on) dim.style.top = `${Math.round(root.querySelector('.list-head').getBoundingClientRect().bottom)}px`;
+    if (on) {
+      dim.style.top = `${Math.round(root.querySelector('.list-head').getBoundingClientRect().bottom)}px`;
+      const strip = viewedStrip(mats);
+      dim.innerHTML = strip ? `<div class="dim-viewed">${strip}</div>` : '';
+    }
     root.classList.toggle('search-focus', on);
     syncThemeColor();
   };
   qi.addEventListener('focus', setDim);
   qi.addEventListener('blur', () => { root.classList.remove('search-focus'); syncThemeColor(); });
   qi.addEventListener('input', setDim);
-  dim.addEventListener('pointerdown', (e) => { e.preventDefault(); qi.blur(); });
+  // Tipp auf „Zuletzt angesehen“ öffnet das Teil, Wischen scrollt nur die Reihe, Tipp daneben schließt die Suche
+  let tapCard = null; let tapX = 0;
+  dim.addEventListener('pointerdown', (e) => {
+    e.preventDefault();                                   // Suchfeld behält den Fokus
+    tapCard = e.target.closest('.viewed-card'); tapX = e.clientX;
+    if (!tapCard) qi.blur();
+  });
+  dim.addEventListener('pointerup', (e) => {
+    const card = e.target.closest('.viewed-card');
+    if (card && card === tapCard && Math.abs(e.clientX - tapX) < 10) { haptic('light'); qi.blur(); go(card.getAttribute('href').slice(1)); }
+    tapCard = null;
+  });
+  dim.addEventListener('click', (e) => { if (e.target.closest('.viewed-card')) e.preventDefault(); });
   qi.oninput = () => { listState.q = qi.value; saveListState(); if (listState.tab === 'cart') { listState.tab = 'part'; viewList({}); } else renderRows(); };
   root.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
     if (listState.tab === b.dataset.tab) return;
@@ -1879,6 +1948,7 @@ async function viewMaterial(id, q) {
   const cached = cache.materials?.find((x) => x.id === id);
   const m = cached || await db.getMaterial(id);
   if (!m) { toast('Material nicht gefunden', 'err'); return go('/list', true); }
+  rememberViewed(id);
   const reload = () => { detailMemo.tasks.delete(id); detailMemo.movs.delete(id); invalidate('materials', 'locations', 'groups'); return viewMaterial(id, { tab }); };
   const setTab = (t) => { replaceHash(`#/m/${id}?tab=${t}`); viewMaterial(id, { tab: t }); };
 
@@ -2194,12 +2264,27 @@ function setupFlip(root, m) {
   g.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
-function openLabel(m) {
+// ---------- Zuletzt angesehen (pro Gerät) ----------
+const VIEWED_KEY = 'ss-viewed';
+function viewedIds() { try { return JSON.parse(localStorage.getItem(VIEWED_KEY) || '[]'); } catch { return []; } }
+function rememberViewed(id) {
+  try { localStorage.setItem(VIEWED_KEY, JSON.stringify([id, ...viewedIds().filter((x) => x !== id)].slice(0, 12))); } catch { /* egal */ }
+}
+function viewedStrip(mats, n = 5) {
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  const list = viewedIds().map((id) => byId.get(id)).filter(Boolean).slice(0, n);
+  if (!list.length) return '';
+  return `<p class="sp-label">Zuletzt angesehen</p>
+    <div class="viewed-strip">${list.map((m, i) => `<a class="viewed-card" href="#/m/${m.id}" style="--i:${i}">${thumb(m, 'md')}<b>${esc(m.name)}</b><small class="${isLow(m) ? 'red' : ''}">Bestand ${fmtQty(m.total)}</small></a>`).join('')}</div>`;
+}
+
+function openLabel(m) { showLabel(labelData(m)); }
+function labelData(m) {
   // 2. Zeile: Chargennummer/Platz (eigenes Feld), sonst Artikelnummer
   const cf = m.custom_fields || {};
   const platzKey = Object.keys(cf).find((k) => /charge|platz|fach/i.test(k) && String(cf[k]).trim());
   const where = (m.locations.find((l) => l.location_id === m.default_location_id) || m.locations[0])?.name || '';
-  showLabel({
+  return ({
     title: m.name,
     sub: platzKey ? `${/platz|fach/i.test(platzKey) ? 'Platz' : 'Charge'} ${cf[platzKey]}` : `Nr. ${m.number}`,
     extra: [platzKey ? `Nr. ${m.number}` : '', where].filter(Boolean).join(' · '),
@@ -3849,6 +3934,7 @@ async function viewSettings() {
         ${item('tag', 'Eigene Felder', 'go:/fields')}
         ${item('tally', 'Inventur', 'go:/inventory')}
         ${item('copy', 'Doppelte Teile finden', 'go:/dupes')}
+        ${item('clock', 'Scan-Verlauf', 'go:/scans', '', '', 'blue')}
         ${item('map', 'Werkstatt-Grundriss', 'go:/map', '', '', 'teal')}
         ${item('store', 'Thekenmodus<small>Teile & Preise für Kunden zeigen</small>', 'go:/counter', '', '', 'indigo')}
         ${db.isDemo ? '' : item('camera', 'Vorschaubilder erzeugen', 'thumbs', '', '', 'teal').replace('<span>Vorschaubilder erzeugen</span>', '<span>Vorschaubilder erzeugen<small>Kleine Bilder für schnellere Listen</small></span>')}
@@ -4032,6 +4118,49 @@ async function viewSettings() {
   on(root, 'logout', async () => { await db.signOut(); invalidate(); go('/login', true); });
   on(root, 'guest-register', () => leaveGuest('register'));
   on(root, 'guest-exit', () => leaveGuest('login'));
+}
+
+// =====================================================================
+//  SCAN-VERLAUF: was zuletzt gescannt wurde – mit passendem Teil
+// =====================================================================
+function codeLabel(code, mats = cache.materials || [], locs = cache.locations || []) {
+  code = String(code || '').trim(); if (!code) return null;
+  const m = mats.find((x) => x.barcode && x.barcode === code) || (/^\d+$/.test(code) && mats.find((x) => String(x.number) === code))
+    || mats.find((x) => x.name.toLowerCase() === code.toLowerCase());
+  if (m) return { title: m.name, m };
+  const l = locs.find((x) => x.barcode && x.barcode === code);
+  return l ? { title: `Lagerort ${l.name}`, l } : null;
+}
+setScanLabeler((c) => codeLabel(c));
+const fmtScanTime = (t) => {
+  const d = new Date(t); const today = new Date().toDateString() === d.toDateString();
+  return today ? `Heute, ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+async function viewScans() {
+  const [mats, locs] = await Promise.all([getMats(), getLocs()]);
+  const list = scanHistory();
+  const root = screen({
+    header: navbar({ left: backBtn(), title: 'Scan-Verlauf', right: list.length ? `<button class="text-btn" data-act="clear">Leeren</button>` : '' }),
+    cls: 'large-title-screen scans-screen',
+    body: list.length ? `
+      <p class="muted small pad-x">Die letzten ${list.length} Scans auf diesem Gerät. Antippen öffnet das Teil.</p>
+      <section class="ios-list scan-list">${list.map((x) => {
+        const lab = codeLabel(x.code, mats, locs);
+        if (lab?.m) return `<a class="ios-row recent scan-row" href="#/m/${lab.m.id}">${thumb(lab.m, 'sm')}
+          <span class="r-label"><span class="r-title">${esc(lab.m.name)}</span><small>${esc(x.code)} · ${fmtScanTime(x.at)}${x.title && x.title !== 'Scanner' ? ` · ${esc(x.title)}` : ''}</small></span>
+          <b class="r-val ${isLow(lab.m) ? 'red' : ''}">${fmtQty(lab.m.total)}</b></a>`;
+        if (lab?.l) return `<a class="ios-row recent scan-row" href="#/list?tab=part&loc=${lab.l.id}"><span class="scan-ic loc">${icon('shelf', 20)}</span>
+          <span class="r-label"><span class="r-title">${esc(lab.l.name)}</span><small>Lagerort · ${fmtScanTime(x.at)}</small></span>${icon('chevR', 16)}</a>`;
+        return `<div class="ios-row recent scan-row unknown"><span class="scan-ic">${icon('barcode', 20)}</span>
+          <span class="r-label"><span class="r-title selectable">${esc(x.code)}</span><small>Unbekannter Code · ${fmtScanTime(x.at)}</small></span>
+          <a class="btn-tinted sm" href="#/new?kind=part&barcode=${encodeURIComponent(x.code)}">${icon('plus', 16)} Anlegen</a></div>`;
+      }).join('')}</section>`
+      : empty('scan', 'Noch nichts gescannt', '<span class="muted">Alles, was du scannst, erscheint hier – praktisch, wenn man mal aus Versehen weggetippt hat.</span>'),
+  });
+  on(root, 'clear', async () => {
+    if (!await confirmBox({ title: 'Verlauf leeren?', message: 'Die Liste der gescannten Codes wird von diesem Gerät gelöscht.', okText: 'Leeren', danger: true })) return;
+    clearScanHistory(); haptic('success'); viewScans();
+  });
 }
 
 // =====================================================================
