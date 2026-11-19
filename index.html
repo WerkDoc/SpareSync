@@ -18,6 +18,20 @@
       try { var t = localStorage.getItem('wl-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
       // Design: „plastisch“ (Standard) oder „klassisch“
       try { document.documentElement.dataset.style = localStorage.getItem('ss-style') === 'classic' ? 'classic' : 'neu'; } catch (e) { document.documentElement.dataset.style = 'neu'; }
+      // Animationen (voll / reduziert / aus) und Listen-Dichte – aus den Einstellungen
+      try {
+        var mo = localStorage.getItem('ss-motion');
+        if (mo === 'off' || mo === 'reduced') document.documentElement.classList.add('motion-' + mo);
+        if (mo === 'off') {
+          // „Aus“ wirkt wie „Bewegung reduzieren“ am iPhone – auch für alle Effekte im Code
+          var mm0 = window.matchMedia.bind(window);
+          window.matchMedia = function (q) {
+            if (/prefers-reduced-motion:\s*reduce/.test(q)) return { matches: true, media: q, onchange: null, addEventListener: function () {}, removeEventListener: function () {}, addListener: function () {}, removeListener: function () {}, dispatchEvent: function () { return false; } };
+            return mm0(q);
+          };
+        }
+        if (localStorage.getItem('ss-density') === 'compact') document.documentElement.classList.add('dense');
+      } catch (e) {}
       // TEST „Vollbild“: App legt sich unter die Statusleiste (wird beim Start der Home-Bildschirm-App gelesen)
       try {
         if (localStorage.getItem('ss-fullbleed') === '1') {

@@ -2987,3 +2987,29 @@ html.guest-enter body { transition: opacity .4s ease, filter .4s ease; opacity: 
 @media (prefers-reduced-motion: reduce) {
   .tk-box, .task label span, .tab svg.tab-hop, .lp-glow, .offline-badge .off-cloud, .toast.di-sync .di-ic svg { animation: none !important; transition: none !important; }
 }
+
+/* =====================================================================
+   EINSTELLUNGEN: Bedienung & Etiketten
+   ===================================================================== */
+.set-head { margin: 22px 18px 6px; font-size: 13px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.set-row .set-val { margin-left: auto; font-style: normal; color: var(--text-2); font-size: 15px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-row .set-val + svg { margin-left: 4px; }
+
+/* Firmenname auf dem Etikett */
+.lbl-brand { font-size: 5.6pt; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; line-height: 1; opacity: .75; margin-bottom: .3mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Animationen aus: alles springt sofort */
+html.motion-off *, html.motion-off *::before, html.motion-off *::after { animation-duration: .001ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0ms !important; scroll-behavior: auto !important; }
+/* Animationen reduziert: keine Dauer-Effekte (Pulsieren, Wackeln, Wellen) */
+html.motion-reduced .ct-av.ok i, html.motion-reduced .sr-liquid, html.motion-reduced .sr-liquid i, html.motion-reduced .fp-block.hit,
+html.motion-reduced .map-screen.editing .fp-block, html.motion-reduced .offline-badge .off-cloud { animation: none !important; }
+
+/* Listen-Dichte: kompakt */
+html.dense .mrow { padding-top: 7px; padding-bottom: 7px; gap: 10px; }
+html.dense .mrow .thumb { width: 42px; height: 42px; border-radius: 10px; }
+html.dense .mrow .mrow-title { font-size: 15px; line-height: 1.25; }
+html.dense .mrow .mrow-meta { font-size: 12.5px; margin-top: 1px; }
+html.dense .crow { padding-top: 6px; padding-bottom: 6px; }
+html.dense .crow .thumb.sm { width: 38px; height: 38px; }
+html.dense .crow .mrow-title { font-size: 14.5px; }
+html.dense .ios-row.recent { min-height: 52px; }
