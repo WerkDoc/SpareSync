@@ -51,6 +51,7 @@ let lastTick = 0;
  */
 export function haptic(kind = 'light') {
   try {
+    if (localStorage.getItem('ss-haptics') === '0') return;      // in den Einstellungen ausgeschaltet
     if (matchMedia?.('(prefers-reduced-motion: reduce)').matches && kind === 'light') return;
     const now = Date.now();
     if (now - lastTick < 40) return;               // Doppelauslösung vermeiden

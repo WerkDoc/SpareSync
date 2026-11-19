@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
-  scan, scanHistory, clearScanHistory, setScanLabeler, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
+  labelBrand, LABEL_BRAND_DEFAULT, scan, scanHistory, clearScanHistory, setScanLabeler, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
   countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto, flipCard,
   layer,
 } from './ui.js';
@@ -1878,8 +1878,33 @@ async function viewPick(q) {
 // =====================================================================
 //  BUCHUNG (Bottom-Sheet) – Entnehmen / Dazu buchen / Umbuchen
 // =====================================================================
+const quickOutOn = () => { try { return localStorage.getItem('ss-quick-out') === '1'; } catch { return false; } };
+/** Schnellbuchen: 1 Stück vom Standard-Lagerort (bzw. dem mit Bestand) entnehmen, ohne Mengen-Fenster */
+async function quickOut(m, onDone) {
+  const withStock = m.locations.filter((l) => l.qty > 0);
+  const loc = withStock.find((l) => l.location_id === m.default_location_id) || withStock.sort((a, b) => b.qty - a.qty)[0];
+  if (!loc) return false;
+  try {
+    const total = await db.book({ material_id: m.id, type: 'out', qty: 1, location_id: loc.location_id, note: '' });
+    invalidate('materials', 'locations'); haptic('success'); sfx.ping();
+    const booked = { material_id: m.id, type: 'out', qty: 1, location_id: loc.location_id };
+    const hashAtBooking = location.hash;
+    toast('1 Stück entnommen', 'ok', {
+      sub: `${m.name} · ${loc.name} · Bestand ${fmtQty(total)}`,
+      action: { label: 'Rückgängig', onClick: () => undoBooking(booked, 'Entnehmen', hashAtBooking === location.hash ? onDone : null) },
+      onTimeout: () => { if (+m.min_stock > 0 && total <= +m.min_stock) toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); },
+    });
+    await onDone?.(total);
+    if (m.kind === 'part') setTimeout(() => offerPairs(m), 700);
+    if (+m.min_stock > 0 && +m.total > +m.min_stock && total <= +m.min_stock) pulseLow(m.id);
+    const anchor = ['.stock-ring-card .sr-val', '.total-row [data-pop]'].map((q) => document.querySelector(q)).find((el) => el && el.getBoundingClientRect().top > 0 && el.getBoundingClientRect().bottom < innerHeight);
+    requestAnimationFrame(() => floatDelta({ text: '−1', kind: 'out', anchor }));
+    return true;
+  } catch (e) { errToast(e); return true; }
+}
 async function openBooking(m, type, onDone, preset = {}) {
   if (isOfflineNow()) { toast('Offline – Buchungen sind erst wieder mit Internet möglich.', 'err'); return; }
+  if (type === 'out' && quickOutOn() && !preset.qty && !preset.location_id && !preset.full && await quickOut(m, onDone)) return;
   const conf = {
     in: { title: 'Dazu buchen', cls: 'green', icon: 'plus' },
     out: { title: 'Entnehmen', cls: 'red', icon: 'minus' },
@@ -3998,6 +4023,8 @@ function saveFile(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
+const pref = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* egal */ } };
 async function viewSettings() {
   const flash = sessionStorage.getItem('ss-flash'); sessionStorage.removeItem('ss-flash');
   const user = await db.getUser();
@@ -4059,6 +4086,26 @@ async function viewSettings() {
         ${badgeSupported() ? `<label class="set-row"><i class="tone-red">${icon('alert', 19)}</i><span>Zähler am App-Symbol<small>Teile unter Meldebestand als roter Punkt</small></span>
           <input type="checkbox" class="switch" data-act-badge ${badgeEnabled() ? 'checked' : ''}></label>` : ''}
       </div>
+      <p class="set-head">Bedienung</p>
+      <div class="set-group">
+        <label class="set-row"><i class="tone-blue">${icon('home', 19)}</i><span>Startseite<small>Womit die App öffnet</small></span>
+          <select data-set="ss-start">${[['fav', 'Übersicht'], ['list', 'Teile'], ['scan', 'Scanner']].map(([v, t]) => `<option value="${v}" ${pref('ss-start', 'fav') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-red">${icon('minus', 19)}</i><span>Schnellbuchen<small>„Entnehmen“ nimmt sofort 1 Stück – andere Menge: auf den Lagerort tippen</small></span>
+          <input type="checkbox" class="switch" data-set-bool="ss-quick-out" ${pref('ss-quick-out', '0') === '1' ? 'checked' : ''}></label>
+        <label class="set-row"><i class="tone-indigo">${icon('list', 19)}</i><span>Listen-Dichte<small>Kompakt: mehr Teile auf einen Blick</small></span>
+          <select data-set="ss-density">${[['normal', 'Normal'], ['compact', 'Kompakt']].map(([v, t]) => `<option value="${v}" ${pref('ss-density', 'normal') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-teal">${icon('phone', 19)}</i><span>Haptik<small>Leichtes Vibrieren beim Tippen und Buchen</small></span>
+          <input type="checkbox" class="switch" data-set-bool="ss-haptics" ${pref('ss-haptics', '1') !== '0' ? 'checked' : ''}></label>
+        <label class="set-row"><i class="tone-orange">${icon('sparkle', 19)}</i><span>Animationen<small>Reduziert: ohne Konfetti & fliegende Bilder</small></span>
+          <select data-set="ss-motion">${[['full', 'Voll'], ['reduced', 'Reduziert'], ['off', 'Aus']].map(([v, t]) => `<option value="${v}" ${pref('ss-motion', 'full') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      </div>
+      <p class="set-head">Etiketten</p>
+      <div class="set-group">
+        <label class="set-row"><i class="tone-indigo">${icon('tag', 19)}</i><span>Firmenname auf Etiketten<small>Klein über dem Teilenamen</small></span>
+          <input type="checkbox" class="switch" data-set-bool="ss-label-brand-on" ${pref('ss-label-brand-on', '1') !== '0' ? 'checked' : ''}></label>
+        <button class="set-row" data-act="label-brand"><i class="tone-indigo">${icon('edit', 19)}</i><span>Name auf dem Etikett</span><em class="set-val">${esc(pref('ss-label-brand', LABEL_BRAND_DEFAULT) || '—')}</em>${icon('chevR', 18)}</button>
+        <button class="set-row" data-act="label-preview"><i class="tone-indigo">${icon('print', 19)}</i><span>Probe-Etikett ansehen</span>${icon('chevR', 18)}</button>
+      </div>
       <div class="set-group">
         ${db.isGuest ? item('user', 'Konto erstellen', 'guest-register', '', '', 'green') + item('refresh', 'Testdaten zurücksetzen', 'reset', ' ', 'danger-text') + item('logout', 'Gastmodus beenden', 'guest-exit', ' ', 'danger-text')
           : db.isDemo ? item('refresh', 'Demo-Daten zurücksetzen', 'reset', ' ', 'danger-text') : item('logout', 'Abmelden', 'logout', ' ', 'danger-text')}
@@ -4068,6 +4115,30 @@ async function viewSettings() {
       <div class="menu-footer">${brandLogo('sm')}<span>Version 1.2</span></div>`,
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
+  // ---- Bedienung & Etiketten (alles nur auf diesem Gerät) ----
+  root.querySelectorAll('select[data-set]').forEach((sel) => (sel.onchange = () => {
+    const key = sel.dataset.set; const prev = pref(key, ''); setPref(key, sel.value); haptic('light');
+    if (key === 'ss-density') { document.documentElement.classList.toggle('dense', sel.value === 'compact'); toast(sel.value === 'compact' ? 'Listen kompakt' : 'Listen normal'); }
+    if (key === 'ss-start') toast('Startseite gespeichert', 'ok', { sub: 'Gilt ab dem nächsten Öffnen der App' });
+    if (key === 'ss-motion') {
+      const cl = document.documentElement.classList;
+      cl.toggle('motion-reduced', sel.value === 'reduced'); cl.toggle('motion-off', sel.value === 'off');
+      // „Aus“ greift auch in alle Effekte im Code → einmal neu laden
+      if (sel.value === 'off' || prev === 'off') { location.reload(); return; }
+      toast(sel.value === 'reduced' ? 'Animationen reduziert' : 'Animationen voll');
+    }
+  }));
+  root.querySelectorAll('input[data-set-bool]').forEach((cb) => (cb.onchange = () => {
+    const key = cb.dataset.setBool; setPref(key, cb.checked ? '1' : '0');
+    if (key === 'ss-haptics' && cb.checked) haptic('success'); else haptic('light');
+    if (key === 'ss-quick-out' && cb.checked) toast('Schnellbuchen an', 'ok', { sub: 'Entnehmen = 1 Stück, mit Rückgängig' });
+  }));
+  on(root, 'label-brand', async () => {
+    const v = await prompt({ title: 'Name auf dem Etikett', message: 'Erscheint klein oben auf jedem Etikett.', value: pref('ss-label-brand', LABEL_BRAND_DEFAULT), placeholder: 'z. B. RepairMobile', okText: 'Speichern' });
+    if (v === null) return;
+    setPref('ss-label-brand', v.trim().slice(0, 40)); keepScrollOnce = window.scrollY; nextTransition = 'none'; viewSettings();
+  });
+  on(root, 'label-preview', () => showLabel({ title: 'iPhone 13 Display OLED', sub: 'Nr. 101', extra: 'Kleinteilemagazin', code: '101' }));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
   root.querySelector('[data-act-sounds]').onchange = (e) => { sfx.setSoundsOn(e.target.checked); if (e.target.checked) sfx.ping(); haptic('light'); };
   root.querySelector('[data-act-markup]').onchange = (e) => { setMarkup({ pct: +e.target.value }); haptic('light'); };
@@ -4715,6 +4786,16 @@ db.onRemoteMovement(async (x) => {
     if (path === '/fav' || path === `/m/${x.material_id}`) { keepScrollOnce = window.scrollY; nextTransition = 'none'; route(); }
   }, 400);
 });
+
+// Startseite (Einstellungen): beim Öffnen der App direkt Teile-Liste oder Scanner statt Übersicht
+(() => {
+  let start = 'fav';
+  try { start = localStorage.getItem('ss-start') || 'fav'; } catch { /* egal */ }
+  const h = location.hash;
+  if (start !== 'fav' && (!h || h === '#/' || h === '#/fav') && (db.isDemo || db.sb)) {
+    try { history.replaceState(history.state, '', start === 'scan' ? '#/pick?mode=info&scan=1' : '#/list'); } catch { /* egal */ }
+  }
+})();
 
 // Splashscreen-Video (steht in index.html): blendet aus, sobald das Video zu Ende ist UND die App geladen hat
 route().finally(() => {

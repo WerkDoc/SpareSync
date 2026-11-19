@@ -610,10 +610,16 @@ export async function qrSvg(text) {
   return QR.toString(String(text), { type: 'svg', margin: 1, errorCorrectionLevel: String(text).length <= 24 ? 'Q' : 'M', color: { dark: '#000000', light: '#ffffff' } });
 }
 /** Etikett-HTML in Millimetern (für Vorschau und Druck identisch) */
+export const LABEL_BRAND_DEFAULT = 'RepairMobile';
+export function labelBrand() {
+  try { if (localStorage.getItem('ss-label-brand-on') === '0') return ''; return localStorage.getItem('ss-label-brand') ?? LABEL_BRAND_DEFAULT; } catch { return LABEL_BRAND_DEFAULT; }
+}
 function labelHTML({ name, line2 = '', line3 = '', svg }, size) {
+  const brand = labelBrand().trim();
   return `<div class="lbl" style="--lw:${size.w}mm;--lh:${size.h}mm">
     <div class="lbl-qr">${svg}</div>
     <div class="lbl-text">
+      ${brand ? `<div class="lbl-brand">${esc(brand)}</div>` : ''}
       <div class="lbl-name">${esc(name)}</div>
       ${line2 ? `<div class="lbl-l2">${esc(line2)}</div>` : ''}
       ${line3 ? `<div class="lbl-l3">${esc(line3)}</div>` : ''}
@@ -754,6 +760,8 @@ export async function copyText(text) {
 //  Micro-Interactions: Count-Up, Pop, Erfolgs-HUD
 // =====================================================================
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** Animationen „reduziert“ (Einstellungen): Konfetti, fliegende Bilder, Zahnräder usw. bleiben weg */
+const fxCalm = () => { try { return localStorage.getItem('ss-motion') === 'reduced'; } catch { return false; } };
 
 /** Wartet, bis der Video-Splash ausgeblendet wird (sonst liefe die Animation unsichtbar darunter ab) */
 export function afterSplash() {
@@ -1067,7 +1075,7 @@ export function enableSwipeActions(container, selector, { left = [], right = [],
 //  Kurz, dezent, in den Markenfarben – blockiert keine Eingaben.
 // =====================================================================
 export function confetti({ count = 90, duration = 1700 } = {}) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) return;
   const cv = document.createElement('canvas');
   cv.className = 'confetti';
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -1283,7 +1291,7 @@ export function photoViewer({ images, start = 0, title = '', onDelete = null, on
 //  „Ab in den Warenkorb“: ein Bild fliegt im Bogen zu einem Ziel, das Ziel hüpft
 // =====================================================================
 export function flyTo({ from, to, img = '', onLand } = {}) {
-  if (!from || !to || matchMedia('(prefers-reduced-motion: reduce)').matches) { onLand?.(); return false; }
+  if (!from || !to || matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) { onLand?.(); return false; }
   const a = from.getBoundingClientRect ? from.getBoundingClientRect() : from;
   const b = to.getBoundingClientRect();
   const size = 58;
@@ -1317,7 +1325,7 @@ export function flyTo({ from, to, img = '', onLand } = {}) {
 //  Easter Egg: Zahnrad-Regen (fällt von oben, dreht sich, prallt leicht ab)
 // =====================================================================
 export function gearRain({ count = 34, duration = 3200 } = {}) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) return;
   const cv = document.createElement('canvas'); cv.className = 'confetti';
   const dpr = Math.min(2, window.devicePixelRatio || 1); const W = innerWidth; const H = innerHeight;
   cv.width = W * dpr; cv.height = H * dpr; document.body.appendChild(cv);
@@ -1356,7 +1364,7 @@ export function gearRain({ count = 34, duration = 3200 } = {}) {
 //  „+5“ fällt von oben in den Bestand hinein
 // =====================================================================
 export function floatDelta({ text, kind = 'out', anchor = null } = {}) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) return;
   const r = anchor?.getBoundingClientRect?.() || { left: innerWidth / 2 - 20, top: innerHeight * 0.45, width: 40, height: 40 };
   const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
   const el = document.createElement('div');
@@ -1423,13 +1431,13 @@ export function speedDial(btn, items, { radius = 170 } = {}) {
 //  Kamera: kurzer weißer Blitz – danach fällt das Foto (wie ein Sofortbild) in die Galerie
 // =====================================================================
 export function cameraFlash() {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) return;
   const f = document.createElement('div'); f.className = 'cam-flash'; document.body.appendChild(f);
   f.animate([{ opacity: 0 }, { opacity: .95, offset: .12 }, { opacity: 0 }], { duration: 520, easing: 'ease-out' }).onfinish = () => f.remove();
   haptic('medium');
 }
 export function photoDrop(blob, target) {
-  if (!blob || !target || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (!blob || !target || matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) return;
   const url = URL.createObjectURL(blob);
   const t = target.getBoundingClientRect();
   const el = document.createElement('div'); el.className = 'photo-drop'; el.innerHTML = `<img src="${url}" alt="">`;
@@ -1454,7 +1462,7 @@ export function photoDrop(blob, target) {
 //  „Papierkorb saugt ein“ (wie der Genie-Effekt am Mac): die Zeile wird schmal und fließt ins Ziel
 // =====================================================================
 export function genieInto(el, target) {
-  if (!el || !target || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  if (!el || !target || matchMedia('(prefers-reduced-motion: reduce)').matches || fxCalm()) return false;
   const a = el.getBoundingClientRect(); const b = target.getBoundingClientRect();
   if (!a.width) return false;
   const ghost = el.cloneNode(true);
