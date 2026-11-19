@@ -1995,6 +1995,10 @@ async function viewMaterial(id, q) {
     });
     on(root, 'cart', () => addToCartFlow(m));
     on(root, 'on-map', () => go(`/map?find=${m.id}`));
+    on(root, 'stack-jiggle', (el) => {
+      const card = el.closest?.('.stack-card') || root.querySelector('.stack-card'); if (!card) return;
+      card.classList.remove('jig'); void card.offsetWidth; card.classList.add('jig'); haptic('light');
+    });
     // Aufgaben
     const tasksOpen = localStorage.getItem('wl-tasks-open') !== '0';
     on(root, 'tasks-toggle', () => { localStorage.setItem('wl-tasks-open', tasksOpen ? '0' : '1'); viewMaterial(id, { tab, fresh: !!tasks }); });
@@ -2410,6 +2414,55 @@ async function fillReach(root, m) {
   } catch { /* offline: einfach weglassen */ }
 }
 
+// =====================================================================
+//  KISTEN-STAPEL: Bestand als gestapelte Kartons – entnehmen = Kiste fliegt weg, einbuchen = Kiste fällt drauf
+// =====================================================================
+const STACK_ROWS = [5, 4, 3, 2, 1];                      // Pyramide: max. 15 Kisten
+const STACK_CAP = STACK_ROWS.reduce((a, b) => a + b, 0);
+const STACK_PER = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000];
+const stackMemo = new Map();                             // Material → { n, at }: zuletzt gezeigte Kisten (für die Animation)
+const BOX_SVG = `<svg viewBox="0 0 40 44" aria-hidden="true">
+  <path class="bx-l" d="M0 10 20 20v24L0 34z"/><path class="bx-r" d="M20 20 40 10v24L20 44z"/><path class="bx-t" d="M0 10 20 0l20 10-20 10z"/>
+  <path class="bx-tape" d="M7.5 6.3 12.5 3.8l20 10-5 2.5z"/><path class="bx-tape bx-tape-r" d="M27.5 16.3 32.5 13.8v24l-5 2.5z"/>
+  <path class="bx-label" d="M4 22.5 13 27v6l-9-4.5z"/></svg>`;
+function stackPos(i) {
+  let layer = 0; let k = i;
+  while (layer < STACK_ROWS.length - 1 && k >= STACK_ROWS[layer]) { k -= STACK_ROWS[layer]; layer++; }
+  return { x: k + layer / 2, y: layer };
+}
+function boxStack(m) {
+  const total = Math.max(0, +m.total || 0);
+  const per = STACK_PER.find((p) => Math.ceil(total / p) <= STACK_CAP) || Math.ceil(total / STACK_CAP);
+  const n = Math.ceil(total / per);
+  const rest = total % per;
+  const last = stackMemo.get(m.id);
+  const prev = last && Date.now() - last.at < 120e3 ? last.n : null;   // frisch geöffnet → alle Kisten fallen rein
+  stackMemo.set(m.id, { n, at: Date.now() });
+  const state = total <= 0 ? 'empty' : isLow(m) ? 'low' : (+m.min_stock && total <= +m.min_stock * 1.5) ? 'warn' : 'ok';
+  const shown = Math.max(n, prev ?? 0);
+  const cols = Math.min(STACK_ROWS[0], Math.max(shown, 1));
+  const layers = shown ? stackPos(shown - 1).y + 1 : 0;
+  let boxes = '';
+  for (let i = 0; i < shown; i++) {
+    const { x, y } = stackPos(i);
+    let cls = 'box'; let d = 0;
+    if (i >= n) { cls += ' leave'; d = (shown - 1 - i) * 90; }                // weggenommen → fliegt weg
+    else if (prev == null) { cls += ' drop'; d = 120 + i * 55; }             // erstes Öffnen → alles fällt rein
+    else if (i >= prev) { cls += ' drop'; d = 80 + (i - prev) * 90; }        // eingebucht → neue Kisten fallen drauf
+    if (i === n - 1 && rest) cls += ' part';
+    boxes += `<span class="${cls}" style="--x:${x};--y:${y};--d:${d}ms;z-index:${10 + y * 10 - Math.round(x)}">${BOX_SVG}</span>`;
+  }
+  const perTxt = per === 1 ? '1 Kiste = 1 Stück' : `1 Kiste = ${fmtQty(per)} Stück`;
+  return `<div class="stack-card ${state}" data-act="stack-jiggle" role="img" aria-label="${fmtQty(total)} Stück auf Lager, als Kisten dargestellt">
+      <div class="stack-stage" style="--cols:${cols};--layers:${layers}">
+        <div class="stack-boxes">${boxes}</div>
+        <span class="stack-pallet"><i></i><i></i><i></i></span>
+        ${total <= 0 ? '<span class="stack-empty">Keine Kiste mehr da</span>' : ''}
+      </div>
+      <div class="stack-cap"><b>${fmtQty(total)} Stück</b><small>${total > 0 ? perTxt + (rest ? ' · letzte Kiste angebrochen' : '') : 'Zeit zum Nachbestellen'}</small></div>
+    </div>`;
+}
+
 /** Bestands-Ring: wie voll ist das Fach im Verhältnis zu Melde- und Maximalbestand? (nur wenn einer davon gesetzt ist) */
 function stockRing(m) {
   const min = +m.min_stock || 0; const max = +m.max_stock || 0; const total = Math.max(0, +m.total || 0);
@@ -2467,6 +2520,7 @@ function infosTab(m, tasks) {
     <div class="total-row"><b>GESAMTBESTAND</b><span class="${low ? 'red' : ''}" data-pop="tot:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span></div>
     </div>
     ${stockRing(m)}
+    ${boxStack(m)}
     ${m.kind === 'part' ? `<div class="reach-slot" data-reach>${reachMemo.has(m.id) ? reachHtml(m, reachMemo.get(m.id)) + agingHtml(m, reachMemo.get(m.id)) : ''}</div>` : ''}
     ${(m.fits || []).length ? `<div class="fits-view"><span class="fits-label">${icon('phone', 16, 2.2)} Passt für</span>${m.fits.map((f) => `<a class="chip fit" href="#/list?q=${encodeURIComponent(f)}">${esc(f)}</a>`).join('')}</div>` : ''}
     ${m.kind === 'part' ? `<div class="pairs-slot" data-pairs>${pairsHtml(m)}</div>` : ''}
