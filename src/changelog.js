@@ -5,6 +5,18 @@
 // =====================================================================
 export const CHANGELOG = [
   {
+    version: '1.5',
+    date: '2026-11-19',
+    title: 'Feinschliff',
+    items: [
+      { icon: 'sort', title: 'Standard-Sortierung', text: 'Im Menü unter „Neue Teile & Liste“ festlegen, wie die Teile-Liste sortiert ist – auch nach Chargennummer, auf- oder absteigend. Bleibt nach dem Schließen gespeichert.' },
+      { icon: 'plus', title: 'Vorgaben für neue Teile', text: 'Lagerort, Gruppe und Meldebestand sind beim Anlegen schon ausgefüllt – einstellbar im Menü.' },
+      { icon: 'eye', title: 'Einkaufspreise ausblenden', text: 'Einkaufspreise und Lagerwert werden unscharf, wenn jemand über die Schulter schaut. Antippen zeigt sie kurz.' },
+      { icon: 'sparkle', title: 'Neue Animationen', text: 'Bestand rollt wie ein Zähler, der Warenkorb hüpft, Zeilen gleiten beim Suchen, Fenster schieben die Seite nach hinten, Speichern zeigt ein Häkchen und beim Umbuchen fliegt eine Kiste.' },
+      { icon: 'swap', title: 'Wischen verbessert', text: '„Dazu buchen“ und „Löschen“ sitzen beim Durchwischen wieder mittig, und das Wischen läuft flüssiger.' },
+    ],
+  },
+  {
     version: '1.4',
     date: '2026-11-19',
     title: 'Schneller arbeiten',

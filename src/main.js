@@ -1020,7 +1020,7 @@ function valueCard(v, cu) {
   if (!(v.buy > 0)) return '';
   return `<a class="value-card" href="#/${v.missing ? 'prices' : 'stats'}" aria-label="${v.missing ? 'Fehlende Einkaufspreise nachtragen' : 'Lagerwert im Einkauf'}">
       <span class="v-ic">${icon('euro', 22, 2.2)}</span>
-      <div class="v-main"><small>Lagerwert (Einkauf)</small><b>${cu('value')} €</b>
+      <div class="v-main"><small>Lagerwert (Einkauf)</small><b class="ek">${cu('value')} €</b>
         <small>Bestand × Einkaufspreis${v.top ? ` · am meisten in „${esc(v.top.m.name)}“` : ''}</small>
         ${v.missing ? `<span class="v-todo">${icon('sparkle', 14, 2.2)} ${fmtQty(v.missing)} ${v.missing === 1 ? 'Preis' : 'Preise'} nachtragen</span>` : ''}</div>
       ${icon('chevR', 18)}
@@ -1293,7 +1293,10 @@ function setupQuickReorder(root) {
 // =====================================================================
 //  LISTEN (Material / Werkzeug / Warenkorb)
 // =====================================================================
-const listState = { charge: '', fav: false, ...JSON.parse(sessionStorage.getItem('wl-list') || '{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"number"}') };
+const SORT_OPTS = (charge = 'Chargennummer') => [['number', 'Artikelnummer (aufsteigend)'], ['number-desc', 'Artikelnummer (absteigend)'], ['name', 'Name A–Z'], ['name-desc', 'Name Z–A'],
+  ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert'], ...(charge ? [['charge', `${charge} (aufsteigend)`], ['charge-desc', `${charge} (absteigend)`]] : [])];
+const defaultSort = () => { try { return localStorage.getItem('ss-sort') || 'number'; } catch { return 'number'; } };
+const listState = { charge: '', fav: false, ...JSON.parse(sessionStorage.getItem('wl-list') || `{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"${defaultSort()}"}`) };
 const saveListState = () => {
   sessionStorage.setItem('wl-list', JSON.stringify(listState));
   // Änderungen IN der sichtbaren Liste (Suche, Reiter …) gehören zu ihr; Änderungen von außen erzwingen Neuaufbau
@@ -1520,6 +1523,9 @@ async function viewList(q) {
     else if (s === 'stock') f.sort((a, b) => a.total - b.total);
     else if (s === 'updated') f.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
     else if (s === 'charge') f.sort((a, b) => { const x = chargeOf(a); const y = chargeOf(b); return (!x) - (!y) || natCmp(x, y) || a.number - b.number; });
+    else if (s === 'charge-desc') f.sort((a, b) => { const x = chargeOf(a); const y = chargeOf(b); return (!x) - (!y) || natCmp(y, x) || a.number - b.number; });
+    else if (s === 'name-desc') f.sort((a, b) => b.name.localeCompare(a.name, 'de'));
+    else if (s === 'number-desc') f.sort((a, b) => b.number - a.number);
     else f.sort((a, b) => a.number - b.number);
     visible = f;
     const dev = listState.q && listState.tab === 'part' && f.length >= 2 ? deviceGroups(f) : null;
@@ -1727,7 +1733,7 @@ async function openFilter() {
       ${charges.length ? `<label class="frow"><span>${esc(fieldName)}</span>
         <select data-f="charge"><option value="">Alle</option>${charges.map((c) => `<option value="${esc(c)}" ${c.toLowerCase() === String(listState.charge).toLowerCase() ? 'selected' : ''}>${esc(c)} (${counts.get(c)})</option>`).join('')}</select></label>` : ''}
       <label class="frow"><span>Sortierung</span>
-        <select data-f="sort">${[['number', 'Artikelnummer'], ['name', 'Name A–Z'], ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert'], ...(charges.length ? [['charge', `${fieldName} (aufsteigend)`]] : [])]
+        <select data-f="sort">${SORT_OPTS(charges.length ? fieldName : '')
           .map(([v, l]) => `<option value="${v}" ${v === listState.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="frow switch-row"><span>Nur Favoriten</span><input type="checkbox" class="switch" data-f="fav" ${listState.fav ? 'checked' : ''}></label>
       <label class="frow switch-row"><span>Nur unter Meldebestand</span><input type="checkbox" class="switch" data-f="low" ${listState.low ? 'checked' : ''}></label>
@@ -1743,7 +1749,7 @@ async function openFilter() {
         saveListState(); close(); viewList({});
       };
       root.querySelector('[data-a=reset]').onclick = () => {
-        Object.assign(listState, { group: '', loc: '', sort: 'number', low: false, fav: false, charge: '' }); saveListState(); close(); viewList({});
+        Object.assign(listState, { group: '', loc: '', sort: defaultSort(), low: false, fav: false, charge: '' }); saveListState(); close(); viewList({});
       };
     },
   });
@@ -2902,7 +2908,7 @@ const movementRow = (x, showAfter = false, price = 0) => {
       ${x.note ? `<div class="mov-note">${icon('tag', 13, 2.2)}<span>${esc(x.note)}</span></div>` : ''}
       ${showAfter && x.stock_after != null ? `<div class="small muted">Gesamtbestand danach: ${fmtQty(x.stock_after)}</div>` : ''}</div>
     <div class="mov-right"><b class="${t.cls}-text">${sign}${fmtQty(x.qty)}</b><div class="small muted">${fmtDate(x.created_at)}</div>
-      ${x.type === 'out' && +price > 0 ? `<div class="mov-cost">≈ ${fmtEUR(Math.abs(+x.qty) * +price)}</div>` : ''}</div>
+      ${x.type === 'out' && +price > 0 ? `<div class="mov-cost ek">≈ ${fmtEUR(Math.abs(+x.qty) * +price)}</div>` : ''}</div>
   </div>`;
 };
 
@@ -2921,6 +2927,21 @@ function bookingTab(m, mov) {
 // ---------- Verkaufspreis-Rechner: Aufschlag auf den Einkaufspreis + Rundung ----------
 const MARKUP_KEY = 'ss-markup';
 const MARKUP_ROUND = { '0': 'nicht runden', '0.5': 'auf 0,50 €', '1': 'auf ganze Euro', '0.9': 'auf ,90 €' };
+// ---------- Einkaufspreise ausblenden (Einstellungen): Werte mit class="ek" werden unscharf, Tipp zeigt sie 5 Sek. ----------
+const hideEk = () => { try { return localStorage.getItem('ss-hide-ek') === '1'; } catch { return false; } };
+try { if (hideEk()) document.documentElement.classList.add('hide-ek'); } catch { /* egal */ }
+document.addEventListener('click', (e) => {
+  const t = e.target.closest?.('.ek, [data-ek-peek]');
+  const root = document.documentElement;
+  if (!t || !root.classList.contains('hide-ek') || root.classList.contains('ek-peek')) return;
+  e.preventDefault(); e.stopPropagation();
+  root.classList.add('ek-peek'); haptic('light');
+  clearTimeout(root._ekT); root._ekT = setTimeout(() => root.classList.remove('ek-peek'), 5000);
+}, true);
+
+// ---------- Vorgaben für neue Teile (Einstellungen) ----------
+const newDefaults = () => { const g = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } }; return { loc: g('ss-new-loc'), min: g('ss-new-min'), group: g('ss-new-group') }; };
+
 // ---------- Shop-Link: Bestellseite beim Lieferanten (liegt bei den eigenen Feldern → keine Datenbank-Änderung) ----------
 const SHOP_KEY = 'Shop-Link';
 function normUrl(v) {
@@ -2975,8 +2996,8 @@ function detailsTab(m, defs = []) {
       ${row('Artikelnummer', m.number, null)}
       ${row('Barcode', esc(m.barcode || '—'), 'barcode', m.barcode ? `<span class="icon-btn" data-act="copy-bc">${icon('copy', 22)}</span>` : '')}
       ${row('Einheit', esc(m.unit || '—'), 'unit')}
-      ${row('Verkaufspreis', fmtEUR(m.sale_price) + (() => { const g = marginInfo(m); return g ? ` <span class="margin-chip ${g.neg ? 'neg' : ''}">Marge ${fmtEUR(g.d)} · ${g.pct} %</span>` : ''; })(), 'sale_price')}
-      ${row('Einkaufspreis', m.purchase_price != null ? fmtEUR(m.purchase_price) : '—', 'purchase_price')}
+      ${row('Verkaufspreis', fmtEUR(m.sale_price) + (() => { const g = marginInfo(m); return g ? ` <span class="margin-chip ek ${g.neg ? 'neg' : ''}">Marge ${fmtEUR(g.d)} · ${g.pct} %</span>` : ''; })(), 'sale_price')}
+      ${row('Einkaufspreis', m.purchase_price != null ? `<span class="ek">${fmtEUR(m.purchase_price)}</span>${hideEk() ? ` <span class="ek-eye" data-ek-peek role="button" aria-label="Kurz anzeigen">${icon('eye', 18)}</span>` : ''}` : '—', 'purchase_price')}
       ${row('Buchungsart', esc(m.booking_type || 'Einheit'), 'booking_type')}
       ${row(m.kind === 'tool' ? 'Gruppe' : 'Ersatzteil Gruppe', esc(m.group_name || '—'), 'group')}
       ${row('Meldebestand', fmtQty(m.min_stock), 'min_stock')}
@@ -3283,7 +3304,7 @@ async function viewStats() {
       <section class="stats-kpis">
         <div class="stats-kpi"><span class="k-val red-text">${fmtQty(st.outQty)}</span><span class="k-label">Entnommen</span><span class="k-sub">${st.outCount} Buchungen</span></div>
         <div class="stats-kpi"><span class="k-val green-text">${fmtQty(st.inQty)}</span><span class="k-label">Dazu gebucht</span><span class="k-sub">ohne Anfangsbestand</span></div>
-        <div class="stats-kpi"><span class="k-val">${st.outValue ? fmtEUR(st.outValue) : '–'}</span><span class="k-label">Wert</span><span class="k-sub">der Entnahmen (Einkaufspreis)</span></div>
+        <div class="stats-kpi"><span class="k-val ek">${st.outValue ? fmtEUR(st.outValue) : '–'}</span><span class="k-label">Wert</span><span class="k-sub">der Entnahmen (Einkaufspreis)</span></div>
       </section>
 
       <h2 class="dash-sec">Verbrauchs-Kalender</h2>
@@ -3314,7 +3335,7 @@ async function viewStats() {
       ${st.slow.length ? `<p class="stats-note">Auf Lager, aber in diesem Zeitraum nie entnommen (${st.slow.length} Teile${st.slow.some((x) => x.value) ? `, gebundener Wert ${fmtEUR(st.slow.reduce((s, x) => s + x.value, 0))}` : ''}).</p>
       <section class="ios-list">
         ${st.slow.slice(0, 12).map((x) => `<a class="ios-row recent stats-row" href="#/m/${x.m.id}" data-id="${x.m.id}">
-            ${matLine(x.m)}<small>${locLabel(x.m)}${x.value ? ` · Wert ${fmtEUR(x.value)}` : ''}</small></span>
+            ${matLine(x.m)}<small>${locLabel(x.m)}${x.value ? ` · Wert <span class="ek">${fmtEUR(x.value)}</span>` : ''}</small></span>
             <span class="r-qty">${fmtQty(x.m.total)}</span>
           </a>`).join('')}
       </section>${more(st.slow, 12)}` : `<p class="stats-empty">${st.short ? 'Dafür reichen die Daten noch nicht: Ladenhüter zeigen sich erst, wenn Teile länger als der gewählte Zeitraum im Lager sind.' : 'Keine Ladenhüter in diesem Zeitraum.'}</p>`}
@@ -3482,9 +3503,10 @@ async function viewForm(id, q) {
   const kind = m?.kind || q.kind || 'part';
   const [locs, groups, allDefs] = await Promise.all([getLocs(), getGroups(), getFields()]);
   const showAll = localStorage.getItem('wl-form-all') === '1';
+  const nd = newDefaults();
   const st = {
-    location_id: m ? m.default_location_id : (localStorage.getItem('wl-last-loc') || locs[0]?.id || null),
-    group_id: m ? m.group_id : (q.group || (kind === 'tool' ? groups.find((g) => g.name === 'Werkzeug')?.id : null) || null),
+    location_id: m ? m.default_location_id : ((nd.loc && locs.some((l) => l.id === nd.loc) ? nd.loc : '') || localStorage.getItem('wl-last-loc') || locs[0]?.id || null),
+    group_id: m ? m.group_id : (q.group || (kind === 'tool' ? groups.find((g) => g.name === 'Werkzeug')?.id : null) || (kind === 'part' && nd.group && groups.some((g) => g.id === nd.group) ? nd.group : null) || null),
     images: [],
     defs: fieldsFor(allDefs, kind),
     defVals: {},
@@ -3514,7 +3536,7 @@ async function viewForm(id, q) {
         <button type="button" class="dark-btn sm" data-act="pick-loc" aria-label="Lagerort wählen">${icon('list', 26)}</button>
         <button type="button" class="dark-btn" data-act="scan-loc" aria-label="Lagerort scannen">${icon('scan', 30, 1.8)}</button></div>
       ${id ? '' : `<label class="field"><small>Aktueller Bestand</small><input name="qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Aktueller Bestand"></label>`}
-      <label class="field no-line"><small>Meldebestand</small><input name="min_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Meldebestand" value="${m && +m.min_stock ? v('min_stock') : ''}"></label>
+      <label class="field no-line"><small>Meldebestand</small><input name="min_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Meldebestand" value="${m && +m.min_stock ? v('min_stock') : (!m && kind === 'part' && +nd.min > 0 ? esc(nd.min) : '')}"></label>
       <label class="field"><small>Maximalbestand</small><input name="max_stock" type="number" inputmode="decimal" min="0" step="any" placeholder="Maximalbestand" value="${v('max_stock')}"></label>
       <div class="field fits-field"><small>Passt für</small>
         <div class="fits-box" data-fits></div>
@@ -4110,6 +4132,8 @@ const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* egal 
 async function viewSettings() {
   const flash = sessionStorage.getItem('ss-flash'); sessionStorage.removeItem('ss-flash');
   const user = await db.getUser();
+  const [setLocs, setGroups, setMats] = await Promise.all([getLocs().catch(() => []), getGroups().catch(() => []), getMats().catch(() => [])]);
+  const setChargeName = setMats.map(chargeKey).find(Boolean) || 'Chargennummer';
   const theme = localStorage.getItem('wl-theme') || '';
   const TONE = { info: 'blue', list: 'blue', wrench: 'indigo', cart: 'green', alert: 'red', shelf: 'teal', boxes: 'orange', tag: 'indigo', tally: 'primary', download: 'gray', upload: 'gray', refresh: 'red', logout: 'red' };
   const item = (ic, label, act, extra = '', cls = '', tone = '') => `<button class="set-row ${cls}" data-act="${act}"><i class="tone-${tone || TONE[ic] || 'primary'}">${icon(ic, 19)}</i><span>${label}</span>${extra || icon('chevR', 18)}</button>`;
@@ -4181,6 +4205,18 @@ async function viewSettings() {
         <label class="set-row"><i class="tone-orange">${icon('sparkle', 19)}</i><span>Animationen<small>Reduziert: ohne Konfetti & fliegende Bilder</small></span>
           <select data-set="ss-motion">${[['full', 'Voll'], ['reduced', 'Reduziert'], ['off', 'Aus']].map(([v, t]) => `<option value="${v}" ${pref('ss-motion', 'full') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       </div>
+      <p class="set-head">Neue Teile & Liste</p>
+      <div class="set-group">
+        <label class="set-row"><i class="tone-teal">${icon('shelf', 19)}</i><span>Lagerort<small>Vorgabe für neue Teile</small></span>
+          <select data-set="ss-new-loc"><option value="">Zuletzt benutzt</option>${setLocs.map((l) => `<option value="${l.id}" ${pref('ss-new-loc', '') === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-indigo">${icon('layers', 19)}</i><span>Gruppe<small>Vorgabe für neue Teile</small></span>
+          <select data-set="ss-new-group"><option value="">Keine</option>${setGroups.map((g) => `<option value="${g.id}" ${pref('ss-new-group', '') === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
+        <button class="set-row" data-act="new-min"><i class="tone-red">${icon('alert', 19)}</i><span>Meldebestand<small>Vorgabe für neue Teile</small></span><em class="set-val">${+pref('ss-new-min', '') > 0 ? esc(pref('ss-new-min', '')) : 'Keiner'}</em>${icon('chevR', 18)}</button>
+        <label class="set-row"><i class="tone-blue">${icon('sort', 19)}</i><span>Sortierung<small>Teile-Liste, bleibt gespeichert</small></span>
+          <select data-set="ss-sort">${SORT_OPTS(setChargeName).map(([v, t]) => `<option value="${v}" ${defaultSort() === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+        <label class="set-row"><i class="tone-orange">${icon('eye', 19)}</i><span>Einkaufspreise ausblenden<small>Unscharf in Listen & Übersicht – antippen zeigt sie kurz</small></span>
+          <input type="checkbox" class="switch" data-set-bool="ss-hide-ek" ${hideEk() ? 'checked' : ''}></label>
+      </div>
       <p class="set-head">Etiketten</p>
       <div class="set-group">
         <label class="set-row"><i class="tone-indigo">${icon('tag', 19)}</i><span>Firmenname auf Etiketten<small>Klein über dem Teilenamen</small></span>
@@ -4206,6 +4242,8 @@ async function viewSettings() {
     const key = sel.dataset.set; const prev = pref(key, ''); setPref(key, sel.value); haptic('light');
     if (key === 'ss-density') { document.documentElement.classList.toggle('dense', sel.value === 'compact'); toast(sel.value === 'compact' ? 'Listen kompakt' : 'Listen normal'); }
     if (key === 'ss-start') toast('Startseite gespeichert', 'ok', { sub: 'Gilt ab dem nächsten Öffnen der App' });
+    if (key === 'ss-sort') { listState.sort = sel.value; saveListState(); listKeep = null; toast('Sortierung gespeichert'); }
+    if (key === 'ss-new-loc' || key === 'ss-new-group') toast('Vorgabe gespeichert', 'ok', { sub: 'Gilt für neu angelegte Teile' });
     if (key === 'ss-motion') {
       const cl = document.documentElement.classList;
       cl.toggle('motion-reduced', sel.value === 'reduced'); cl.toggle('motion-off', sel.value === 'off');
@@ -4217,6 +4255,7 @@ async function viewSettings() {
   root.querySelectorAll('input[data-set-bool]').forEach((cb) => (cb.onchange = () => {
     const key = cb.dataset.setBool; setPref(key, cb.checked ? '1' : '0');
     if (key === 'ss-haptics' && cb.checked) haptic('success'); else haptic('light');
+    if (key === 'ss-hide-ek') { document.documentElement.classList.toggle('hide-ek', cb.checked); listKeep = null; }
     if (key === 'ss-quick-out' && cb.checked) toast('Schnellbuchen an', 'ok', { sub: 'Entnehmen = 1 Stück, mit Rückgängig' });
   }));
   on(root, 'label-brand', async () => {
@@ -4225,6 +4264,12 @@ async function viewSettings() {
     setPref('ss-label-brand', v.trim().slice(0, 40)); keepScrollOnce = window.scrollY; nextTransition = 'none'; viewSettings();
   });
   on(root, 'whats-new', () => whatsNew({ all: true }));
+  on(root, 'new-min', async () => {
+    const v = await prompt({ title: 'Standard-Meldebestand', message: 'Wird bei neuen Ersatzteilen schon eingetragen. Leer lassen = keiner.', value: pref('ss-new-min', ''), type: 'number', okText: 'Speichern' });
+    if (v === null) return;
+    const n = String(v).replace(',', '.').trim();
+    setPref('ss-new-min', +n > 0 ? n : ''); keepScrollOnce = window.scrollY; nextTransition = 'none'; viewSettings();
+  });
   on(root, 'tour', () => { go('/fav'); setTimeout(() => startTour(), 450); });
   on(root, 'label-preview', () => showLabel({ title: 'iPhone 13 Display OLED', sub: 'Nr. 101', extra: 'Kleinteilemagazin', code: '101' }));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
@@ -4274,9 +4319,9 @@ async function viewSettings() {
         title: 'Lager Informationen',
         html: `
           <div class="stat-rows">
-            <div class="stat-row"><span>Ersatzteile Wert Einkauf</span><b>${fmtEUR(buy)}</b></div>
+            <div class="stat-row"><span>Ersatzteile Wert Einkauf</span><b class="ek">${fmtEUR(buy)}</b></div>
             <div class="stat-row"><span>Ersatzteile Wert Verkauf</span><b>${fmtEUR(sell)}</b></div>
-            ${buy > 0 && sell > 0 ? `<div class="stat-row muted-row"><span>Möglicher Rohertrag</span><b>${fmtEUR(sell - buy)}</b></div>` : ''}
+            ${buy > 0 && sell > 0 ? `<div class="stat-row muted-row"><span>Möglicher Rohertrag</span><b class="ek">${fmtEUR(sell - buy)}</b></div>` : ''}
           </div>
           <p class="stat-note">${fmtQty(parts.length)} Ersatzteile · ${fmtQty(units)} Stück auf Lager${tools.length ? ` · ${fmtQty(tools.length)} Werkzeuge` : ''}</p>
           ${noBuy || noSell ? `<p class="stat-note warn">${[noBuy ? `${noBuy} Teile ohne Einkaufspreis` : '', noSell ? `${noSell} ohne Verkaufspreis` : ''].filter(Boolean).join(' · ')} – diese zählen mit 0 €.</p>` : ''}`,
