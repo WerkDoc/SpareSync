@@ -1178,12 +1178,38 @@ async function viewFav() {
   on(root, 'theme', toggleTheme);
   // Herunterziehen öffnet die Spotlight-Suche (Aktualisieren: Menü → Neu laden, oder in „Teile“ herunterziehen)
   setupPullToSearch(root, openSpotlight);
-  on(root, 'scan', async () => {
-    const code = await scan(); if (!code) return;
-    const m = await db.findByCode(code);
-    if (m) { foundToast(m); go(`/m/${m.id}`); }
-    else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
-  });
+  on(root, 'scan', (b) => scanMenu(b));
+}
+
+// ---------- Scanner-Knopf: Menü im Bogen wie beim + (Scannen, Scannen & entnehmen, Code eintippen, Verlauf) ----------
+async function openByCode(code) {
+  code = String(code || '').trim(); if (!code) return;
+  const m = await db.findByCode(code);
+  if (m) { foundToast(m); go(`/m/${m.id}`); }
+  else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
+}
+async function scanMenu(b) {
+  const items = [
+    { label: 'Scannen', value: 'scan', icon: 'scan', tone: 'primary' },
+    { label: 'Scannen & entnehmen', value: 'out', icon: 'bookOut', tone: 'red' },
+    { label: 'Code eintippen', value: 'type', icon: 'edit', tone: 'indigo' },
+    { label: 'Scan-Verlauf', value: 'hist', icon: 'clock', tone: 'teal' },
+  ];
+  const v = b?.getBoundingClientRect && !reduceMotion.matches ? await speedDial(b, items)
+    : await actionSheet('Scanner', items);
+  if (v === 'scan') { const code = await scan(); if (code) openByCode(code); }
+  if (v === 'out') go('/pick?mode=out&scan=1');
+  if (v === 'hist') go('/scans');
+  if (v === 'type') {
+    const code = await prompt({ title: 'Code eintippen', message: 'Barcode, Artikelnummer oder Name', placeholder: 'z. B. 101 oder 4061234567890', okText: 'Suchen' });
+    if (!code || !code.trim()) return;
+    if (await db.findByCode(code)) return openByCode(code);
+    // Kein genauer Treffer → wie die Suche (auch mit Tippfehlern): ein Treffer öffnet direkt, sonst die Liste
+    const hits = filterMats((await getMats()), { q: code.trim() });
+    if (hits.length === 1) { foundToast(hits[0]); go(`/m/${hits[0].id}`); }
+    else if (hits.length) go(`/list?tab=part&q=${encodeURIComponent(code.trim())}`);
+    else openByCode(code);
+  }
 }
 
 /** Easter Egg: fünfmal schnell aufs Logo tippen → das S dreht sich wie ein Zahnrad, Zahnräder regnen */
@@ -1709,12 +1735,7 @@ async function viewList(q) {
     if (v === 'part' || v === 'tool') go(`/new?kind=${v}`);
     if (v === 'grp') go('/groups'); if (v === 'loc') go('/locations');
   });
-  on(root, 'scan', async () => {
-    const code = await scan(); if (!code) return;
-    const m = await db.findByCode(code);
-    if (m) { foundToast(m); go(`/m/${m.id}`); }
-    else if (await confirmBox({ title: 'Nicht gefunden', message: `Kein Material mit Code „${code}“. Jetzt anlegen?`, okText: 'Anlegen' })) go(`/new?kind=part&barcode=${encodeURIComponent(code)}`);
-  });
+  on(root, 'scan', (b) => scanMenu(b));
   on(root, 'filter', () => openFilter());
 }
 
@@ -4463,7 +4484,7 @@ const verCmp = (a, b) => { const x = String(a).split('.').map(Number); const y =
 // =====================================================================
 const TOUR_KEY = 'ss-tour-done';
 const TOUR_STEPS = [
-  { route: '/fav', sel: '.dash-nav [data-act=scan]', title: 'Scannen', text: 'Barcode oder QR-Code am Teil scannen – SpareSync öffnet sofort das passende Teil.' },
+  { route: '/fav', sel: '.dash-nav [data-act=scan]', title: 'Scannen', text: 'Antippen öffnet das Scanner-Menü: scannen, direkt entnehmen, Code eintippen oder den Scan-Verlauf ansehen.', since: '1.6' },
   { route: '/fav', sel: '.widgets', title: 'Dein Lager auf einen Blick', text: 'Knappe Teile, Warenkorb und Lagerwert. Antippen öffnet die passende Liste.' },
   { route: '/fav', sel: '.quick-grid', title: 'Schnellaktionen', text: 'Dazu buchen, Entnehmen oder ein Teil per Scan finden – jeweils mit einem Tipp.' },
   { route: '/fav', sel: '.dash-nav', title: 'Suche', text: 'Auf der Übersicht einfach nach unten ziehen – die Suche öffnet sich mit deinen zuletzt angesehenen Teilen.', since: '1.4' },

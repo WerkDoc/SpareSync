@@ -5,6 +5,15 @@
 // =====================================================================
 export const CHANGELOG = [
   {
+    version: '1.6',
+    date: '2026-11-19',
+    title: 'Scanner-Menü',
+    items: [
+      { icon: 'scan', title: 'Scanner-Menü', text: 'Der Scanner-Knopf fächert jetzt wie das + ein Menü auf: Scannen, Scannen & entnehmen, Code eintippen und Scan-Verlauf.', tour: true },
+      { icon: 'cart', title: 'Warenkorb aus der Liste', text: 'Ein Teil, das du per Gedrückt-Halten in den Warenkorb legst, erscheint jetzt sofort dort.' },
+    ],
+  },
+  {
     version: '1.5',
     date: '2026-11-19',
     title: 'Feinschliff',
