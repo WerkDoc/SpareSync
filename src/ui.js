@@ -132,7 +132,7 @@ export function toast(msg, type = 'ok', opt = {}) {
   const prev = document.querySelector('.toast');
   if (prev) { prev._finish?.(); prev.remove(); clearTimeout(toastTimer); clearTimeout(toastHide); }
   const t = document.createElement('div');
-  t.className = `toast ${type}${opt.action ? ' has-action' : ''}`;
+  t.className = `toast ${type}${opt.action ? ' has-action' : ''}${opt.cls ? ` ${opt.cls}` : ''}`;
   t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite');
   const ic = opt.icon || (type === 'err' ? 'alert' : type === 'info' ? 'info' : 'check');
   const dur = opt.duration ?? (opt.action ? 5000 : type === 'err' ? 3500 : 2400);
@@ -1506,3 +1506,32 @@ export async function flipCard({ title, sub = '', img = '', code, number = '' })
   el.querySelector('.flip-dim').onclick = () => { if (!fresh()) close(); };
   el.querySelector('.flip-hint').onclick = () => { if (!fresh()) close(); };
 }
+
+// ---------- Plus/Minus gedrückt halten: zählt immer schneller (Mengen-Stepper) ----------
+// Gilt für Stepper-Knöpfe mit data-s (Buchen) und data-c (Etiketten); Warenkorb nicht (jeder Tipp speichert sofort).
+(() => {
+  let timer = null; let btn = null; let fired = 0; let suppress = 0;
+  const stop = () => { clearTimeout(timer); timer = null; if (btn) btn.classList.remove('repeating'); btn = null; };
+  document.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest?.('.stepper button[data-s], .stepper button[data-c]');
+    if (!b || e.button > 0) return;
+    stop(); btn = b; fired = 0;
+    const step = () => {
+      if (!btn || !btn.isConnected || btn.disabled) return stop();
+      btn.click(); fired++; btn.classList.add('repeating');
+      if (fired % 2 === 0) haptic('light');
+      timer = setTimeout(step, Math.max(45, 190 - fired * 14));   // wird immer schneller
+    };
+    timer = setTimeout(step, 420);
+  }, true);
+  const release = () => { if (btn && fired) suppress = Date.now(); stop(); };
+  ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, release, true));
+  document.addEventListener('pointerleave', (e) => { if (e.target === btn) release(); }, true);
+  window.addEventListener('blur', release);
+  // Der normale Klick nach dem Loslassen soll nicht noch einmal zählen
+  document.addEventListener('click', (e) => {
+    if (!suppress || Date.now() - suppress > 400 || !e.isTrusted) return;
+    if (e.target.closest?.('.stepper button[data-s], .stepper button[data-c]')) { e.preventDefault(); e.stopImmediatePropagation(); suppress = 0; }
+  }, true);
+  document.addEventListener('contextmenu', (e) => { if (e.target.closest?.('.stepper button')) e.preventDefault(); }, true);
+})();

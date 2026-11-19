@@ -48,6 +48,7 @@ const P = {
   cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11.5L21 6H6"/>',
   euro: '<path d="M17.5 6.5A7 7 0 1 0 17.5 17.5"/><path d="M4 10.5h9M4 13.5h9"/>',
   chevR: '<path d="m9 6 6 6-6 6"/>',
+  cloudOff: '<path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.5 4.5 0 0 0 7 18z"/><path d="m3 3 18 18"/>',
   chevL: '<path d="m15 6-6 6 6 6"/>',
   chevD: '<path d="m6 9 6 6 6-6"/>',
   chevU: '<path d="m6 15 6-6 6 6"/>',

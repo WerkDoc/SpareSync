@@ -2938,3 +2938,52 @@ html.guest-enter body { transition: opacity .4s ease, filter .4s ease; opacity: 
 .crow { max-height: 200px; }
 .cart-sel .sb-act { flex-direction: row; gap: 8px; font-size: 15px; height: 50px; }
 @media (prefers-reduced-motion: reduce) { .crow.crow-out { animation: none; opacity: 0; } }
+
+/* =====================================================================
+   KLEINE ANIMATIONEN
+   ===================================================================== */
+/* Aufgaben: Häkchen wird gemalt, Text sanft durchgestrichen */
+.task label { position: relative; cursor: pointer; }
+.task input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.tk-box { width: 24px; height: 24px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--sep-strong, #c7c7cc); display: grid; place-items: center; transition: background .25s, border-color .25s, transform .3s cubic-bezier(.34, 1.6, .64, 1); }
+.tk-box svg { width: 16px; height: 16px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 20; stroke-dashoffset: 20; }
+.task input:checked + .tk-box { background: var(--green); border-color: var(--green); }
+.task input:checked + .tk-box svg { stroke-dashoffset: 0; }
+.task.tk-anim input:checked + .tk-box { animation: tk-pop .45s cubic-bezier(.34, 1.6, .64, 1); }
+.task.tk-anim input:checked + .tk-box svg { transition: stroke-dashoffset .35s ease .1s; stroke-dashoffset: 0; }
+@keyframes tk-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: none; } }
+.task input:focus-visible + .tk-box { outline: 2px solid var(--primary); outline-offset: 2px; }
+.task label span { background: linear-gradient(currentColor, currentColor) no-repeat 0 55% / 0 1.5px; transition: color .3s, background-size .35s ease; }
+.task input:checked ~ span { text-decoration: none; color: var(--text-2); background-size: 100% 1.5px; }
+.task.tk-anim input:checked ~ span { transition-delay: .15s; }
+:root[data-style="neu"] .tk-box { border: 0; background: var(--neu); box-shadow: var(--press-s); }
+:root[data-style="neu"] .task input:checked + .tk-box { background: var(--green); box-shadow: 2px 2px 5px color-mix(in srgb, var(--green) 40%, var(--neu-sh)); }
+
+/* Ganz durchwischen: Symbol wird größer und wandert mit zum Rand */
+.swipe-btn svg { transition: transform .25s cubic-bezier(.34, 1.6, .64, 1); }
+.swipe-under.full > .swipe-btn.main svg { transform: scale(1.25); }
+.swipe-under.swipe-left.full > .swipe-btn.main { justify-content: flex-start; padding-left: 26px; }
+.swipe-under.swipe-right.full > .swipe-btn.main { justify-content: flex-end; padding-right: 26px; }
+
+/* Tab-Symbol hüpft */
+.tab svg.tab-hop { animation: tab-hop .45s cubic-bezier(.34, 1.7, .5, 1); }
+@keyframes tab-hop { 0% { transform: none; } 35% { transform: translateY(-6px) scale(1.12); } 65% { transform: translateY(1px) scale(.96, 1.04); } 100% { transform: none; } }
+
+/* Meldebestand erreicht: Zeile pulsiert einmal rot */
+.lp-glow { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+  background: color-mix(in srgb, var(--red) 18%, transparent); box-shadow: inset 4px 0 0 var(--red), inset 0 0 0 1.5px color-mix(in srgb, var(--red) 55%, transparent);
+  animation: low-pulse 2.4s ease-out forwards; }
+@keyframes low-pulse { 0% { opacity: 0; } 12% { opacity: 1; } 35% { opacity: .35; } 52% { opacity: 1; } 100% { opacity: 0; } }
+
+/* Offline-Wolke & „Wieder online“ */
+.offline-badge .off-cloud { display: grid; animation: off-float 2.4s ease-in-out infinite; }
+@keyframes off-float { 50% { transform: translateY(-2px); } }
+.toast.di-sync .di-ic svg { animation: di-spin .9s cubic-bezier(.4, 0, .2, 1) 2; }
+@keyframes di-spin { to { transform: rotate(360deg); } }
+
+/* Gedrückt halten zählt schneller */
+.stepper button.repeating { transform: scale(.92); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-box, .task label span, .tab svg.tab-hop, .lp-glow, .offline-badge .off-cloud, .toast.di-sync .di-ic svg { animation: none !important; transition: none !important; }
+}
