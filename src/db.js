@@ -553,10 +553,18 @@ export async function book({ material_id, type, qty, location_id, to_location_id
   if (!(qty >= 0)) throw new Error('Ungültige Menge');
   if (type !== 'inventory' && qty === 0) throw new Error('Menge muss größer 0 sein');
   if (!isDemo) {
-    const { data, error } = await sb.rpc('lager_book', {
-      p_material: material_id, p_type: type, p_qty: qty, p_location: location_id, p_to_location: to_location_id, p_note: note || null,
-    });
-    fail(error); return +data;
+    const args = { material_id, type, qty, location_id, to_location_id, note };
+    const queueable = type === 'in' || type === 'out' || type === 'transfer';
+    if (queueable && (!navigator.onLine || offlineState.active)) return queueBooking(args);
+    try {
+      const { data, error } = await sb.rpc('lager_book', {
+        p_material: material_id, p_type: type, p_qty: qty, p_location: location_id, p_to_location: to_location_id, p_note: note || null,
+      });
+      fail(error); return +data;
+    } catch (e) {
+      if (queueable && isNetError(e)) return queueBooking(args);   // Netz weg mitten im Buchen → merken
+      throw e;
+    }
   }
   const s = load();
   const row = (loc) => {
@@ -953,6 +961,62 @@ function withOffline(key, fn, fallback) {
     }
   };
 }
+// ---------- Offline buchen: Warteschlange auf dem Gerät, wird bei Netz nachgeschickt ----------
+const QUEUE_KEY = 'ss-offline-queue';
+export function offlineQueue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; } }
+function saveQueue(q) { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch { /* voll */ } window.dispatchEvent(new CustomEvent('ss-queue', { detail: { count: q.length } })); }
+export const lastBook = { queued: false };
+/** Buchung offline merken und den Bestand in der lokalen Kopie gleich mitrechnen. Liefert den neuen Gesamtbestand. */
+function queueBooking(a) {
+  const c = cacheRead('materials');
+  const mats = c?.data || [];
+  const m = mats.find((x) => x.id === a.material_id);
+  if (!m) throw new Error('Offline – dieses Teil ist noch nicht auf dem Gerät gespeichert. Bitte mit Internet buchen.');
+  const locName = (id) => (cacheRead('locations')?.data || []).find((l) => l.id === id)?.name || '?';
+  const slot = (id) => { let r = m.locations.find((x) => x.location_id === id); if (!r) { r = { location_id: id, name: locName(id), qty: 0 }; m.locations.push(r); } return r; };
+  const from = slot(a.location_id);
+  if ((a.type === 'out' || a.type === 'transfer') && from.qty < a.qty) throw new Error(`Nicht genug Bestand an diesem Lagerort (verfügbar: ${from.qty})`);
+  if (a.type === 'transfer' && (!a.to_location_id || a.to_location_id === a.location_id)) throw new Error('Bitte einen anderen Ziel-Lagerort wählen');
+  if (a.type === 'in') from.qty += a.qty;
+  else if (a.type === 'out') from.qty -= a.qty;
+  else { from.qty -= a.qty; slot(a.to_location_id).qty += a.qty; }
+  m.total = m.locations.reduce((s, x) => s + (+x.qty || 0), 0);
+  try { localStorage.setItem(OFF + 'materials', JSON.stringify({ t: c.t, data: mats })); localStorage.removeItem(OFF + `mat:${m.id}`); } catch { /* egal */ }
+  const when = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const q = offlineQueue();
+  q.push({ id: `q${Date.now()}${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), name: m.name, number: m.number, status: 'wait',
+    args: { ...a, note: [a.note, `offline erfasst ${when}`].filter(Boolean).join(' · ').slice(0, 200) } });
+  saveQueue(q);
+  lastBook.queued = true; setTimeout(() => { lastBook.queued = false; }, 0);
+  return m.total;
+}
+let flushing = null;
+/** Wartende Buchungen nachschicken. Ergebnis: { sent, failed, left } */
+export function flushQueue() {
+  if (flushing) return flushing;
+  flushing = (async () => {
+    let q = offlineQueue(); let sent = 0; let failed = 0;
+    if (isDemo || !q.some((x) => x.status === 'wait') || !navigator.onLine) return { sent, failed, left: q.length };
+    for (const item of q.filter((x) => x.status === 'wait')) {
+      const a = item.args;
+      try {
+        const { error } = await sb.rpc('lager_book', { p_material: a.material_id, p_type: a.type, p_qty: a.qty, p_location: a.location_id, p_to_location: a.to_location_id, p_note: a.note || null });
+        if (error) throw error;
+        localBooks.push({ material_id: a.material_id, type: a.type, at: Date.now() });
+        q = q.filter((x) => x.id !== item.id); sent++;
+      } catch (e) {
+        if (isNetError(e)) break;                                    // Netz wieder weg → später weiter
+        item.status = 'fail'; item.error = e?.message || String(e); failed++;
+      }
+      saveQueue(q);
+    }
+    return { sent, failed, left: q.length };
+  })().finally(() => { flushing = null; });
+  return flushing;
+}
+export function retryQueued(id) { const q = offlineQueue(); q.forEach((x) => { if (!id || x.id === id) { x.status = 'wait'; delete x.error; } }); saveQueue(q); }
+export function dropQueued(id) { saveQueue(offlineQueue().filter((x) => x.id !== id)); }
+
 // Lese-Funktionen mit Offline-Kopie versehen (die exportierten Namen bleiben gleich)
 listMaterials = withOffline('materials', listMaterials);
 listGroups = withOffline('groups', listGroups);
