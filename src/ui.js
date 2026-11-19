@@ -291,11 +291,41 @@ export function sheet(html, { title = '', onMount } = {}) {
       <div class="bsheet-body">${html}</div>
     </div>`);
   el.querySelectorAll('[data-a=x]').forEach((b) => (b.onclick = close));
+  // Seite dahinter rückt nach hinten; beim Schließen (Klasse „show“ fällt weg oder Fenster verschwindet) wieder nach vorn
+  recede(true);
+  let back = true; let seen = false;
+  const front = () => { if (back) { back = false; recede(false); } };
+  const ob = new MutationObserver(() => {
+    if (el.classList.contains('show')) seen = true;
+    else if (seen) { ob.disconnect(); front(); }
+  });
+  ob.observe(el, { attributes: true, attributeFilter: ['class'] });
+  watchGone(el, () => { ob.disconnect(); front(); });
   const sh = el.querySelector('.bsheet');
   // Wegwischen wirkt wie ein Tipp auf den Hintergrund (damit auch Auswahl-Dialoge sauber „abbrechen“)
   enableSwipeDown(sh, () => el.querySelector('.backdrop').click());
   onMount?.(sh, close);
   return close;
+}
+
+// Fenster offen → Seite dahinter rückt leicht nach hinten (wie bei iOS). Zählt verschachtelte Fenster mit.
+let recedeN = 0;
+function recede(on) {
+  const main = document.querySelector('#app > .screen > .content, .screen > .content');
+  recedeN = Math.max(0, recedeN + (on ? 1 : -1));
+  const root = document.documentElement;
+  if (recedeN > 0 && on && recedeN === 1 && main) {
+    const top = main.getBoundingClientRect().top;
+    main.style.transformOrigin = `50% ${Math.round(innerHeight / 2 - top)}px`;
+    root.classList.add('page-back');
+  } else if (recedeN === 0 && root.classList.contains('page-back')) {
+    root.classList.add('page-fwd'); root.classList.remove('page-back');
+    clearTimeout(recede.t); recede.t = setTimeout(() => root.classList.remove('page-fwd'), 420);
+  }
+}
+function watchGone(el, fn) {
+  const ob = new MutationObserver(() => { if (!el.isConnected) { ob.disconnect(); fn(); } });
+  ob.observe(document.body, { childList: true });
 }
 
 // ---------- Auswahl-Liste mit Suche ----------
@@ -806,9 +836,25 @@ const popMemo = new Map();
 export function popChanged(root) {
   root.querySelectorAll('[data-pop]').forEach((el) => {
     const k = el.dataset.pop; const v = el.dataset.v;
-    if (popMemo.has(k) && popMemo.get(k) !== v) pop(el);
+    if (popMemo.has(k) && popMemo.get(k) !== v) {
+      if (k.startsWith('list:') && rollNumber(el, popMemo.get(k), v)) { /* rollt */ } else pop(el);
+    }
     popMemo.set(k, v);
   });
+}
+/** Zahl in „[3]“ rollt wie ein Kilometerzähler auf den neuen Wert (mehr = nach oben, weniger = nach unten) */
+function rollNumber(el, oldV, newV) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !el.animate) return false;
+  const txt = el.textContent; const m = txt.match(/^(\D*)([\d.,]+)(\D*)$/);
+  if (!m) return false;
+  const fmt = (v) => String(+v).replace('.', ',');
+  const up = +newV > +oldV;
+  el.innerHTML = `${m[1]}<span class="roll"><span class="roll-in"><span>${up ? fmt(oldV) : m[2]}</span><span>${up ? m[2] : fmt(oldV)}</span></span><span class="roll-w">${m[2].length >= fmt(oldV).length ? m[2] : fmt(oldV)}</span></span>${m[3]}`;
+  const inner = el.querySelector('.roll-in');
+  inner.animate(up ? [{ transform: 'translateY(0)' }, { transform: 'translateY(-50%)' }] : [{ transform: 'translateY(-50%)' }, { transform: 'translateY(0)' }],
+    { duration: 520, easing: 'cubic-bezier(.3, 1.35, .5, 1)', fill: 'forwards' }).onfinish = () => { el.textContent = txt; };
+  el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }], { duration: 520, easing: 'ease-out' });
+  return true;
 }
 
 /** Natives iOS-Erfolgs-HUD: dunkles, unscharfes Quadrat mit animiertem Haken; blendet nach 1,5 s aus */

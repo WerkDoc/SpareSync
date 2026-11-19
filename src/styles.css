@@ -3085,3 +3085,34 @@ html.tour-on .tabbar { pointer-events: none; }
 /* Beim Wischen kein „Gedrückt“-Effekt auf der Zeile (sonst flackert sie, während der Finger liegt) */
 :root[data-style="neu"] .mrow.swipe-open::after { opacity: 0 !important; transition: none; }
 :root[data-style="neu"] .mrow.swipe-open:active { border-bottom-color: var(--sep); }
+
+/* =====================================================================
+   ANIMATIONEN 2
+   ===================================================================== */
+/* Bestand rollt wie ein Kilometerzähler */
+.roll { position: relative; display: inline-block; overflow: hidden; vertical-align: bottom; height: 1.2em; line-height: 1.2em; }
+.roll-in { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-direction: column; text-align: center; }
+.roll-in > span { height: 1.2em; }
+.roll-w { visibility: hidden; }
+
+/* Karten-Effekt: Seite rückt hinter Fenstern leicht nach hinten */
+html.page-back .screen > .content, html.page-fwd .screen > .content { transition: transform .38s cubic-bezier(.3, .9, .3, 1), filter .38s ease, border-radius .38s; }
+html.page-back .screen > .content { transform: translate3d(0, calc(var(--fy, 0px) * -1), 0) scale(.955); border-radius: 18px; filter: brightness(.93); }
+@media (prefers-reduced-motion: reduce) { html.page-back .screen > .content { transform: none; } }
+
+/* Speichern-Knopf wird zum Häkchen */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+button[type=submit].save-busy { position: relative; color: transparent !important; }
+button[type=submit].save-busy::after { content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, .45); border-top-color: #fff; animation: save-spin .7s linear infinite; }
+@keyframes save-spin { to { transform: rotate(360deg); } }
+button[type=submit].save-done { width: 54px !important; min-width: 0; height: 54px; padding: 0; margin-left: auto; margin-right: auto; display: grid; place-items: center; border-radius: 50%;
+  background: var(--green) !important; opacity: 1 !important; transition: width .35s cubic-bezier(.3, .9, .3, 1), border-radius .35s, background .25s; animation: save-pop .5s cubic-bezier(.34, 1.6, .64, 1) .2s both; }
+.save-ok { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 22; stroke-dashoffset: 22; animation: save-draw .35s ease .25s forwards; }
+@keyframes save-draw { to { stroke-dashoffset: 0; } }
+@keyframes save-pop { 0% { transform: scale(.85); } 60% { transform: scale(1.1); } 100% { transform: none; } }
+
+/* Umbuchen: fliegende Kiste */
+.fly-box { position: fixed; left: 0; top: 0; z-index: 120; display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 12px 0 9px; border-radius: 18px; pointer-events: none;
+  color: #fff; background: var(--primary); box-shadow: 0 10px 24px -6px rgba(0, 0, 0, .35); font-weight: 800; font-size: 15px; }
+:root[data-style="neu"] .fly-box { background: var(--neu-grad); }

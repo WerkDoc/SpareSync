@@ -1361,6 +1361,73 @@ async function refreshKeptList(k) {
   }
 }
 /** Eine einzelne Zeile der aufgehobenen Liste aktualisieren (z. B. nach frischem Stand auf der Detailseite) */
+// ---------- Umbuchen: kleine Kiste fliegt im Bogen vom alten zum neuen Lagerort (Teile-Seite) ----------
+async function flyTransfer(fromId, toId, qty) {
+  if (reduceMotion.matches) return;
+  const find = (id) => [...document.querySelectorAll(`.loc-row[data-loc="${id}"]`)].find((x) => x.offsetParent);
+  let a = null; let b = null;
+  for (let k = 0; k < 15 && !(a && b); k++) { await new Promise((r) => setTimeout(r, 80)); a = find(fromId); b = find(toId); }
+  if (!a || !b) return;
+  const ra = a.getBoundingClientRect(); const rb = b.getBoundingClientRect();
+  if (ra.bottom < 0 || rb.top > innerHeight) return;
+  const box = document.createElement('div');
+  box.className = 'fly-box'; box.innerHTML = `${icon('box', 20, 2.2)}<b>${fmtQty(qty)}</b>`;
+  document.body.appendChild(box);
+  const x0 = ra.right - 70; const y0 = ra.top + ra.height / 2 - 18; const x1 = rb.right - 70; const y1 = rb.top + rb.height / 2 - 18;
+  const lift = Math.min(90, 30 + Math.abs(y1 - y0) * 0.4);
+  const anim = box.animate([
+    { transform: `translate(${x0}px, ${y0}px) scale(.6)`, opacity: 0 },
+    { transform: `translate(${x0 + 30}px, ${y0 - lift * 0.6}px) scale(1.05)`, opacity: 1, offset: 0.25 },
+    { transform: `translate(${(x0 + x1) / 2 + 46}px, ${Math.min(y0, y1) - lift}px) scale(1.1) rotate(8deg)`, opacity: 1, offset: 0.55 },
+    { transform: `translate(${x1}px, ${y1}px) scale(.95)`, opacity: 1, offset: 0.9 },
+    { transform: `translate(${x1}px, ${y1}px) scale(.5)`, opacity: 0 },
+  ], { duration: 900, easing: 'cubic-bezier(.4, 0, .3, 1)' });
+  a.animate([{ background: 'color-mix(in srgb, var(--primary) 12%, transparent)' }, { background: 'transparent' }], { duration: 600 });
+  anim.onfinish = () => {
+    box.remove(); haptic('light');
+    b.animate([{ background: 'color-mix(in srgb, var(--green) 22%, transparent)' }, { background: 'transparent' }], { duration: 900, easing: 'ease-out' });
+  };
+}
+
+// ---------- Warenkorb-Hüpfer: ist seit dem letzten Blick etwas dazugekommen, hüpft der Wagen ----------
+let cartSeenN = null;
+function cartHop(root, n) {
+  const b = root.querySelector('.segment [data-tab="cart"]'); if (!b) return;
+  const prev = cartSeenN; cartSeenN = n;
+  if (prev == null || n <= prev || reduceMotion.matches) return;
+  const ic = b.querySelector('svg'); const num = b.querySelector('.cart-n');
+  setTimeout(() => {
+    ic?.animate([{ transform: 'none' }, { transform: 'translateY(-7px) rotate(-12deg)' }, { transform: 'translateY(0) rotate(6deg) scale(1.05,.92)' }, { transform: 'none' }], { duration: 620, easing: 'cubic-bezier(.3,1.5,.5,1)' });
+    if (num) {
+      let v = prev; const step = () => { v++; num.textContent = `(${v})`; num.animate([{ transform: 'translateY(-40%)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 180, easing: 'ease-out' }); if (v < n) setTimeout(step, 110); };
+      num.textContent = `(${prev})`; setTimeout(step, 160);
+    }
+  }, 380);
+}
+
+// ---------- Zeilen gleiten beim Suchen/Sortieren an ihren neuen Platz (FLIP) ----------
+function flipBefore(box) {
+  const rows = box.querySelectorAll('.mrow[data-id]');
+  if (!rows.length || rows.length > 400) return null;
+  const vh = innerHeight; const pos = new Map();
+  rows.forEach((r) => { const t = r.getBoundingClientRect().top; if (t > -200 && t < vh + 200) pos.set(r.dataset.id, t); });
+  return pos;
+}
+function flipAfter(box, before) {
+  if (!before?.size) return;
+  const vh = innerHeight; let n = 0;
+  box.querySelectorAll('.mrow[data-id]').forEach((r) => {
+    const t = r.getBoundingClientRect().top;
+    if (t > vh + 100 || t < -150 || n > 24) return;
+    const was = before.get(r.dataset.id);
+    n++;
+    if (was == null) { r.animate([{ opacity: 0, transform: 'scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'ease-out', delay: 60 }); return; }
+    const dy = was - t;
+    if (Math.abs(dy) < 2) return;
+    r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  });
+}
+
 function patchListRow(m) {
   const row = listKeep?.el.querySelector(`.mrow[data-id="${m.id}"]`);
   if (!row) return;
@@ -1403,7 +1470,7 @@ async function viewList(q) {
       <div class="segment seg-icons">
         <button data-tab="part" class="${tab === 'part' ? 'on' : ''}">${icon('dolly', 22)} (${parts.length})</button>
         <button data-tab="tool" class="${tab === 'tool' ? 'on' : ''}">${icon('tools', 22)} (${tools.length})</button>
-        <button data-tab="cart" class="${tab === 'cart' ? 'on' : ''}">${icon('cart', 22)} (${cart.length})</button>
+        <button data-tab="cart" class="${tab === 'cart' ? 'on' : ''}">${icon('cart', 22)} <span class="cart-n">(${cart.length})</span></button>
       </div>
       ${activeFilters ? `<div class="chips">
         ${listState.group ? `<button class="chip" data-clear="group">${esc((await getGroups()).find((g) => g.id === listState.group)?.name || 'Gruppe')} ${icon('x', 14)}</button>` : ''}
@@ -1419,6 +1486,7 @@ async function viewList(q) {
   listKeep = { el: root, mats, cart: cache.cart, state: JSON.stringify(listState) };
 
   const rows = root.querySelector('#rows');
+  cartHop(root, cart.length);
   // Mehrfachauswahl (Auswählen → Häkchen → Löschen)
   const sel = { on: false, ids: new Set() };
   let visible = [];
@@ -1445,6 +1513,7 @@ async function viewList(q) {
   };
   const renderRows = (stagger = false) => {
     if (listState.tab === 'cart') { sel.on = false; updateSel(); return renderCart(rows, mats, cart); }
+    const flip = !stagger && !reduceMotion.matches ? flipBefore(rows) : null;
     let f = filterMats(listState.tab === 'tool' ? tools : parts, listState);
     const s = listState.sort;
     if (s === 'name') f.sort((a, b) => a.name.localeCompare(b.name, 'de'));
@@ -1464,6 +1533,7 @@ async function viewList(q) {
       <div class="mlist ${stagger ? 'stagger' : ''}">${f.map((m, i) => materialRow(m, undefined, stagger ? i : -1)).join('')}</div>`
       : empty('search', listState.q ? `Nichts gefunden für „${esc(listState.q)}“` : 'Noch keine Einträge',
         `<a class="btn-tinted" href="#/new?kind=${listState.tab}">${icon('plus', 18)} Anlegen</a>`);
+    if (flip) flipAfter(rows, flip);
     rows.querySelectorAll('.mrow').forEach((r) => {
       r.insertAdjacentHTML('afterbegin', `<span class="sel-check" aria-hidden="true">${icon('check', 15, 3)}</span>`);
       r.addEventListener('click', (e) => {
@@ -1992,6 +2062,7 @@ async function openBooking(m, type, onDone, preset = {}) {
             onTimeout: lowWarn,                      // Meldebestand-Hinweis erst, wenn nicht rückgängig gemacht
           });
           await onDone?.(total);
+          if (type === 'transfer' && booked.to_location_id) flyTransfer(booked.location_id, booked.to_location_id, booked.qty);
           if (type === 'out' && m.kind === 'part') setTimeout(() => offerPairs(m), 700);
           if (type === 'out' && +m.min_stock > 0 && +m.total > +m.min_stock && total <= +m.min_stock) pulseLow(m.id);
           if (type === 'out' || type === 'in') {
@@ -3585,13 +3656,23 @@ async function viewForm(id, q) {
     };
     if (fd.number) data.number = fd.number;
     saving = true; root.querySelectorAll('[data-act=save], [type=submit]').forEach((b) => (b.disabled = true));
+    const sb = root.querySelector('button[type=submit]');
+    const sbVisible = sb && (() => { const r = sb.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; })();
+    if (sbVisible && !reduceMotion.matches) sb.classList.add('save-busy');
     try {
       const nid = await db.saveMaterial(id, data, { images: st.images, initial: id ? null : { location_id: st.location_id, qty: num(fd.qty) }, onWarning: (w) => setTimeout(() => toast(w, 'err', { duration: 6000 }), 1700) });
       if (st.location_id) localStorage.setItem('wl-last-loc', st.location_id);
-      invalidate(); successHUD(id ? 'Gespeichert' : `${kind === 'tool' ? 'Werkzeug' : 'Ersatzteil'} angelegt`);
+      invalidate();
+      if (sbVisible && !reduceMotion.matches) {
+        // Knopf zieht sich zum Kreis zusammen, ein grüner Haken wird gemalt – dann geht's weiter
+        sb.innerHTML = `<svg class="save-ok" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12.5l4 4L18.5 8"/></svg><span class="sr-only">${id ? 'Gespeichert' : 'Angelegt'}</span>`;
+        sb.classList.remove('save-busy'); sb.classList.add('save-done'); haptic('success'); sfx.ping?.();
+        await new Promise((r) => setTimeout(r, 720));
+        if (!id) toast(`${kind === 'tool' ? 'Werkzeug' : 'Ersatzteil'} angelegt`, 'ok');
+      } else successHUD(id ? 'Gespeichert' : `${kind === 'tool' ? 'Werkzeug' : 'Ersatzteil'} angelegt`);
       sessionStorage.setItem('wl-mtab', 'infos');
       go(`/m/${nid}`, true);
-    } catch (e) { errToast(e); saving = false; root.querySelectorAll('[data-act=save], [type=submit]').forEach((b) => (b.disabled = false)); }
+    } catch (e) { errToast(e); saving = false; sb?.classList.remove('save-busy'); root.querySelectorAll('[data-act=save], [type=submit]').forEach((b) => (b.disabled = false)); }
   };
   form.onsubmit = (e) => { e.preventDefault(); save(); };
   on(root, 'save', save);
