@@ -704,9 +704,15 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .select-bar[hidden] { display: none !important; }
 @keyframes selIn { from { transform: translateY(100%); } to { transform: none; } }
 .sb-count { font-size: 15px; font-weight: 600; color: var(--text-2); }
-.sb-delete { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 13px; background: var(--red); color: #fff; font-weight: 600; font-size: 16px; }
-.sb-delete:disabled { opacity: .35; }
-.sb-delete:active { transform: scale(.97); }
+/* Aktionen für die Auswahl: Warenkorb · Umlagern · Etiketten · Löschen */
+.select-bar { flex-direction: column; align-items: stretch; gap: 8px; padding-top: 10px; }
+.sb-count { text-align: center; font-size: 14px; }
+.sb-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
+.sb-act { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 58px; border-radius: 14px; background: var(--fill); color: var(--primary); font-size: 12.5px; font-weight: 600; transition: transform .15s, opacity .2s; }
+.sb-act[hidden] { display: none; }
+.sb-act:disabled { opacity: .35; }
+.sb-act:active { transform: scale(.95); }
+.sb-act.sb-delete { color: var(--red); }
 .selecting .tabbar { visibility: hidden; }
 
 /* ---------- Segmented Control: gleitender Aktiv-Hintergrund ---------- */
@@ -2858,3 +2864,64 @@ html.guest-enter body { transition: opacity .4s ease, filter .4s ease; opacity: 
 :root[data-style="neu"] .map-screen.editing .fp-block.dragging { box-shadow: 12px 14px 26px var(--neu-sh), -6px -6px 14px var(--neu-hi); }
 :root[data-style="neu"] .fp-block.hit { background: var(--neu-grad); }
 :root[data-style="neu"] .fp-sum span { background: var(--neu); box-shadow: var(--press-s); }
+
+/* =====================================================================
+   ZULETZT ANGESEHEN (Suche)
+   ===================================================================== */
+.viewed-strip { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 10px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.viewed-strip::-webkit-scrollbar { display: none; }
+.viewed-card { flex: 0 0 108px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 18px; background: color-mix(in srgb, var(--surface) 88%, transparent); box-shadow: var(--card-shadow); color: var(--text); text-decoration: none;
+  animation: viewed-in .4s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i) * 45ms); transition: transform .15s; }
+.viewed-card:active { transform: scale(.96); }
+@keyframes viewed-in { from { opacity: 0; transform: translateX(18px); } }
+.viewed-card .thumb { width: 100%; height: auto; aspect-ratio: 1; border-radius: 12px; }
+.viewed-card b { font-size: 13px; line-height: 1.25; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.5em; }
+.viewed-card small { font-size: 11.5px; color: var(--text-2); }
+.viewed-card small.red { color: var(--red); }
+@media (prefers-reduced-motion: reduce) { .viewed-card { animation: none; } }
+
+/* =====================================================================
+   SCAN-VERLAUF
+   ===================================================================== */
+.sc-hist { position: absolute; left: 0; right: 0; bottom: 0; z-index: 20; max-height: 70%; display: flex; flex-direction: column; padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0; background: rgba(28, 28, 30, .96); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); color: #fff;
+  transform: translateY(100%); transition: transform .35s cubic-bezier(.2, .8, .2, 1); touch-action: pan-y; }
+.sc-hist.show { transform: none; }
+.sch-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 8px 6px; }
+.sch-head b { font-size: 18px; }
+.sc-hist .sc-icon { color: #fff; }
+.sch-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.sch-row { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 14px; color: #fff; text-align: left; }
+.sch-row:active { background: rgba(255, 255, 255, .1); }
+.sch-row > svg { color: rgba(255, 255, 255, .4); flex-shrink: 0; }
+.sch-ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, .12); flex-shrink: 0; }
+.sch-ic.ok { background: color-mix(in srgb, var(--primary) 70%, #000); }
+.sch-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sch-t b { font-size: 15.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sch-t small { font-size: 12.5px; color: rgba(255, 255, 255, .6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sch-empty { margin: 20px 0; text-align: center; color: rgba(255, 255, 255, .6); }
+
+.scan-list .scan-row { gap: 12px; }
+.scan-row .thumb.sm { width: 40px; height: 40px; flex-shrink: 0; }
+.scan-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--fill); color: var(--text-2); flex-shrink: 0; }
+.scan-ic.loc { color: var(--teal, #30b0c7); }
+.scan-row .r-label { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.scan-row .r-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-row small { color: var(--text-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-row .r-val { font-variant-numeric: tabular-nums; }
+.scan-row .btn-tinted.sm { flex-shrink: 0; height: 34px; padding: 0 12px; font-size: 14px; text-decoration: none; }
+.pad-x { padding: 0 6px; }
+
+/* Etiketten blättern */
+.lbl-pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 2px; }
+.lbl-pager span { min-width: 70px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---- Plastisch ---- */
+:root[data-style="neu"] .sb-act { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .sb-act:active:not(:disabled) { box-shadow: var(--press-s); }
+:root[data-style="neu"] .viewed-card { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .viewed-card:active { box-shadow: var(--press-s); }
+:root[data-style="neu"] .scan-ic { background: var(--neu); box-shadow: var(--press-s); }
+.dim-viewed { padding: 4px 16px 0; }
+.dim-viewed .sp-label { color: #fff; opacity: .85; margin-top: 10px; }
+.dim-viewed .viewed-card { background: var(--surface); }

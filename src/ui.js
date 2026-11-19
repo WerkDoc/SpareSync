@@ -364,6 +364,27 @@ function scanBox(mode, vw, vh) {
 }
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// ---------- Scan-Verlauf: jeder erkannte Code wird gemerkt (nur auf diesem Gerät) ----------
+const SCAN_HIST = 'ss-scan-hist';
+let scanLabeler = () => null;                    // Code → { title, sub } – setzt main.js (kennt die Teile)
+export function setScanLabeler(fn) { scanLabeler = fn; }
+export function scanHistory() { try { return JSON.parse(localStorage.getItem(SCAN_HIST) || '[]'); } catch { return []; } }
+export function clearScanHistory() { try { localStorage.removeItem(SCAN_HIST); } catch { /* egal */ } }
+function rememberScan(code, title) {
+  try {
+    const list = scanHistory().filter((x) => x.code !== code);
+    list.unshift({ code, title, at: Date.now() });
+    localStorage.setItem(SCAN_HIST, JSON.stringify(list.slice(0, 40)));
+  } catch { /* egal */ }
+}
+const agoShort = (t) => {
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return 'gerade eben';
+  if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
+  if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`;
+  return new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+};
+
 export function scan({ title = 'Scanner' } = {}) {
   return new Promise((resolve) => {
     let mode = 'auto';
@@ -373,7 +394,7 @@ export function scan({ title = 'Scanner' } = {}) {
     const { el, close } = layer('sc-layer', `
       <div class="sc-top">
         <div class="sc-bar">
-          <span class="sc-side"></span>
+          <span class="sc-side"><button type="button" class="sc-icon" data-a="hist" aria-label="Scan-Verlauf">${icon('clock', 24)}</button></span>
           <h2>${esc(title)}</h2>
           <span class="sc-side right">
             <button type="button" class="sc-icon" data-a="help" aria-label="Scanner Hilfe">${icon('help', 24)}</button>
@@ -426,6 +447,7 @@ export function scan({ title = 'Scanner' } = {}) {
     };
     const finish = async (v) => {
       if (finished) return; finished = true;
+      if (v) rememberScan(String(v).trim(), title);
       try { nfcAbort?.abort(); } catch {}
       await stopCam(); close(); resolve(v);
     };
@@ -549,6 +571,24 @@ export function scan({ title = 'Scanner' } = {}) {
       </dl>`,
       okText: 'Ok',
     });
+    // Verlauf: zuletzt erkannte Codes – antippen übernimmt den Code wie frisch gescannt
+    $('[data-a=hist]').onclick = () => {
+      el.querySelector('.sc-hist')?.remove();
+      const list = scanHistory().slice(0, 15);
+      const p = document.createElement('div');
+      p.className = 'sc-hist';
+      p.innerHTML = `<div class="sch-head"><b>Zuletzt gescannt</b><button type="button" class="sc-icon" data-h="x" aria-label="Verlauf schließen">${icon('x', 22)}</button></div>
+        <div class="sch-list">${list.length ? list.map((x, i) => { const lab = scanLabeler(x.code); return `<button type="button" class="sch-row" data-i="${i}">
+          <span class="sch-ic ${lab ? 'ok' : ''}">${icon(lab ? 'box' : 'barcode', 18, 2)}</span>
+          <span class="sch-t"><b>${esc(lab?.title || x.code)}</b><small>${lab ? `${esc(x.code)} · ` : 'Unbekannter Code · '}${agoShort(x.at)}</small></span>${icon('chevR', 16)}</button>`; }).join('')
+          : '<p class="sch-empty">Noch nichts gescannt</p>'}</div>`;
+      el.appendChild(p);
+      requestAnimationFrame(() => p.classList.add('show'));
+      haptic('light');
+      const shut = () => { p.classList.remove('show'); setTimeout(() => p.remove(), 300); };
+      p.querySelector('[data-h=x]').onclick = shut;
+      p.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { haptic('success'); finish(list[+b.dataset.i].code); }));
+    };
     $('.sc-manual').onsubmit = (e) => { e.preventDefault(); const v = input.value.trim(); if (v) finish(v); };
     const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.alert-layer')) { document.removeEventListener('keydown', onKey); finish(null); } };
     document.addEventListener('keydown', onKey);
@@ -582,11 +622,13 @@ function labelHTML({ name, line2 = '', line3 = '', svg }, size) {
 }
 /** Druckt NUR das Etikett: eigenes Druck-Element + @page in Etikettengröße, alles andere ist beim Druck ausgeblendet */
 function printLabel(html, size, copies = 1) {
+  const pages = Array.isArray(html) ? html : [html];
   document.getElementById('print-root')?.remove();
   document.getElementById('print-page')?.remove();
   const rootEl = document.createElement('div');
   rootEl.id = 'print-root';
-  rootEl.innerHTML = Array.from({ length: Math.max(1, Math.min(50, copies)) }, () => `<div class="print-page">${html}</div>`).join('');
+  const n = Math.max(1, Math.min(50, copies));
+  rootEl.innerHTML = pages.map((h) => Array.from({ length: n }, () => `<div class="print-page">${h}</div>`).join('')).join('');
   document.body.appendChild(rootEl);
   const st = document.createElement('style');
   st.id = 'print-page';
@@ -598,7 +640,8 @@ function printLabel(html, size, copies = 1) {
     rootEl.remove(); st.remove();
     window.removeEventListener('afterprint', onAfter);
   };
-  const onAfter = () => { cleanup(); successHUD('Etikett gesendet', copies > 1 ? `${copies} Stück` : ''); };
+  const total = pages.length * n;
+  const onAfter = () => { cleanup(); successHUD(total > 1 ? 'Etiketten gesendet' : 'Etikett gesendet', total > 1 ? `${total} Stück` : ''); };
   window.addEventListener('afterprint', onAfter);
   // direkt im Klick aufrufen – Safari blockiert print() nach einer Verzögerung
   try { window.print(); } catch { cleanup(); }
@@ -610,30 +653,44 @@ function printLabel(html, size, copies = 1) {
  * @param {{title:string, sub?:string, code:string, number?:string|number}} o
  *   title = Name, sub = 2. Zeile (z. B. Chargennummer/Platz), code = Inhalt des QR-Codes
  */
-export async function showLabel({ title, sub = '', code, extra = '' }) {
+/** Ein Etikett ({ title, sub, code, extra }) oder mehrere (Array) – bei mehreren blättert man in der Vorschau */
+export async function showLabel(arg) {
+  const items = (Array.isArray(arg) ? arg : [arg]).filter((x) => x && x.code);
+  if (!items.length) return;
+  const multi = items.length > 1;
   let sizeId = '62x29';
   try { sizeId = localStorage.getItem('wl-label-size') || sizeId; } catch {}
-  let svg;
-  try { svg = await qrSvg(code); } catch (e) { toast('QR-Code konnte nicht erzeugt werden', 'err'); return; }
+  let datas;
+  try { datas = await Promise.all(items.map(async (x) => ({ name: x.title, line2: x.sub || '', line3: x.extra || '', svg: await qrSvg(x.code), code: x.code }))); }
+  catch (e) { toast('QR-Code konnte nicht erzeugt werden', 'err'); return; }
   const size = () => LABEL_SIZES.find((x) => x.id === sizeId) || LABEL_SIZES[0];
-  const data = { name: title, line2: sub, line3: extra, svg };
+  let cur = 0;
+  let data = datas[0];
+  const code = data.code;
   sheet(`
     <div class="lbl-preview"><span class="lbl-slot" aria-hidden="true"></span><div class="lbl-scale"></div></div>
-    <p class="muted small center"><span data-f="hint"></span> · QR-Inhalt: <b class="selectable">${esc(code)}</b></p>
+    ${multi ? `<div class="lbl-pager"><button type="button" class="icon-btn" data-p="-1" aria-label="Vorheriges Etikett">${icon('chevL', 22)}</button><span data-f="pos">1 von ${datas.length}</span><button type="button" class="icon-btn" data-p="1" aria-label="Nächstes Etikett">${icon('chevR', 22)}</button></div>` : ''}
+    <p class="muted small center"><span data-f="hint"></span> · QR-Inhalt: <b class="selectable" data-f="code">${esc(code)}</b></p>
     <div class="form-group">
       <label class="frow"><span>Etikettengröße</span>
         <select data-f="size">${LABEL_SIZES.map((x) => `<option value="${x.id}" ${x.id === sizeId ? 'selected' : ''}>${x.label}</option>`).join('')}</select></label>
       <div class="frow"><span>Anzahl</span>
         <div class="stepper sm"><button type="button" data-c="-1" aria-label="Weniger">${icon('minus', 16, 2.4)}</button><span data-f="copies">1</span><button type="button" data-c="1" aria-label="Mehr">${icon('plus', 16, 2.4)}</button></div></div>
     </div>
-    <button class="btn-filled full mt" data-a="print">${icon('print', 20)} Etikett drucken</button>
+    <button class="btn-filled full mt" data-a="print">${icon('print', 20)} ${multi ? `Alle ${datas.length} Etiketten drucken` : 'Etikett drucken'}</button>
     <p class="muted small center mt">Drucken am PC (Edge/Chrome): Ränder „Keine“, Kopf- und Fußzeilen aus.</p>`,
   {
-    title: 'Etikett drucken',
+    title: multi ? `${datas.length} Etiketten drucken` : 'Etikett drucken',
     onMount: (root) => {
       const prev = root.querySelector('.lbl-scale');
-      const render = () => { prev.innerHTML = labelHTML(data, size()); root.querySelector('[data-f=hint]').textContent = `${size().label} (${size().hint})`; };
+      const render = () => {
+        data = datas[cur];
+        prev.innerHTML = labelHTML(data, size()); root.querySelector('[data-f=hint]').textContent = `${size().label} (${size().hint})`;
+        root.querySelector('[data-f=code]').textContent = data.code;
+        if (multi) root.querySelector('[data-f=pos]').textContent = `${cur + 1} von ${datas.length}`;
+      };
       render();
+      root.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => { cur = (cur + +b.dataset.p + datas.length) % datas.length; haptic('light'); render(); }));
       let copies = 1;
       root.querySelector('[data-f=size]').onchange = (e) => { sizeId = e.target.value; try { localStorage.setItem('wl-label-size', sizeId); } catch {} render(); };
       root.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { copies = Math.max(1, Math.min(50, copies + +b.dataset.c)); root.querySelector('[data-f=copies]').textContent = copies; haptic('light'); }));
@@ -653,7 +710,7 @@ export async function showLabel({ title, sub = '', code, extra = '' }) {
         // Safari blockiert print() nach einer Verzögerung → dort sofort drucken (ohne Vorab-Animation).
         const safari = /^((?!chrome|android|crios|edg).)*safari/i.test(navigator.userAgent);
         const prev = root.querySelector('.lbl-preview');
-        const go = () => printLabel(labelHTML(data, size()), size(), copies);
+        const go = () => printLabel(datas.map((d) => labelHTML(d, size())), size(), copies);
         if (safari || matchMedia('(prefers-reduced-motion: reduce)').matches) { go(); return; }
         prev.classList.remove('printing'); void prev.offsetWidth; prev.classList.add('printing');
         haptic('light');
