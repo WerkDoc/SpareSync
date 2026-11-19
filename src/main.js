@@ -1577,6 +1577,7 @@ async function viewList(q) {
   root.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
     if (listState.tab === b.dataset.tab) return;
     listState.tab = b.dataset.tab; saveListState();
+    cartSel.on = false; cartSel.ids.clear(); root.querySelector('.cart-sel')?.remove();
     root.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
     updateSegments(root);
     sel.on = false; sel.ids.clear();
@@ -1646,6 +1647,9 @@ async function openFilter() {
 }
 
 // ---------- Warenkorb & Kommissionen ----------
+// Auswahl im Warenkorb (mehrere Posten auf einmal entfernen)
+const cartSel = { on: false, ids: new Set() };
+window.addEventListener('hashchange', () => { cartSel.on = false; cartSel.ids.clear(); });
 function renderCart(rows, mats, cart) {
   const byId = Object.fromEntries(mats.map((m) => [m.id, m]));
   const items = cart.filter((c) => byId[c.material_id]);
@@ -1656,7 +1660,8 @@ function renderCart(rows, mats, cart) {
 
   const itemRow = (c) => {
     const m = byId[c.material_id];
-    return `<div class="crow" data-cid="${c.id}">
+    return `<div class="crow ${cartSel.ids.has(c.id) ? 'is-selected' : ''}" data-cid="${c.id}">
+      <span class="sel-check" aria-hidden="true">${icon('check', 15, 3)}</span>
       <a href="#/m/${m.id}" class="crow-link">${thumb(m, 'sm')}<div class="crow-main"><div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}</div>
         <div class="small muted">Bestand ${fmtQty(m.total)}${+m.min_stock ? ` · Meb ${fmtQty(m.min_stock)}` : ''}</div></div></a>
       <div class="stepper sm"><button data-cq="-1">${icon('minus', 16, 2.4)}</button><span>${fmtQty(c.qty)}</span><button data-cq="1">${icon('plus', 16, 2.4)}</button></div>
@@ -1668,6 +1673,9 @@ function renderCart(rows, mats, cart) {
     <section class="section">
       <div class="section-head"><h2>Warenkorb · Nachbestellen</h2>${order.length ? `<button class="text-btn" data-act="share">${icon('upload', 18)} Teilen</button>` : ''}</div>
       ${lowMissing.length ? `<button class="btn-tinted full" data-act="addlow">${icon('alert', 18)} ${lowMissing.length} Teil(e) unter Meldebestand hinzufügen</button>` : ''}
+      ${items.length > 1 ? `<div class="list-tools cart-tools">
+        ${cartSel.on ? '<button class="text-btn" data-act="csel-all">Alle auswählen</button>' : `<span class="muted small">${items.length} Posten</span>`}
+        <button class="text-btn strong" data-act="csel">${cartSel.on ? 'Fertig' : 'Auswählen'}</button></div>` : ''}
       <div class="card-list">${order.map(itemRow).join('') || '<p class="muted center pad">Warenkorb ist leer</p>'}</div>
     </section>
     <section class="section">
@@ -1680,6 +1688,58 @@ function renderCart(rows, mats, cart) {
     </section>`;
 
   const reload = async () => { invalidate('cart', 'materials'); await viewList({}); };
+
+  // ---- Auswahl-Modus ----
+  const scr = rows.closest('.screen') || document.body;
+  scr.querySelector('.cart-sel')?.remove();
+  cartSel.ids.forEach((id) => { if (!items.some((c) => c.id === id)) cartSel.ids.delete(id); });
+  if (items.length < 2) cartSel.on = false;
+  const bar = document.createElement('div');
+  bar.className = 'select-bar cart-sel'; bar.hidden = !cartSel.on;
+  bar.innerHTML = `<span class="sb-count"></span><div class="sb-acts"><button class="sb-act sb-delete" data-act="cdel">${icon('trash', 22)}<span>Aus Warenkorb entfernen</span></button></div>`;
+  scr.appendChild(bar);
+  const syncSel = () => {
+    const n = cartSel.ids.size;
+    scr.classList.toggle('selecting', cartSel.on);
+    bar.hidden = !cartSel.on;
+    bar.querySelector('.sb-count').textContent = n ? `${n} ${n === 1 ? 'Posten' : 'Posten'} ausgewählt` : 'Posten antippen zum Auswählen';
+    bar.querySelector('[data-act=cdel]').disabled = !n;
+    rows.querySelectorAll('.crow').forEach((r) => r.classList.toggle('is-selected', cartSel.ids.has(r.dataset.cid)));
+    const all = rows.querySelector('[data-act=csel-all]');
+    if (all) all.textContent = items.every((c) => cartSel.ids.has(c.id)) ? 'Keine auswählen' : 'Alle auswählen';
+  };
+  const tg = rows.querySelector('[data-act=csel]');
+  if (tg) tg.onclick = () => { cartSel.on = !cartSel.on; cartSel.ids.clear(); haptic('light'); renderCart(rows, mats, cart); };
+  const selAll = rows.querySelector('[data-act=csel-all]');
+  if (selAll) selAll.onclick = () => {
+    const every = items.every((c) => cartSel.ids.has(c.id));
+    items.forEach((c) => (every ? cartSel.ids.delete(c.id) : cartSel.ids.add(c.id)));
+    haptic('selection'); syncSel();
+  };
+  rows.querySelectorAll('.crow').forEach((r) => r.addEventListener('click', (e) => {
+    if (!cartSel.on) return;
+    e.preventDefault(); e.stopPropagation();
+    cartSel.ids.has(r.dataset.cid) ? cartSel.ids.delete(r.dataset.cid) : cartSel.ids.add(r.dataset.cid);
+    haptic('selection'); syncSel();
+  }, true));
+  bar.querySelector('[data-act=cdel]').onclick = async () => {
+    const del = items.filter((c) => cartSel.ids.has(c.id)); if (!del.length) return;
+    if (!await confirmBox({ title: `${del.length} ${del.length === 1 ? 'Posten' : 'Posten'} entfernen?`, message: 'Die Teile werden aus Warenkorb bzw. Kommission genommen. Der Bestand bleibt unverändert.', okText: 'Entfernen', danger: true })) return;
+    const btn = bar.querySelector('[data-act=cdel]'); btn.disabled = true;
+    // Zeilen klappen weg, dann löschen
+    rows.querySelectorAll('.crow.is-selected').forEach((r, i) => { r.style.setProperty('--d', `${i * 40}ms`); r.classList.add('crow-out'); });
+    haptic('success');
+    try {
+      await Promise.all([Promise.all(del.map((c) => db.deleteCart(c.id))), new Promise((r) => setTimeout(r, reduceMotion.matches ? 0 : 380))]);
+      cartSel.on = false; cartSel.ids.clear(); scr.classList.remove('selecting'); bar.remove();
+      await reload();
+      toast('Entfernt', 'ok', { sub: `${del.length} Posten`, action: { label: 'Rückgängig', onClick: async () => {
+        try { for (const c of del) await db.addToCart(c.list, c.material_id, c.qty, c.commission); await reload(); } catch (e) { errToast(e); }
+      } } });
+    } catch (e) { errToast(e); await reload(); }
+  };
+  syncSel();
+
   rows.querySelectorAll('.crow').forEach((r) => {
     const c = items.find((x) => x.id === r.dataset.cid);
     r.querySelectorAll('[data-cq]').forEach((b) => (b.onclick = async () => {
