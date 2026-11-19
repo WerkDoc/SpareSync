@@ -630,7 +630,7 @@ export async function listMovementsSince(days) {
   if (isDemo) return load().movements.filter((x) => x.created_at >= since).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const out = []; const PAGE = 1000;
   for (let from = 0; from < 20000; from += PAGE) {          // Supabase liefert höchstens 1000 Zeilen pro Abruf
-    const { data, error } = await sb.from(T.mov).select('id, material_id, type, qty, note, created_at')
+    const { data, error } = await sb.from(T.mov).select('id, material_id, type, qty, note, created_at, from_location_id, to_location_id')
       .gte('created_at', since).order('created_at', { ascending: false }).range(from, from + PAGE - 1);
     fail(error);
     out.push(...data);
