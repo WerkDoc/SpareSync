@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { icon } from './icons.js';
 import {
   esc, fmtQty, fmtEUR, fmtDate, toast, errToast, prompt, confirmBox, actionSheet, sheet, pickFrom,
-  labelBrand, LABEL_BRAND_DEFAULT, scan, scanHistory, clearScanHistory, setScanLabeler, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
+  labelBrand, LABEL_BRAND_DEFAULT, uploadProgress, scan, scanHistory, clearScanHistory, setScanLabeler, showLabel, compressImage, pickFiles, copyText, haptic, infoBox, enhanceSearch, progressPanel,
   countUp, pop, popChanged, successHUD, skel, onLongPress, contextMenu, enableSwipeActions, confetti, photoViewer, flyTo, gearRain, floatDelta, speedDial, cameraFlash, photoDrop, genieInto, flipCard,
   layer,
 } from './ui.js';
@@ -1140,15 +1140,8 @@ async function viewFav() {
   // Startwert der Zählanimation: beim ersten Mal 0, danach der zuletzt gezeigte Wert
   const cu = (k) => `<span data-count="${k}">${fmtQty(dashShown[k] ?? 0)}</span>`;
 
-  const root = screen({
-    header: dashHeader(),
-    cls: 'dash-screen',
-    body: `
-      ${dashHead()}
-      ${db.isGuest ? `<button type="button" class="demo-banner guest-banner" data-guest-end="register">${icon('sparkle', 16)}<span><em><b>Gastmodus</b> · Testdaten nur auf diesem Gerät</em><small>Gefällt's dir? Jetzt kostenlos registrieren</small></span>${icon('chevR', 16)}</button>`
-        : db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
-
-      <section class="widgets" aria-label="Status">
+  const DASH_HTML = {
+    widgets: `      <section class="widgets" aria-label="Status">
         <a class="widget" href="#/list?tab=part">
           <span class="w-ic tone-primary">${icon('box', 18, 2.2)}</span>
           <span class="w-val">${cu('parts')}</span>
@@ -1167,47 +1160,53 @@ async function viewFav() {
           <span class="w-label">Im Warenkorb</span>
           <span class="w-sub">zum Bestellen</span>
         </a>
-      </section>
-
-      <div data-recap></div>
-      ${backupHint(mats)}
-      <a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>
-      ${healthCard(hl, cu)}
-      ${valueCard(val, cu)}
-      <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
+      </section>`,
+    recap: `<div data-recap></div>`,
+    spark: `<a class="spark-card" href="#/stats" data-spark hidden aria-label="Verbrauch der letzten 14 Tage – zur Auswertung"></a>`,
+    health: healthCard(hl, cu),
+    value: valueCard(val, cu),
+    quick: `      <h2 class="dash-sec">Schnellaktionen <button class="sec-link quick-done" data-a="quick-done" hidden>Fertig</button></h2>
       <section class="quick-grid">
         ${quickOrdered().map((q) => `<a class="quick" href="#${q.href}" data-q="${q.id}" draggable="false">
             <span class="q-ic tone-${q.tone}">${icon(q.icon, 22, 2.2)}</span>
             <span class="q-text"><b>${q.label}</b><small>${q.sub}</small></span>
           </a>`).join('')}
-      </section>
-
-      <h2 class="dash-sec">Verwalten</h2>
+      </section>`,
+    manage: `      <h2 class="dash-sec">Verwalten</h2>
       <section class="ios-list">
         ${MANAGE.map((m) => `<a class="ios-row" href="#${m.href}">
             <span class="r-ic tone-${m.tone}">${icon(m.icon, 18, 2.1)}</span>
             <span class="r-label">${m.label}</span>
             ${m.count ? `<span class="r-meta">${counts[m.count]}</span>` : ''}${icon('chevR', 18)}
           </a>`).join('')}
-      </section>
-
-      ${favs.length ? `<h2 class="dash-sec">Favoriten${favs.length > FAV_MAX ? ` <a class="sec-link" href="#/list?fav=1">Alle ${favs.length}</a>` : ''}</h2>
+      </section>`,
+    favs: favs.length ? `<h2 class="dash-sec">Favoriten${favs.length > FAV_MAX ? ` <a class="sec-link" href="#/list?fav=1">Alle ${favs.length}</a>` : ''}</h2>
       <section class="ios-list" data-sec="favs">
         ${favs.slice(0, FAV_MAX).map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
             ${thumb(m, 'sm')}
             <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
             <span class="r-qty ${isLow(m) ? 'red' : ''}" data-pop="fav:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span>
           </a>`).join('')}
-      </section>` : ''}
-
-      ${recent.length ? `<h2 class="dash-sec">Zuletzt bewegt</h2>
+      </section>` : '',
+    recent: recent.length ? `<h2 class="dash-sec">Zuletzt bewegt</h2>
       <section class="ios-list" data-sec="recent">
         ${recent.map((m) => `<a class="ios-row recent" href="#/m/${m.id}" data-id="${m.id}">
             ${thumb(m, 'sm')}
             <span class="r-label"><span class="r-title"><span class="nr">${m.number}</span> ${esc(m.name)}</span><small>${locLabel(m)}</small></span>
             <span class="r-qty ${isLow(m) ? 'red' : ''}" data-pop="dash:${m.id}" data-v="${m.total}">${fmtQty(m.total)}</span>
           </a>`).join('')}
-      </section>` : ''}`,
+      </section>` : '',
+  };
+  const root = screen({
+    header: dashHeader(),
+    cls: 'dash-screen',
+    body: `
+      ${dashHead()}
+      ${db.isGuest ? `<button type="button" class="demo-banner guest-banner" data-guest-end="register">${icon('sparkle', 16)}<span><em><b>Gastmodus</b> · Testdaten nur auf diesem Gerät</em><small>Gefällt's dir? Jetzt kostenlos registrieren</small></span>${icon('chevR', 16)}</button>`
+        : db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
+
+      ${backupHint(mats)}
+      ${dashOrder().filter((x) => x.on).map((x) => DASH_HTML[x.k] || '').join('')}`,
     tab: 'fav',
   });
   root.querySelectorAll('[data-count]').forEach((el) => {
@@ -1270,6 +1269,65 @@ async function scanMenu(b) {
     else if (hits.length) go(`/list?tab=part&q=${encodeURIComponent(code.trim())}`);
     else openByCode(code);
   }
+}
+
+// ---------- Übersicht anpassen: Bereiche ein-/ausblenden und Reihenfolge (pro Gerät) ----------
+const DASH_SECTIONS = [
+  { k: 'widgets', label: 'Status-Kacheln', icon: 'box' },
+  { k: 'recap', label: 'Wochenrückblick', icon: 'sparkle' },
+  { k: 'spark', label: 'Verbrauch (14 Tage)', icon: 'chart' },
+  { k: 'health', label: 'Lager-Gesundheit', icon: 'alert' },
+  { k: 'value', label: 'Lagerwert', icon: 'euro' },
+  { k: 'quick', label: 'Schnellaktionen', icon: 'layers' },
+  { k: 'manage', label: 'Verwalten', icon: 'list' },
+  { k: 'favs', label: 'Favoriten', icon: 'star' },
+  { k: 'recent', label: 'Zuletzt bewegt', icon: 'clock' },
+];
+function dashOrder() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem('ss-dash') || '[]'); } catch { /* egal */ }
+  const known = new Set(DASH_SECTIONS.map((x) => x.k));
+  const out = saved.filter((x) => known.has(x.k));
+  DASH_SECTIONS.forEach((x) => { if (!out.some((y) => y.k === x.k)) out.push({ k: x.k, on: true }); });   // neue Bereiche hinten an
+  return out;
+}
+function openDashEditor() {
+  let order = dashOrder();
+  const meta = Object.fromEntries(DASH_SECTIONS.map((x) => [x.k, x]));
+  const rowHtml = (x, i) => `<div class="de-row ${x.on ? '' : 'off'}" data-k="${x.k}">
+      <span class="de-ic">${icon(meta[x.k].icon, 18, 2.1)}</span><span class="de-l">${meta[x.k].label}</span>
+      <button class="de-mv" data-mv="-1" aria-label="Nach oben" ${i === 0 ? 'disabled' : ''}>${icon('chevU', 18, 2.4)}</button>
+      <button class="de-mv" data-mv="1" aria-label="Nach unten" ${i === order.length - 1 ? 'disabled' : ''}>${icon('chevD', 18, 2.4)}</button>
+      <input type="checkbox" class="switch" ${x.on ? 'checked' : ''} aria-label="${meta[x.k].label} anzeigen"></div>`;
+  sheet(`<p class="muted small" style="margin:0 4px 10px">Was auf der Übersicht erscheint und in welcher Reihenfolge – gilt für dieses Gerät.</p>
+    <div class="de-list"></div><div class="btn-row mt"><button class="btn-gray" data-de="reset">Standard</button><button class="btn-filled" data-de="ok">Fertig</button></div>`, {
+    title: 'Übersicht anpassen',
+    onMount: (root, close) => {
+      const list = root.querySelector('.de-list');
+      const save = () => { try { localStorage.setItem('ss-dash', JSON.stringify(order)); } catch { /* egal */ } };
+      const render = (moved) => {
+        const before = new Map([...list.children].map((el) => [el.dataset.k, el.getBoundingClientRect().top]));
+        list.innerHTML = order.map(rowHtml).join('');
+        if (moved && !reduceMotion.matches) list.querySelectorAll('.de-row').forEach((el) => {
+          const t0 = before.get(el.dataset.k); if (t0 == null) return;
+          const dy = t0 - el.getBoundingClientRect().top; if (!dy) return;
+          el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+          if (el.dataset.k === moved) el.animate([{ boxShadow: '0 0 0 2px var(--primary)' }, { boxShadow: '0 0 0 0 transparent' }], { duration: 700 });
+        });
+        list.querySelectorAll('.de-row').forEach((el) => {
+          const k = el.dataset.k; const i = order.findIndex((x) => x.k === k);
+          el.querySelector('.switch').onchange = (e) => { order[i].on = e.target.checked; el.classList.toggle('off', !order[i].on); haptic('light'); save(); };
+          el.querySelectorAll('[data-mv]').forEach((b) => (b.onclick = () => {
+            const j = i + +b.dataset.mv; if (j < 0 || j >= order.length) return;
+            [order[i], order[j]] = [order[j], order[i]]; haptic('selection'); save(); render(k);
+          }));
+        });
+      };
+      render();
+      root.querySelector('[data-de=reset]').onclick = () => { order = DASH_SECTIONS.map((x) => ({ k: x.k, on: true })); save(); render(); haptic('light'); };
+      root.querySelector('[data-de=ok]').onclick = () => { close(); listKeep = null; };
+    },
+  });
 }
 
 /** Easter Egg: fünfmal schnell aufs Logo tippen → das S dreht sich wie ein Zahnrad, Zahnräder regnen */
@@ -2296,16 +2354,25 @@ async function viewMaterial(id, q) {
     const files = await pickFiles({ capture: src === 'cam' });
     if (!files.length) return;
     if (src === 'cam') cameraFlash();
+    // Fortschrittsring: Verkleinern ~15 %, Hochladen ~75 % (echter Fortschritt), Vorschau & Eintrag ~10 %
+    const n = files.length;
+    const up = uploadProgress(files[0], n > 1 ? `${n} Fotos werden hochgeladen` : 'Foto wird hochgeladen');
     try {
-      toast('Bild wird hochgeladen…');
       let last = null;
-      for (const f of files) { last = await compressImage(f); await db.addFile(id, last, f.name, 'image'); }
-      toast('Bild gespeichert');
+      for (let i = 0; i < n; i++) {
+        const f = files[i];
+        up.set((i + 0.04) / n);
+        last = await compressImage(f);
+        up.set((i + 0.15) / n);
+        await db.addFile(id, last, f.name, 'image', (p) => up.set((i + 0.15 + p * 0.75) / n));
+        up.set((i + 1) / n);
+      }
+      up.done(n > 1 ? `${n} Fotos gespeichert` : 'Foto gespeichert');
       await reload(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 120)));
       // das neue Foto fällt sichtbar in die Galerie
       const target = document.querySelector('.gal-main') || document.querySelector('.gallery');
       if (last && target) photoDrop(last, target);
-    } catch (e) { errToast(e); }
+    } catch (e) { up.fail(); errToast(e); }
   });
   on(root, 'label', () => openLabel(m));
   // Lange auf das Teilebild drücken → Karte dreht sich um, hinten der QR-Code groß zum Scannen
@@ -3046,6 +3113,15 @@ document.addEventListener('click', (e) => {
   root.classList.add('ek-peek'); haptic('light');
   clearTimeout(root._ekT); root._ekT = setTimeout(() => root.classList.remove('ek-peek'), 5000);
 }, true);
+
+// ---------- Schriftgröße (Einstellungen): skaliert die Inhalte der Seiten und Fenster ----------
+const FONT_ZOOM = { s: 0.92, m: 1, l: 1.1, xl: 1.2 };
+function applyFont() {
+  let f = 'm'; try { f = localStorage.getItem('ss-font') || 'm'; } catch { /* egal */ }
+  document.documentElement.style.setProperty('--ui-zoom', String(FONT_ZOOM[f] || 1));
+  document.documentElement.classList.toggle('font-zoom', f !== 'm');
+}
+applyFont();
 
 // ---------- Vorgaben für neue Teile (Einstellungen) ----------
 const newDefaults = () => { const g = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } }; return { loc: g('ss-new-loc'), min: g('ss-new-min'), group: g('ss-new-group') }; };
@@ -4389,6 +4465,9 @@ async function viewSettings() {
           <select data-set="ss-start">${[['fav', 'Übersicht'], ['list', 'Teile'], ['scan', 'Scanner']].map(([v, t]) => `<option value="${v}" ${pref('ss-start', 'fav') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-red">${icon('minus', 19)}</i><span>Schnellbuchen<small>„Entnehmen“ nimmt sofort 1 Stück – andere Menge: auf den Lagerort tippen</small></span>
           <input type="checkbox" class="switch" data-set-bool="ss-quick-out" ${pref('ss-quick-out', '0') === '1' ? 'checked' : ''}></label>
+        <button class="set-row" data-act="dash-edit"><i class="tone-blue">${icon('layers', 19)}</i><span>Übersicht anpassen<small>Bereiche ein-/ausblenden, Reihenfolge</small></span>${icon('chevR', 18)}</button>
+        <label class="set-row"><i class="tone-indigo">${icon('text', 19)}</i><span>Schriftgröße<small>Für Listen und Inhalte</small></span>
+          <select data-set="ss-font">${[['s', 'Klein'], ['m', 'Normal'], ['l', 'Groß'], ['xl', 'Sehr groß']].map(([v, t]) => `<option value="${v}" ${pref('ss-font', 'm') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-indigo">${icon('list', 19)}</i><span>Listen-Dichte<small>Kompakt: mehr Teile auf einen Blick</small></span>
           <select data-set="ss-density">${[['normal', 'Normal'], ['compact', 'Kompakt']].map(([v, t]) => `<option value="${v}" ${pref('ss-density', 'normal') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-teal">${icon('phone', 19)}</i><span>Haptik<small>Leichtes Vibrieren beim Tippen und Buchen</small></span>
@@ -4432,6 +4511,7 @@ async function viewSettings() {
   root.querySelectorAll('select[data-set]').forEach((sel) => (sel.onchange = () => {
     const key = sel.dataset.set; const prev = pref(key, ''); setPref(key, sel.value); haptic('light');
     if (key === 'ss-density') { document.documentElement.classList.toggle('dense', sel.value === 'compact'); toast(sel.value === 'compact' ? 'Listen kompakt' : 'Listen normal'); }
+    if (key === 'ss-font') { applyFont(); toast('Schriftgröße geändert'); }
     if (key === 'ss-start') toast('Startseite gespeichert', 'ok', { sub: 'Gilt ab dem nächsten Öffnen der App' });
     if (key === 'ss-sort') { listState.sort = sel.value; saveListState(); listKeep = null; toast('Sortierung gespeichert'); }
     if (key === 'ss-new-loc' || key === 'ss-new-group') toast('Vorgabe gespeichert', 'ok', { sub: 'Gilt für neu angelegte Teile' });
@@ -4455,6 +4535,7 @@ async function viewSettings() {
     setPref('ss-label-brand', v.trim().slice(0, 40)); keepScrollOnce = window.scrollY; nextTransition = 'none'; viewSettings();
   });
   on(root, 'whats-new', () => whatsNew({ all: true }));
+  on(root, 'dash-edit', () => openDashEditor());
   on(root, 'new-min', async () => {
     const v = await prompt({ title: 'Standard-Meldebestand', message: 'Wird bei neuen Ersatzteilen schon eingetragen. Leer lassen = keiner.', value: pref('ss-new-min', ''), type: 'number', okText: 'Speichern' });
     if (v === null) return;
