@@ -312,8 +312,39 @@ document.addEventListener('click', (e) => {
   const path = a.getAttribute('href').slice(1);
   if (/^\/m\/[^/]+$/.test(path) && a.matches('.mrow, .ios-row.recent') && heroOpen(a, path)) return;
   // Tab-Leiste: Crossfade mit leichtem Slide – zur „Teile“-Seite nach links, zurück zur Übersicht nach rechts
+  if (a.hasAttribute('data-tablink')) {
+    haptic('light');
+    if (a.classList.contains('on')) {                 // schon auf diesem Tab → sanft nach oben
+      hopTab(a);
+      window.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+      return;
+    }
+    tabHopNext = true;
+  }
   if (path) go(path, false, a.hasAttribute('data-tablink') ? (path.startsWith('/list') ? 'tabF' : 'tabB') : undefined);
 });
+// Teil rutscht unter den Meldebestand → seine Zeile (Liste, Übersicht) pulsiert beim nächsten Anzeigen einmal rot
+let lowPulse = null;
+function pulseLow(id) {
+  lowPulse = { id, until: Date.now() + 8000 };
+  const tick = () => {
+    if (!lowPulse || Date.now() > lowPulse.until) { lowPulse = null; return; }
+    const el = [...document.querySelectorAll(`.mrow[data-id="${lowPulse.id}"], .ios-row[data-id="${lowPulse.id}"]`)].find((x) => x.offsetParent && !x.closest('.sheet-layer, .layer'));
+    if (el) {
+      el.querySelector('.lp-glow')?.remove();
+      const g = document.createElement('span'); g.className = 'lp-glow'; g.setAttribute('aria-hidden', 'true');
+      if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      el.appendChild(g); el.classList.add('low-pulse'); haptic('warning');
+      setTimeout(() => { g.remove(); el.classList.remove('low-pulse'); }, 2600);
+      lowPulse = null; return;
+    }
+    setTimeout(tick, 250);
+  };
+  setTimeout(tick, 450);
+}
+// Tab-Symbol hüpft kurz beim Antippen
+let tabHopNext = false;
+function hopTab(el) { const ic = el?.querySelector('svg'); if (!ic) return; ic.classList.remove('tab-hop'); void ic.getBoundingClientRect(); ic.classList.add('tab-hop'); }
 // Android-Zurück-Taste: ein „Wächter“-Eintrag fängt sie ab und führt das App-eigene Zurück aus.
 // Auf iOS bewusst NICHT, damit die Wischgeste am Rand dort gar nichts auslöst.
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -355,6 +386,7 @@ function tabbar(active) {
 // Beim Wechsel steht die alte Seite (mit altem Indikator) noch im DOM: beide Positionen werden im selben
 // Moment gemessen, der neue Indikator startet am alten Platz und gleitet – gedehnt wie ein Tropfen – an seinen.
 function placeTabIndicator(root) {
+  if (tabHopNext) { tabHopNext = false; hopTab(root.querySelector('.tabbar .tab.on')); }
   const ind = root.querySelector('.tab.on .tab-ind');
   // Eine aufbewahrte Seite (Teile-Liste) wurde beim Verlassen ausgeblendet → beim Zurückholen wieder sichtbar machen
   if (ind) { ind.style.transition = ''; ind.style.opacity = ''; }
@@ -517,7 +549,7 @@ function applyOfflineBadge(root = app.querySelector('.screen')) {
   if (existing) return;
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'offline-badge';
-  b.innerHTML = `<i></i>Offline-Modus`;
+  b.innerHTML = `<span class="off-cloud" aria-hidden="true">${icon('cloudOff', 16, 2.2)}</span>Offline`;
   b.onclick = () => {
     const t = db.offlineSavedAt();
     infoBox({
@@ -533,7 +565,7 @@ window.addEventListener('offline', () => { applyOfflineBadge(); toast('Keine Int
 window.addEventListener('online', async () => {
   try { await refreshAll(); } catch {}
   applyOfflineBadge();
-  if (!isOfflineNow()) { toast('Wieder online – Daten aktualisiert'); route(); }
+  if (!isOfflineNow()) { toast('Wieder online', 'ok', { icon: 'refresh', sub: 'Daten aktualisiert', cls: 'di-sync' }); route(); }
 });
 
 function screen({ header, body, tab = null, cls = '', footer = '' }) {
@@ -1935,6 +1967,7 @@ async function openBooking(m, type, onDone, preset = {}) {
           });
           await onDone?.(total);
           if (type === 'out' && m.kind === 'part') setTimeout(() => offerPairs(m), 700);
+          if (type === 'out' && +m.min_stock > 0 && +m.total > +m.min_stock && total <= +m.min_stock) pulseLow(m.id);
           if (type === 'out' || type === 'in') {
             const vis = (el) => { if (!el) return false; const q = el.getBoundingClientRect(); return q.width > 0 && q.top > 0 && q.bottom < innerHeight; };
             const anchor = ['.stock-ring-card .sr-val', '.total-row [data-pop]', '.mov-list .mov:first-child .mov-right b'].map((q) => document.querySelector(q)).find(vis);
@@ -2134,6 +2167,8 @@ async function viewMaterial(id, q) {
     });
     root.querySelectorAll('[data-task]').forEach((el) => {
       el.querySelector('input').onchange = async (e) => {
+        el.classList.toggle('tk-anim', e.target.checked); haptic(e.target.checked ? 'success' : 'light');
+        if (e.target.checked) sfx.tick?.();
         try {
           await db.setTaskDone(el.dataset.task, e.target.checked);
           const t = tasks?.find((x) => x.id === el.dataset.task); if (t) t.done = e.target.checked;   // Zwischenspeicher mitziehen
@@ -2624,7 +2659,7 @@ function infosTab(m, tasks) {
       <div class="tasks-head"><b>Aufgaben ${loading ? '<span class="tasks-loading" aria-label="lädt"></span>' : `(${tasks.filter((t) => !t.done).length})`}</b>
         <span><button class="icon-btn" data-act="task-add" aria-label="Aufgabe hinzufügen">${icon('plus', 24)}</button>
         <button class="icon-btn" data-act="tasks-toggle" aria-label="Auf/Zu">${icon(open ? 'chevU' : 'chevD', 24)}</button></span></div>
-      ${open ? tasks.map((t) => `<div class="task" data-task="${t.id}"><label><input type="checkbox" ${t.done ? 'checked' : ''}><span>${esc(t.title)}</span></label><button class="icon-btn" data-del aria-label="Löschen">${icon('trash', 18)}</button></div>`).join('') : ''}
+      ${open ? tasks.map((t) => `<div class="task" data-task="${t.id}"><label><input type="checkbox" ${t.done ? 'checked' : ''}><i class="tk-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4L18.5 8"/></svg></i><span>${esc(t.title)}</span></label><button class="icon-btn" data-del aria-label="Löschen">${icon('trash', 18)}</button></div>`).join('') : ''}
     </div>
     <button class="link-row" data-act="history">Bestandsänderungen ${icon('chevR', 18)}</button>`;
 }
