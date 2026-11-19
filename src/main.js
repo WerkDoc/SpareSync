@@ -1690,6 +1690,8 @@ async function viewList(q) {
     root.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
     updateSegments(root);
     sel.on = false; sel.ids.clear();
+    // Inzwischen etwas geändert (z. B. über das Kontextmenü in den Warenkorb gelegt)? Dann mit frischen Daten neu aufbauen
+    if (!cache.cart || !cache.materials) { listKeep = null; window.scrollTo(0, 0); viewList({}); return; }
     renderRows(true); window.scrollTo(0, 0);
   }));
   root.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => { listState[b.dataset.clear] = b.dataset.clear === 'low' ? false : ''; saveListState(); viewList({}); }));
@@ -2497,8 +2499,13 @@ async function addToCartFlow(m) {
   try {
     await db.addToCart('cart', m.id, +n); invalidate('cart');
     sfx.cash();
-    const flew = flyToCart(m, () => toast('Im Warenkorb', 'ok', { sub: `${fmtQty(n)} × ${m.name}` }));
-    if (!flew) successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`);
+    // In der Teile-Liste: Zähler im Warenkorb-Umschalter gleich aktualisieren (Wagen hüpft), Scroll-Position bleibt
+    const refreshList = () => {
+      if (parseHash().path !== '/list' || document.querySelector('.layer')) return;
+      keepScrollOnce = window.scrollY; nextTransition = 'none'; listKeep = null; viewList({});
+    };
+    const flew = flyToCart(m, () => { toast('Im Warenkorb', 'ok', { sub: `${fmtQty(n)} × ${m.name}` }); refreshList(); });
+    if (!flew) { successHUD('Im Warenkorb', `${fmtQty(n)} × ${m.name}`); setTimeout(refreshList, 300); }
   } catch (e) { errToast(e); }
 }
 /** Teilebild fliegt zum nächsten sichtbaren Warenkorb (Segment in der Liste, Widget auf der Übersicht, sonst Tab „Teile“) */
