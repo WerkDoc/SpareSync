@@ -13,6 +13,7 @@ import {
 import { attachGyro, gyroEnabled, setGyroEnabled, requestGyro } from './motion.js';
 import { fillRecapCard, showRecap } from './recap.js';
 import * as sfx from './sounds.js';
+import { CHANGELOG, APP_VERSION } from './changelog.js';
 import { exportCSV, importCSV } from './csv.js';
 import { installHaptics } from './haptics.js';
 import { setupPullToRefresh, setupPullToSearch } from './ptr.js';
@@ -4112,7 +4113,11 @@ async function viewSettings() {
       </div>
       ${db.isGuest ? `<p class="hint">Im Gastmodus probierst du SpareSync mit Beispieldaten aus. Alles bleibt nur auf diesem Gerät. Mit einem Konto liegen deine Daten sicher in der Cloud und du kannst mehrere Geräte nutzen.</p>`
         : db.isDemo ? `<p class="hint">Im Demo-Modus liegen alle Daten nur in diesem Browser. Für Cloud-Speicher & mehrere Geräte Supabase-Zugangsdaten in der <code>.env</code> eintragen (siehe README).</p>` : ''}
-      <div class="menu-footer">${brandLogo('sm')}<span>Version 1.2</span></div>`,
+      <div class="set-group">
+        ${item('sparkle', 'Was ist neu', 'whats-new', `<em class="set-val">Version ${APP_VERSION}</em>${icon('chevR', 18)}`, '', 'orange')}
+        ${item('help', 'Tour starten<small>Die wichtigsten Stellen der App in 1 Minute</small>', 'tour', '', '', 'blue')}
+      </div>
+      <div class="menu-footer">${brandLogo('sm')}<span>Version ${APP_VERSION}</span></div>`,
   });
   root.querySelectorAll('[data-act^="go:"]').forEach((b) => (b.onclick = () => go(b.dataset.act.slice(3))));
   // ---- Bedienung & Etiketten (alles nur auf diesem Gerät) ----
@@ -4138,6 +4143,8 @@ async function viewSettings() {
     if (v === null) return;
     setPref('ss-label-brand', v.trim().slice(0, 40)); keepScrollOnce = window.scrollY; nextTransition = 'none'; viewSettings();
   });
+  on(root, 'whats-new', () => whatsNew({ all: true }));
+  on(root, 'tour', () => { go('/fav'); setTimeout(() => startTour(), 450); });
   on(root, 'label-preview', () => showLabel({ title: 'iPhone 13 Display OLED', sub: 'Nr. 101', extra: 'Kleinteilemagazin', code: '101' }));
   root.querySelector('[data-act-theme]').onchange = (e) => { localStorage.setItem('wl-theme', e.target.value); applyTheme(); };
   root.querySelector('[data-act-sounds]').onchange = (e) => { sfx.setSoundsOn(e.target.checked); if (e.target.checked) sfx.ping(); haptic('light'); };
@@ -4284,6 +4291,152 @@ async function viewSettings() {
   on(root, 'logout', async () => { await db.signOut(); invalidate(); go('/login', true); });
   on(root, 'guest-register', () => leaveGuest('register'));
   on(root, 'guest-exit', () => leaveGuest('login'));
+}
+
+// =====================================================================
+//  WAS IST NEU – nach jedem Update einmal die Neuerungen zeigen
+// =====================================================================
+const SEEN_KEY = 'ss-seen-version';
+function whatsNew({ all = false } = {}) {
+  const seen = pref(SEEN_KEY, '');
+  const list = all ? CHANGELOG : CHANGELOG.filter((v) => !seen || verCmp(v.version, seen) > 0).slice(0, 2);
+  if (!list.length) return;
+  setPref(SEEN_KEY, APP_VERSION);
+  const hasTour = !all && list[0].items.some((x) => x.tour);
+  const fmtD = (d) => new Date(d).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+  sheet(`<div class="wn">
+      ${list.map((v, vi) => `<section class="wn-ver">
+        <div class="wn-head">${vi === 0 && !all ? `<span class="wn-badge">${icon('sparkle', 15, 2.4)} Neu</span>` : ''}<b>Version ${esc(v.version)}${v.title ? ` · ${esc(v.title)}` : ''}</b><small>${fmtD(v.date)}</small></div>
+        <div class="wn-list">${v.items.map((x, i) => `<div class="wn-item" style="--i:${vi * 3 + i}"><span class="wn-ic">${icon(x.icon, 20, 2.1)}</span><span class="wn-t"><b>${esc(x.title)}</b><small>${esc(x.text)}</small></span></div>`).join('')}</div>
+      </section>`).join('')}
+      <div class="wn-acts">
+        ${hasTour ? `<button class="btn-tinted" data-wn="tour">${icon('help', 18)} Zeig's mir</button>` : ''}
+        <button class="btn-filled" data-wn="ok">Alles klar</button>
+      </div>
+    </div>`, {
+    title: all ? 'Was ist neu' : 'Neu in SpareSync',
+    onMount: (root, close) => {
+      root.querySelector('[data-wn=ok]').onclick = () => close();
+      const t = root.querySelector('[data-wn=tour]');
+      if (t) t.onclick = () => { close(); setTimeout(() => startTour({ only: 'new' }), 380); };
+    },
+  });
+}
+const verCmp = (a, b) => { const x = String(a).split('.').map(Number); const y = String(b).split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; };
+
+// =====================================================================
+//  TOUR – ein Lichtkegel zeigt Schritt für Schritt die wichtigsten Stellen
+//  Neue Funktion? Einfach eine Station ergänzen (since = Version, ab der es sie gibt → „Neu“-Abzeichen)
+// =====================================================================
+const TOUR_KEY = 'ss-tour-done';
+const TOUR_STEPS = [
+  { route: '/fav', sel: '.dash-nav [data-act=scan]', title: 'Scannen', text: 'Barcode oder QR-Code am Teil scannen – SpareSync öffnet sofort das passende Teil.' },
+  { route: '/fav', sel: '.widgets', title: 'Dein Lager auf einen Blick', text: 'Knappe Teile, Warenkorb und Lagerwert. Antippen öffnet die passende Liste.' },
+  { route: '/fav', sel: '.quick-grid', title: 'Schnellaktionen', text: 'Dazu buchen, Entnehmen oder ein Teil per Scan finden – jeweils mit einem Tipp.' },
+  { route: '/fav', sel: '.dash-nav', title: 'Suche', text: 'Auf der Übersicht einfach nach unten ziehen – die Suche öffnet sich mit deinen zuletzt angesehenen Teilen.', since: '1.4' },
+  { route: '/list?tab=part', sel: '.list-nav .search-field', title: 'Alle Teile', text: 'Suchen, filtern, sortieren. Tippfehler sind kein Problem – „aku“ findet auch „Akku“.' },
+  { route: '/list?tab=part', sel: '.mlist .mrow', title: 'Wischen zum Buchen', text: 'Nach rechts wischen: Dazu buchen oder Entnehmen. Nach links: Bearbeiten oder Löschen. Gedrückt halten öffnet ein Menü.' },
+  { route: '/list?tab=part', sel: '[data-act=sel-toggle]', title: 'Mehrere auf einmal', text: 'Auswählen – und gleich mehrere Teile in den Warenkorb legen, umlagern oder Etiketten drucken.', since: '1.4' },
+  { route: '/list?tab=part', sel: '.segment [data-tab=cart]', title: 'Warenkorb', text: 'Hier sammelst du, was nachbestellt werden muss. „Teilen“ schickt die Bestellliste per WhatsApp oder Mail.' },
+  { route: '/fav', sel: '.dash-nav [data-act=menu]', title: 'Menü', text: 'Lagerorte, Inventur, Scan-Verlauf, Grundriss, Thekenmodus, Backup und Einstellungen. Hier startest du die Tour auch neu.', since: '1.4' },
+];
+let tourOn = false;
+async function startTour({ only = 'all' } = {}) {
+  if (tourOn) return;
+  let steps = only === 'new' ? TOUR_STEPS.filter((s) => s.since === APP_VERSION) : TOUR_STEPS.slice();
+  if (!steps.length) return;
+  const end = { title: db.isGuest ? 'Viel Spaß beim Ausprobieren!' : 'Fertig!', final: true,
+    text: db.isGuest ? 'Alles hier sind Beispieldaten und bleiben nur auf diesem Gerät. Wenn dir SpareSync gefällt: auf der Übersicht „Jetzt registrieren“.'
+      : only === 'new' ? 'Das waren die Neuerungen. Die ganze Tour findest du jederzeit im Menü.' : 'Die Tour kannst du jederzeit im Menü unter „Tour starten“ wiederholen.' };
+  steps = [...steps, end];
+  tourOn = true;
+  const el = document.createElement('div');
+  el.className = 'tour';
+  el.innerHTML = '<div class="tour-hole"></div><div class="tour-tip" role="dialog" aria-modal="true" aria-live="polite"></div>';
+  document.body.appendChild(el);
+  document.documentElement.classList.add('tour-on');
+  requestAnimationFrame(() => el.classList.add('show'));
+  const hole = el.querySelector('.tour-hole'); const tip = el.querySelector('.tour-tip');
+  let i = 0; let target = null; let busy = false;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (sel, ms = 3500) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      const n = [...document.querySelectorAll(sel)].find((x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !x.closest('.tour'); });
+      if (n) return n;
+      await sleep(90);
+    }
+    return null;
+  };
+  const place = () => {
+    if (!target) { el.classList.add('no-target'); tip.style.left = ''; tip.style.top = ''; return; }
+    el.classList.remove('no-target');
+    const r = target.getBoundingClientRect(); const pad = 6;
+    const br = parseFloat(getComputedStyle(target).borderRadius) || 12;
+    Object.assign(hole.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px`, borderRadius: `${Math.min(br + pad, 40)}px` });
+    const tw = tip.offsetWidth; const th = tip.offsetHeight; const gap = 16;
+    const below = r.bottom + pad + gap + th < innerHeight - 20 || r.top < th + 60;
+    const top = below ? r.bottom + pad + gap : r.top - pad - gap - th;
+    const left = Math.max(12, Math.min(innerWidth - tw - 12, r.left + r.width / 2 - tw / 2));
+    tip.style.left = `${left}px`; tip.style.top = `${Math.max(12, top)}px`;
+    tip.style.setProperty('--ax', `${Math.max(18, Math.min(tw - 18, r.left + r.width / 2 - left))}px`);
+    tip.classList.toggle('above', !below);
+  };
+  const finish = () => {
+    if (!tourOn) return;
+    tourOn = false; setPref(TOUR_KEY, APP_VERSION); setPref(SEEN_KEY, APP_VERSION);
+    el.classList.remove('show'); el.classList.add('out');
+    document.documentElement.classList.remove('tour-on');
+    window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true);
+    document.removeEventListener('keydown', onKey);
+    setTimeout(() => el.remove(), 350);
+  };
+  const show = async (dir = 1) => {
+    if (busy) return; busy = true;
+    tip.classList.add('switching');
+    const st = steps[i];
+    if (st.route) {
+      const want = st.route.split('?')[0];
+      if (parseHash().path !== want) { if (want === '/list') { listState.tab = 'part'; saveListState(); } go(st.route); await sleep(250); }
+    }
+    target = st.sel ? await waitFor(st.sel) : null;
+    if (st.sel && !target) {                    // Stelle gerade nicht da (z. B. leere Liste) → überspringen
+      busy = false; i += dir;
+      if (i < 0) i = 0;
+      return i < steps.length ? show(dir) : finish();
+    }
+    if (target) {
+      const r = target.getBoundingClientRect();
+      if (r.top < 70 || r.bottom > innerHeight - 140) { target.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' }); await sleep(380); }
+    }
+    const real = steps.filter((s) => !s.final).length;
+    const isNew = st.since === APP_VERSION && only !== 'new';
+    tip.innerHTML = `
+      ${st.final ? `<span class="tt-ic">${icon(db.isGuest ? 'sparkle' : 'check', 26, 2.4)}</span>` : ''}
+      <div class="tt-head">${isNew ? '<span class="tt-new">Neu</span>' : ''}<b>${esc(st.title)}</b>${st.final ? '' : `<small>${i + 1} / ${real}</small>`}</div>
+      <p>${esc(st.text)}</p>
+      <div class="tt-foot">
+        ${st.final ? '' : '<button class="tt-skip" data-t="skip">Überspringen</button>'}
+        <span class="tt-dots">${st.final ? '' : steps.filter((s) => !s.final).map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</span>
+        ${i > 0 && !st.final ? `<button class="tt-btn ghost" data-t="back" aria-label="Zurück">${icon('chevL', 20, 2.4)}</button>` : ''}
+        <button class="tt-btn" data-t="next">${st.final ? "Los geht's" : i === real - 1 ? 'Fertig' : 'Weiter'}</button>
+      </div>`;
+    place();
+    requestAnimationFrame(() => { place(); tip.classList.remove('switching'); });
+    busy = false;
+  };
+  tip.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-t]'); if (!b || busy) return;
+    haptic('light');
+    if (b.dataset.t === 'skip') return finish();
+    if (b.dataset.t === 'back') { i = Math.max(0, i - 1); return show(-1); }
+    if (steps[i].final) { if (db.isGuest) confetti(); return finish(); }
+    i++; show(1);
+  });
+  const onKey = (e) => { if (e.key === 'Escape') finish(); if (e.key === 'ArrowRight' || e.key === 'Enter') tip.querySelector('[data-t=next]')?.click(); };
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('resize', place); window.addEventListener('scroll', place, true);
+  show();
 }
 
 // =====================================================================
@@ -4801,6 +4954,13 @@ db.onRemoteMovement(async (x) => {
 route().finally(() => {
   window.__appReady = true;
   if (window.__splashVideoDone) window.hideSplash?.();
+  // Nach dem Splash: Gäste bekommen beim ersten Mal die Tour, alle anderen nach einem Update „Was ist neu“
+  setTimeout(() => {
+    if (document.querySelector('.layer, .alert-layer, .tour') || parseHash().path === '/login' || parseHash().path === '/register' || parseHash().path === '/counter') return;
+    if (db.isGuest && !pref(TOUR_KEY, '')) { if (parseHash().path !== '/fav') return; setPref(SEEN_KEY, APP_VERSION); startTour(); return; }
+    if (db.isDemo && !db.isGuest && !pref(SEEN_KEY, '')) { setPref(SEEN_KEY, APP_VERSION); return; }   // Entwickler-Demo: still
+    if (pref(SEEN_KEY, '') !== APP_VERSION) whatsNew();
+  }, 2300);
 });
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

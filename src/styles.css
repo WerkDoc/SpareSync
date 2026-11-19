@@ -3013,3 +3013,69 @@ html.dense .crow { padding-top: 6px; padding-bottom: 6px; }
 html.dense .crow .thumb.sm { width: 38px; height: 38px; }
 html.dense .crow .mrow-title { font-size: 14.5px; }
 html.dense .ios-row.recent { min-height: 52px; }
+
+/* =====================================================================
+   WAS IST NEU
+   ===================================================================== */
+.wn { display: flex; flex-direction: column; gap: 18px; }
+.wn-head { display: flex; flex-direction: column; gap: 2px; margin: 0 2px 10px; }
+.wn-head b { font-size: 17px; }
+.wn-head small { color: var(--text-2); font-size: 13px; }
+.wn-badge { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 8px; margin-bottom: 6px; border-radius: 12px; font-size: 12.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--brand-blue), var(--primary)); }
+.wn-list { display: flex; flex-direction: column; gap: 10px; }
+.wn-item { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 16px; background: var(--fill); animation: wn-in .45s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i) * 55ms + 120ms); }
+@keyframes wn-in { from { opacity: 0; transform: translateY(12px); } }
+.wn-ic { width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px; display: grid; place-items: center; color: var(--primary); background: var(--surface); }
+.wn-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wn-t b { font-size: 15.5px; }
+.wn-t small { font-size: 14px; line-height: 1.4; color: var(--text-2); }
+.wn-acts { display: flex; gap: 10px; position: sticky; bottom: 0; padding: 14px 0 2px; margin-top: -8px; background: linear-gradient(transparent, var(--sheet-bg, var(--surface)) 40%); }
+:root[data-style="neu"] .wn-acts { background: linear-gradient(transparent, var(--neu) 40%); }
+.wn-acts > * { flex: 1; justify-content: center; }
+:root[data-style="neu"] .wn-item { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .wn-ic { background: var(--neu); box-shadow: var(--press-s); }
+@media (prefers-reduced-motion: reduce) { .wn-item { animation: none; } }
+
+/* =====================================================================
+   TOUR
+   ===================================================================== */
+.tour { position: fixed; inset: 0; z-index: 300; opacity: 0; transition: opacity .3s ease; touch-action: none; }
+.tour.show { opacity: 1; }
+.tour.out { opacity: 0; pointer-events: none; }
+.tour-hole { position: fixed; pointer-events: none; border-radius: 16px; box-shadow: 0 0 0 9999px rgba(8, 12, 24, .7), 0 0 0 2px rgba(255, 255, 255, .9), 0 0 28px 6px rgba(120, 170, 255, .55);
+  transition: left .45s cubic-bezier(.3, .9, .3, 1), top .45s cubic-bezier(.3, .9, .3, 1), width .45s cubic-bezier(.3, .9, .3, 1), height .45s cubic-bezier(.3, .9, .3, 1), border-radius .45s, opacity .3s; }
+.tour.no-target .tour-hole { left: 50% !important; top: 50% !important; width: 0 !important; height: 0 !important; box-shadow: 0 0 0 9999px rgba(8, 12, 24, .7); }
+.tour.no-target .tt-dots { display: none; }
+.tt-btn { flex-shrink: 0; }
+.tt-btn:focus { outline: none; }
+.tt-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tour-tip { position: fixed; width: min(340px, calc(100vw - 24px)); padding: 16px 16px 14px; border-radius: 22px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(0, 0, 0, .35);
+  transition: left .45s cubic-bezier(.3, .9, .3, 1), top .45s cubic-bezier(.3, .9, .3, 1), opacity .2s, transform .25s; }
+.tour-tip::before { content: ''; position: absolute; top: -7px; left: calc(var(--ax, 50%) - 8px); width: 16px; height: 16px; background: inherit; border-radius: 3px; transform: rotate(45deg); }
+.tour-tip.above::before { top: auto; bottom: -7px; }
+.tour.no-target .tour-tip { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); text-align: center; }
+.tour.no-target .tour-tip::before { display: none; }
+.tour-tip.switching { opacity: 0; transform: scale(.97); }
+.tour.no-target .tour-tip.switching { transform: translate(-50%, -50%) scale(.97); }
+.tt-ic { width: 54px; height: 54px; margin: 2px auto 10px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--brand-blue), var(--primary)); }
+.tt-head { display: flex; align-items: baseline; gap: 8px; }
+.tour.no-target .tt-head { justify-content: center; }
+.tt-head b { font-size: 18px; flex: 1; }
+.tour.no-target .tt-head b { flex: none; }
+.tt-head small { color: var(--text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.tt-new { padding: 2px 8px; border-radius: 9px; font-size: 11.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #fff; background: var(--orange, #f08c00); }
+.tour-tip p { margin: 6px 0 14px; font-size: 15px; line-height: 1.45; color: var(--text-2); }
+.tt-foot { display: flex; align-items: center; gap: 8px; }
+.tour.no-target .tt-foot { justify-content: center; }
+.tt-skip { flex-shrink: 0; color: var(--text-2); font-size: 14px; padding: 8px 2px; }
+.tt-dots { flex: 1; min-width: 0; overflow: hidden; display: flex; justify-content: center; gap: 4px; }
+.tt-dots i { flex-shrink: 0; width: 5px; height: 5px; border-radius: 3px; background: var(--sep-strong, #c7c7cc); transition: width .3s, background .3s; }
+.tt-dots i.on { width: 14px; background: var(--primary); }
+.tt-btn { height: 42px; padding: 0 18px; border-radius: 21px; font-weight: 700; font-size: 15.5px; color: #fff; background: var(--primary); }
+.tt-btn.ghost { width: 42px; padding: 0; display: grid; place-items: center; color: var(--primary); background: var(--fill); }
+.tt-btn:active { transform: scale(.96); }
+:root[data-style="neu"] .tour-tip { background: var(--neu); }
+:root[data-style="neu"] .tt-btn { background: var(--neu-grad); box-shadow: 4px 4px 10px var(--neu-glow), -3px -3px 8px var(--neu-hi); }
+:root[data-style="neu"] .tt-btn.ghost { background: var(--neu); box-shadow: var(--raise-s); }
+html.tour-on .tabbar { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .tour-hole, .tour-tip { transition: opacity .2s; } }
