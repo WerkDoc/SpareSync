@@ -2960,10 +2960,13 @@ html.guest-enter body { transition: opacity .4s ease, filter .4s ease; opacity: 
 :root[data-style="neu"] .task input:checked + .tk-box { background: var(--green); box-shadow: 2px 2px 5px color-mix(in srgb, var(--green) 40%, var(--neu-sh)); }
 
 /* Ganz durchwischen: Symbol wird größer und wandert mit zum Rand */
+/* Symbol und Text bleiben immer mittig – nur das Symbol wird etwas größer */
 .swipe-btn svg { transition: transform .25s cubic-bezier(.34, 1.6, .64, 1); }
-.swipe-under.full > .swipe-btn.main svg { transform: scale(1.25); }
-.swipe-under.swipe-left.full > .swipe-btn.main { justify-content: flex-start; padding-left: 26px; }
-.swipe-under.swipe-right.full > .swipe-btn.main { justify-content: flex-end; padding-right: 26px; }
+.swipe-under.full > .swipe-btn.main svg { transform: scale(1.2); }
+/* Flüssiges Wischen: Zeile als eigene Ebene verschieben (Schatten wird nicht bei jedem Bild neu gemalt) */
+.mrow.swipe-open { will-change: transform; backface-visibility: hidden; }
+.swipe-under { will-change: width; contain: layout paint; }
+.swipe-btn > span { line-height: 1.2; }
 
 /* Tab-Symbol hüpft */
 .tab svg.tab-hop { animation: tab-hop .45s cubic-bezier(.34, 1.7, .5, 1); }
@@ -3079,3 +3082,6 @@ html.dense .ios-row.recent { min-height: 52px; }
 :root[data-style="neu"] .tt-btn.ghost { background: var(--neu); box-shadow: var(--raise-s); }
 html.tour-on .tabbar { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .tour-hole, .tour-tip { transition: opacity .2s; } }
+/* Beim Wischen kein „Gedrückt“-Effekt auf der Zeile (sonst flackert sie, während der Finger liegt) */
+:root[data-style="neu"] .mrow.swipe-open::after { opacity: 0 !important; transition: none; }
+:root[data-style="neu"] .mrow.swipe-open:active { border-bottom-color: var(--sep); }
