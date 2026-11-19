@@ -607,10 +607,29 @@ function materialRow(m, href = `#/m/${m.id}`, idx = -1) {
       ${thumb(m)}
       <div class="mrow-main">
         <div class="mrow-title"><span class="nr">${m.number}:</span> ${esc(m.name)}${m.is_favorite ? `<span class="fav-mark" aria-label="Favorit">${icon('starFill', 14)}</span>` : ''}</div>
-        <div class="mrow-meta"><b>${locLabel(m)}</b><b class="stock">${stockLabel(m)}</b></div>
+        <div class="mrow-meta"><b>${qualityBadge(m)}${locLabel(m)}</b><b class="stock">${stockLabel(m)}</b></div>
       </div>
     </a>`;
 }
+// ---------- Qualitätsstufe: Original · Nachbau · Pulled · Neuwertig (eigenes Feld „Qualität“, sonst aus dem Namen erkannt) ----------
+const QUALITY_KEY = 'Qualität';
+const QUALITIES = [
+  { id: 'original', label: 'Original', tone: 'green', re: /\b(original|orig\.?|oem|genuine|service ?pack)\b/i },
+  { id: 'pulled', label: 'Pulled', tone: 'orange', re: /\*?\bpulled\b\*?|\bausgebaut\b|\bgebraucht\b/i },
+  { id: 'neuwertig', label: 'Neuwertig', tone: 'teal', re: /\b(neuwertig|refurb\w*|wie neu|grade ?a)\b/i },
+  { id: 'nachbau', label: 'Nachbau', tone: 'indigo', re: /\b(nachbau|kopie|copy|aftermarket|compatible|kompatibel|incell|in-cell|tft)\b/i },
+];
+/** Qualität eines Teils: { id, label, tone, auto } oder null. Ein eingestellter Wert hat Vorrang vor der Erkennung aus dem Namen */
+function qualityOf(m) {
+  if (!m || m.kind === 'tool') return null;
+  const set = String(m.custom_fields?.[QUALITY_KEY] ?? '').trim();
+  if (set === '-') return null;                                      // bewusst „keine“
+  if (set) { const q = QUALITIES.find((x) => x.label.toLowerCase() === set.toLowerCase() || x.id === set.toLowerCase()); if (q) return { ...q, auto: false }; }
+  const q = QUALITIES.find((x) => x.re.test(m.name || ''));
+  return q ? { ...q, auto: true } : null;
+}
+const qualityBadge = (m, cls = '') => { const q = qualityOf(m); return q ? `<span class="q-badge q-${q.id} ${cls}">${q.label}</span>` : ''; };
+
 const empty = (ic, text, extra = '') => `<div class="empty">${icon(ic, 46, 1.4)}<p>${text}</p>${extra}</div>`;
 
 // Chargennummer / Platz / Fach steckt in einem eigenen Feld (z. B. „Chargennummer Platz“)
@@ -663,19 +682,20 @@ function fuzzyFilter(mats, words) {
   return scored.sort((a, b) => a[1] - b[1]).map(([m]) => m);
 }
 
-function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}) {
+function filterMats(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false, quality = '' } = {}) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const exact = filterMatsExact(mats, { q, group, low, loc, charge, fav }, words);
+  const exact = filterMatsExact(mats, { q, group, low, loc, charge, fav, quality }, words);
   // Nichts gefunden? Dann großzügig nach Tippfehlern suchen (nur wenn auch wirklich gesucht wurde)
   if (exact.length || !words.length || q.trim().length < 4) return exact;
-  const base = filterMatsExact(mats, { group, low, loc, charge, fav }, []);
+  const base = filterMatsExact(mats, { group, low, loc, charge, fav, quality }, []);
   const res = fuzzyFilter(base, words.map((w) => w.replace(/[^a-z0-9äöüß]/g, '')).filter(Boolean));
   res.fuzzy = true;
   return res;
 }
-function filterMatsExact(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false } = {}, words = []) {
+function filterMatsExact(mats, { q = '', group = '', low = false, loc = '', charge = '', fav = false, quality = '' } = {}, words = []) {
   const ch = String(charge || '').trim().toLowerCase();
   return mats.filter((m) => {
+    if (quality && (qualityOf(m)?.id || 'none') !== quality) return false;
     if (group && m.group_id !== group) return false;
     if (low && !isLow(m)) return false;
     if (fav && !m.is_favorite) return false;
@@ -1322,7 +1342,7 @@ function setupQuickReorder(root) {
 const SORT_OPTS = (charge = 'Chargennummer') => [['number', 'Artikelnummer (aufsteigend)'], ['number-desc', 'Artikelnummer (absteigend)'], ['name', 'Name A–Z'], ['name-desc', 'Name Z–A'],
   ['stock', 'Bestand (niedrig zuerst)'], ['updated', 'Zuletzt geändert'], ...(charge ? [['charge', `${charge} (aufsteigend)`], ['charge-desc', `${charge} (absteigend)`]] : [])];
 const defaultSort = () => { try { return localStorage.getItem('ss-sort') || 'number'; } catch { return 'number'; } };
-const listState = { charge: '', fav: false, ...JSON.parse(sessionStorage.getItem('wl-list') || `{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"${defaultSort()}"}`) };
+const listState = { charge: '', fav: false, quality: '', ...JSON.parse(sessionStorage.getItem('wl-list') || `{"tab":"part","q":"","group":"","low":false,"loc":"","sort":"${defaultSort()}"}`) };
 const saveListState = () => {
   sessionStorage.setItem('wl-list', JSON.stringify(listState));
   // Änderungen IN der sichtbaren Liste (Suche, Reiter …) gehören zu ihr; Änderungen von außen erzwingen Neuaufbau
@@ -1485,7 +1505,7 @@ async function viewList(q) {
   if (!res.ok) return;
   const [mats, cart] = res.data;
   const parts = mats.filter((m) => m.kind === 'part'); const tools = mats.filter((m) => m.kind === 'tool');
-  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0) + (listState.fav ? 1 : 0);
+  const activeFilters = (listState.group ? 1 : 0) + (listState.low ? 1 : 0) + (listState.loc ? 1 : 0) + (listState.charge ? 1 : 0) + (listState.fav ? 1 : 0) + (listState.quality ? 1 : 0);
   const tab = listState.tab;
 
   const root = screen({
@@ -1505,6 +1525,7 @@ async function viewList(q) {
         ${listState.group ? `<button class="chip" data-clear="group">${esc((await getGroups()).find((g) => g.id === listState.group)?.name || 'Gruppe')} ${icon('x', 14)}</button>` : ''}
         ${listState.loc ? `<button class="chip" data-clear="loc">${esc((await getLocs()).find((l) => l.id === listState.loc)?.name || 'Lagerort')} ${icon('x', 14)}</button>` : ''}
         ${listState.charge ? `<button class="chip" data-clear="charge">Platz ${esc(listState.charge)} ${icon('x', 14)}</button>` : ''}
+        ${listState.quality ? `<button class="chip" data-clear="quality">${esc(QUALITIES.find((x) => x.id === listState.quality)?.label || 'Ohne Qualität')} ${icon('x', 14)}</button>` : ''}
         ${listState.fav ? `<button class="chip" data-clear="fav">Favoriten ${icon('x', 14)}</button>` : ''}
         ${listState.low ? `<button class="chip red" data-clear="low">Unter Meldebestand ${icon('x', 14)}</button>` : ''}
       </div>` : ''}</div>`,
@@ -1755,6 +1776,9 @@ async function openFilter() {
         <select data-f="loc"><option value="">Alle Lagerorte</option>${locs.map((l) => `<option value="${l.id}" ${l.id === listState.loc ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>
       ${charges.length ? `<label class="frow"><span>${esc(fieldName)}</span>
         <select data-f="charge"><option value="">Alle</option>${charges.map((c) => `<option value="${esc(c)}" ${c.toLowerCase() === String(listState.charge).toLowerCase() ? 'selected' : ''}>${esc(c)} (${counts.get(c)})</option>`).join('')}</select></label>` : ''}
+      ${listState.tab !== 'tool' ? `<label class="frow"><span>Qualität</span>
+        <select data-f="quality"><option value="">Alle</option>${QUALITIES.map((x) => { const n = pool.filter((m) => qualityOf(m)?.id === x.id).length; return `<option value="${x.id}" ${listState.quality === x.id ? 'selected' : ''}>${x.label} (${n})</option>`; }).join('')}
+          <option value="none" ${listState.quality === 'none' ? 'selected' : ''}>Ohne Angabe (${pool.filter((m) => !qualityOf(m)).length})</option></select></label>` : ''}
       <label class="frow"><span>Sortierung</span>
         <select data-f="sort">${SORT_OPTS(charges.length ? fieldName : '')
           .map(([v, l]) => `<option value="${v}" ${v === listState.sort ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -1767,12 +1791,12 @@ async function openFilter() {
     onMount: (root, close) => {
       const val = (k) => root.querySelector(`[data-f=${k}]`);
       root.querySelector('[data-a=apply]').onclick = () => {
-        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, fav: val('fav').checked, charge: val('charge')?.value || '' });
+        Object.assign(listState, { group: val('group').value, loc: val('loc').value, sort: val('sort').value, low: val('low').checked, fav: val('fav').checked, charge: val('charge')?.value || '', quality: val('quality')?.value || '' });
         if (listState.tab === 'cart') listState.tab = 'part';
         saveListState(); close(); viewList({});
       };
       root.querySelector('[data-a=reset]').onclick = () => {
-        Object.assign(listState, { group: '', loc: '', sort: defaultSort(), low: false, fav: false, charge: '' }); saveListState(); close(); viewList({});
+        Object.assign(listState, { group: '', loc: '', sort: defaultSort(), low: false, fav: false, charge: '', quality: '' }); saveListState(); close(); viewList({});
       };
     },
   });
@@ -2326,6 +2350,19 @@ async function viewMaterial(id, q) {
           const v = await pickFrom({ title: 'Ersatzteil Gruppe', items: groups.map((g) => ({ value: g.id, label: g.name })), selected: m.group_id, allowNone: true,
             createLabel: 'Neue Gruppe', onCreate: async () => { const n = await prompt({ title: 'Neue Ersatzteil Gruppe' }); if (!n) return null; const g = await db.createGroup(n); invalidate('groups'); return g.id; } });
           if (v !== undefined) { await db.saveMaterial(id, { group_id: v }); reload(); }
+          return;
+        }
+        if (k === 'quality') {
+          const cur = qualityOf(m);
+          const v = await actionSheet('Qualität', [
+            ...QUALITIES.map((x) => ({ label: x.label, value: x.id, icon: cur?.id === x.id && !cur.auto ? 'check' : undefined })),
+            { label: 'Automatisch (aus dem Namen)', value: 'auto' },
+            { label: 'Keine Angabe', value: 'none' },
+          ]);
+          if (!v) return;
+          const cf = { ...(m.custom_fields || {}) };
+          if (v === 'auto') delete cf[QUALITY_KEY]; else cf[QUALITY_KEY] = v === 'none' ? '-' : QUALITIES.find((x) => x.id === v).label;
+          await db.saveMaterial(id, { custom_fields: cf }); invalidate('materials'); haptic('success'); reload();
           return;
         }
         if (k === 'booking_type') {
@@ -3028,6 +3065,7 @@ function detailsTab(m, defs = []) {
       ${row('Einkaufspreis', m.purchase_price != null ? `<span class="ek">${fmtEUR(m.purchase_price)}</span>${hideEk() ? ` <span class="ek-eye" data-ek-peek role="button" aria-label="Kurz anzeigen">${icon('eye', 18)}</span>` : ''}` : '—', 'purchase_price')}
       ${row('Buchungsart', esc(m.booking_type || 'Einheit'), 'booking_type')}
       ${row(m.kind === 'tool' ? 'Gruppe' : 'Ersatzteil Gruppe', esc(m.group_name || '—'), 'group')}
+      ${m.kind === 'part' ? row('Qualität', (() => { const q = qualityOf(m); return q ? `${qualityBadge(m)}${q.auto ? ' <small class="muted">aus dem Namen</small>' : ''}` : '—'; })(), 'quality') : ''}
       ${row('Meldebestand', fmtQty(m.min_stock), 'min_stock')}
       ${row('Maximalbestand', fmtQty(m.max_stock), 'max_stock')}
       ${row('Lieferant', esc(m.supplier || '—'), 'supplier')}
@@ -3048,7 +3086,7 @@ function detailsTab(m, defs = []) {
         const names = new Set(defs.map((d) => d.name));
         const rows = [
           ...defs.map((d) => row(esc(d.name), esc(fieldDisplay(d, cf[d.name])), `cf:${esc(d.name)}`)),
-          ...Object.entries(cf).filter(([k]) => !names.has(k) && k !== SHOP_KEY).map(([k, v]) => row(esc(k), esc(v === '' || v == null ? '—' : String(v)), `cf:${esc(k)}`)),
+          ...Object.entries(cf).filter(([k]) => !names.has(k) && k !== SHOP_KEY && k !== QUALITY_KEY).map(([k, v]) => row(esc(k), esc(v === '' || v == null ? '—' : String(v)), `cf:${esc(k)}`)),
         ];
         return rows.join('') || '<p class="muted small pad-s">Keine eigenen Felder – unter Menü → Eigene Felder anlegen</p>';
       })()}
@@ -3546,7 +3584,7 @@ async function viewForm(id, q) {
     const cf = m?.custom_fields || {};
     const names = new Set(st.defs.map((d) => d.name));
     st.defs.forEach((d) => { st.defVals[d.name] = d.type === 'bool' ? (cf[d.name] === true || cf[d.name] === 'true' || cf[d.name] === 'Ja') : (cf[d.name] ?? ''); });
-    st.custom = Object.entries(cf).filter(([k]) => !names.has(k) && k !== SHOP_KEY).map(([k, v]) => [k, v == null ? '' : String(v)]);
+    st.custom = Object.entries(cf).filter(([k]) => !names.has(k) && k !== SHOP_KEY && k !== QUALITY_KEY).map(([k, v]) => [k, v == null ? '' : String(v)]);
   }
   const title = id ? (kind === 'tool' ? 'Werkzeug bearbeiten' : 'Ersatzteil bearbeiten') : (kind === 'tool' ? 'Werkzeug anlegen' : 'Ersatzteil anlegen');
   const v = (k, d = '') => esc(m?.[k] ?? d);
@@ -3579,6 +3617,8 @@ async function viewForm(id, q) {
         <label class="field"><small>Artikelnummer</small><input name="number" type="number" inputmode="numeric" placeholder="automatisch" value="${v('number')}"></label>
         <div class="field with-btns"><label><small>${kind === 'tool' ? 'Gruppe' : 'Ersatzteil Gruppe'}</small><input readonly data-f="grp" placeholder="Keine Gruppe" value="${esc(groups.find((g) => g.id === st.group_id)?.name || '')}"></label>
           <button type="button" class="dark-btn sm" data-act="pick-grp" aria-label="Gruppe wählen">${icon('list', 26)}</button></div>
+        ${kind === 'part' ? (() => { const setQ = String(m?.custom_fields?.[QUALITY_KEY] ?? '').trim(); const cur = setQ === '-' ? 'none' : (QUALITIES.find((x) => x.label.toLowerCase() === setQ.toLowerCase())?.id || 'auto');
+          return `<label class="field"><small>Qualität</small><select name="quality"><option value="auto" ${cur === 'auto' ? 'selected' : ''}>Automatisch (aus dem Namen)</option>${QUALITIES.map((x) => `<option value="${x.id}" ${cur === x.id ? 'selected' : ''}>${x.label}</option>`).join('')}<option value="none" ${cur === 'none' ? 'selected' : ''}>Keine Angabe</option></select></label>`; })() : ''}
         <label class="field"><small>Einheit</small><input name="unit" placeholder="Stück" value="${v('unit', 'Stück')}"></label>
         <label class="field"><small>Buchungsart</small><select name="booking_type">${['Einheit', 'Packung', 'Meter', 'Gramm', 'Milliliter'].map((b) => `<option ${b === (m?.booking_type || 'Einheit') ? 'selected' : ''}>${b}</option>`).join('')}</select></label>
         <label class="field"><small>Verkaufspreis (€)</small><input name="sale_price" type="number" inputmode="decimal" step="0.01" placeholder="0,00" value="${m && +m.sale_price ? v('sale_price') : ''}"></label>
@@ -3698,7 +3738,9 @@ async function viewForm(id, q) {
           if (d.type === 'number') v = v.replace(',', '.');
           if (v !== '') out[d.name] = v;
         });
-        st.custom.filter(([k]) => k.trim() && k.trim() !== SHOP_KEY).forEach(([k, val]) => { out[k.trim()] = val; });
+        st.custom.filter(([k]) => k.trim() && k.trim() !== SHOP_KEY && k.trim() !== QUALITY_KEY).forEach(([k, val]) => { out[k.trim()] = val; });
+        if (fd.quality === 'auto' || fd.quality == null) { /* aus dem Namen */ } else out[QUALITY_KEY] = fd.quality === 'none' ? '-' : QUALITIES.find((x) => x.id === fd.quality)?.label || '';
+        if (!out[QUALITY_KEY]) delete out[QUALITY_KEY];
         const shop = normUrl(fd.shop_url);
         if (shop) out[SHOP_KEY] = shop;
         return out;
@@ -4687,7 +4729,7 @@ async function viewCounter() {
       return `<button class="ct-card" data-id="${m.id}" style="--i:${Math.min(i, 12)}">
         <span class="ct-img">${im ? `<img src="${esc(im.thumb || im.url)}" alt="" loading="lazy" decoding="async">` : icon(deviceCat(m).icon, 40, 1.5)}</span>
         <span class="ct-av ${a.cls}"><i></i>${a.text}</span>
-        <b class="ct-name">${esc(m.name)}</b>
+        <b class="ct-name">${esc(m.name)}</b>${qualityBadge(m, 'ct-q')}
         <span class="ct-price">${counterPrice(m) || '<small>Preis auf Anfrage</small>'}</span>
       </button>`;
     }).join('') || `<div class="ct-empty">${icon('search', 44, 1.6)}<b>Nichts gefunden</b><span>Fragen Sie uns – wir bestellen das Teil gern für Sie.</span></div>`;
