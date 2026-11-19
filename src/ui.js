@@ -1589,3 +1589,27 @@ export async function flipCard({ title, sub = '', img = '', code, number = '' })
   }, true);
   document.addEventListener('contextmenu', (e) => { if (e.target.closest?.('.stepper button')) e.preventDefault(); }, true);
 })();
+
+// ---------- Upload-Ring: Vorschaubild mit Fortschrittsring, unten über der Tab-Leiste ----------
+export function uploadProgress(blob, label = 'Foto wird hochgeladen') {
+  const el = document.createElement('div');
+  el.className = 'up-card'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  const url = blob ? URL.createObjectURL(blob) : '';
+  const C = 2 * Math.PI * 27;
+  el.innerHTML = `<span class="up-ring">${url ? `<img src="${url}" alt="">` : ''}<svg viewBox="0 0 64 64"><circle class="t" cx="32" cy="32" r="27"/><circle class="v" cx="32" cy="32" r="27" style="stroke-dasharray:${C.toFixed(2)};stroke-dashoffset:${C.toFixed(2)}"/></svg><i class="up-ok">${icon('check', 22, 3)}</i></span>
+    <span class="up-t"><b>${esc(label)}</b><small>0 %</small></span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  const v = el.querySelector('.v'); const small = el.querySelector('small');
+  let shown = 0;
+  const api = {
+    set(p) { p = Math.max(shown, Math.min(1, p)); shown = p; v.style.strokeDashoffset = (C * (1 - p)).toFixed(2); small.textContent = `${Math.round(p * 100)} %`; },
+    done(text = 'Gespeichert') {
+      api.set(1); el.classList.add('ok'); el.querySelector('b').textContent = text; small.textContent = '';
+      haptic('success');
+      setTimeout(() => { el.classList.remove('show'); el.classList.add('hide'); setTimeout(() => { el.remove(); if (url) URL.revokeObjectURL(url); }, 380); }, 900);
+    },
+    fail() { el.classList.remove('show'); el.classList.add('hide'); setTimeout(() => { el.remove(); if (url) URL.revokeObjectURL(url); }, 380); },
+  };
+  return api;
+}

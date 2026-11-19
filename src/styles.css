@@ -3222,3 +3222,45 @@ html.dense .mrow-meta .q-badge { height: 16px; font-size: 10.5px; padding: 0 5px
 .oq-btn.red { color: var(--red); }
 :root[data-style="neu"] .oq-item { background: var(--neu); box-shadow: var(--raise-s); }
 :root[data-style="neu"] .oq-ic, :root[data-style="neu"] .oq-btn { background: var(--neu); box-shadow: var(--press-s); }
+
+/* =====================================================================
+   UPLOAD-RING
+   ===================================================================== */
+.up-card { position: fixed; z-index: 70; left: 50%; bottom: calc(var(--tabbar-h, 84px) + 14px); display: flex; align-items: center; gap: 12px; padding: 8px 18px 8px 8px; border-radius: 40px;
+  background: var(--surface); box-shadow: 0 16px 40px -10px rgba(0, 0, 0, .35); transform: translate(-50%, 30px) scale(.9); opacity: 0;
+  transition: transform .4s cubic-bezier(.34, 1.4, .64, 1), opacity .25s; pointer-events: none; }
+.up-card.show { transform: translate(-50%, 0); opacity: 1; }
+.up-card.hide { transform: translate(-50%, 20px) scale(.92); opacity: 0; transition-duration: .3s; }
+.up-ring { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+.up-ring img { position: absolute; inset: 7px; width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+.up-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.up-ring circle { fill: none; stroke-width: 4; stroke-linecap: round; }
+.up-ring .t { stroke: var(--fill); }
+.up-ring .v { stroke: var(--primary); transition: stroke-dashoffset .25s ease, stroke .3s; }
+.up-ok { position: absolute; inset: 7px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--green); transform: scale(0); transition: transform .4s cubic-bezier(.34, 1.6, .64, 1); }
+.up-card.ok .v { stroke: var(--green); }
+.up-card.ok .up-ok { transform: scale(1); }
+.up-t { display: flex; flex-direction: column; }
+.up-t b { font-size: 15px; white-space: nowrap; }
+.up-t small { font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+:root[data-style="neu"] .up-card { background: var(--neu); box-shadow: 8px 10px 24px var(--neu-sh), -5px -5px 14px var(--neu-hi); }
+
+/* =====================================================================
+   SCHRIFTGRÖSSE: Inhalte von Seiten und Fenstern skalieren
+   ===================================================================== */
+html.font-zoom .screen > .content, html.font-zoom .bsheet-body { zoom: var(--ui-zoom, 1); }
+
+/* =====================================================================
+   ÜBERSICHT ANPASSEN
+   ===================================================================== */
+.de-list { display: flex; flex-direction: column; gap: 6px; }
+.de-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; border-radius: 14px; background: var(--fill); transition: opacity .2s; }
+.de-row.off .de-ic, .de-row.off .de-l { opacity: .45; }
+.de-ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: var(--primary); background: var(--surface); flex-shrink: 0; }
+.de-l { flex: 1; min-width: 0; font-size: 15.5px; font-weight: 500; }
+.de-mv { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--primary); }
+.de-mv:disabled { opacity: .25; }
+.de-mv:active:not(:disabled) { background: var(--surface); }
+:root[data-style="neu"] .de-row { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .de-ic { background: var(--neu); box-shadow: var(--press-s); }
+.up-ok svg { position: static; inset: auto; width: 22px; height: 22px; transform: none; }

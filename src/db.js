@@ -445,7 +445,36 @@ export async function removeStockLocation(material_id, location_id) {
 //  DATEIEN / BILDER
 // =====================================================================
 const blobToDataUrl = (b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
-export async function addFile(material_id, blob, name, kind = 'file') {
+/** Datei in den Storage hochladen – mit echtem Fortschritt (0…1) über XMLHttpRequest, sonst wie bisher */
+async function storageUpload(path, blob, onProgress) {
+  let token = null;
+  try { token = (await sb.auth.getSession()).data.session?.access_token; } catch { /* egal */ }
+  if (!onProgress || !token || typeof XMLHttpRequest === 'undefined') {
+    const up = await sb.storage.from(BUCKET).upload(path, blob, { contentType: blob.type || undefined, upsert: false }); fail(up.error); return;
+  }
+  try {
+    await new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open('POST', `${SB_URL.replace(/\/$/, '')}/storage/v1/object/${BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`);
+      x.setRequestHeader('Authorization', `Bearer ${token}`);
+      x.setRequestHeader('apikey', SB_KEY);
+      x.setRequestHeader('x-upsert', 'false');
+      if (blob.type) x.setRequestHeader('Content-Type', blob.type);
+      x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      x.onload = () => {
+        if (x.status >= 200 && x.status < 300) { onProgress(1); resolve(); return; }
+        let msg = `Upload fehlgeschlagen (${x.status})`; try { msg = JSON.parse(x.responseText).message || msg; } catch { /* egal */ }
+        reject(Object.assign(new Error(msg), { http: x.status }));
+      };
+      x.onerror = () => reject(new TypeError('Failed to fetch'));
+      x.send(blob);
+    });
+  } catch (e) {
+    if (!e.http || e.http === 409) throw e;
+    const up = await sb.storage.from(BUCKET).upload(path, blob, { contentType: blob.type || undefined, upsert: false }); fail(up.error);   // zweiter Weg
+  }
+}
+export async function addFile(material_id, blob, name, kind = 'file', onProgress = null) {
   if (isDemo) {
     if (blob.size > 1.5e6) throw new Error('Im Demo-Modus sind Dateien bis 1,5 MB möglich.');
     const s = load();
@@ -453,7 +482,7 @@ export async function addFile(material_id, blob, name, kind = 'file') {
   }
   const safe = name.replace(/[^\w.\-]+/g, '_').slice(-60);
   const path = `${await myId()}/${material_id}/${Date.now()}-${safe}`;
-  const up = await sb.storage.from(BUCKET).upload(path, blob, { contentType: blob.type || undefined, upsert: false }); fail(up.error);
+  await storageUpload(path, blob, onProgress);
   const { error } = await sb.from(T.file).insert({ material_id, name, path, kind }); fail(error);
   if (kind === 'image') { try { await uploadThumb(path, blob); } catch { /* wird später nachgeholt */ } }
 }

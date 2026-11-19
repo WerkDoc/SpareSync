@@ -5,6 +5,16 @@
 // =====================================================================
 export const CHANGELOG = [
   {
+    version: '1.8',
+    date: '2026-11-19',
+    title: 'Deine App, dein Stil',
+    items: [
+      { icon: 'layers', title: 'Übersicht anpassen', text: 'Menü → Bedienung → „Übersicht anpassen“: Bereiche ein- und ausblenden und mit den Pfeilen in deine Reihenfolge bringen.' },
+      { icon: 'text', title: 'Schriftgröße', text: 'Klein, Normal, Groß oder Sehr groß – im Menü unter „Bedienung“. Gilt für Listen, Seiten und Fenster.' },
+      { icon: 'camera', title: 'Upload-Ring', text: 'Beim Hochladen eines Fotos läuft unten ein Ring um das Vorschaubild mit, bis zum grünen Haken.' },
+    ],
+  },
+  {
     version: '1.7',
     date: '2026-11-19',
     title: 'Qualität, Steckbrief & Offline',
