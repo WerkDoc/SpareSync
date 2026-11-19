@@ -546,27 +546,67 @@ function applyOfflineBadge(root = app.querySelector('.screen')) {
   if (!root) return;
   const host = root.querySelector('.list-head') || root.querySelector('header');
   const existing = root.querySelector('.offline-badge');
-  if (!isOfflineNow() || !host) { existing?.remove(); return; }
-  if (existing) return;
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'offline-badge';
-  b.innerHTML = `<span class="off-cloud" aria-hidden="true">${icon('cloudOff', 16, 2.2)}</span>Offline`;
-  b.onclick = () => {
-    const t = db.offlineSavedAt();
-    infoBox({
-      title: 'Offline-Modus',
-      html: `<p class="stat-note" style="margin-top:4px">Keine Internetverbindung. Du siehst die zuletzt gespeicherte Kopie${t ? ` vom <b>${new Date(t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</b>` : ''}.</p>
-        <p class="stat-note warn">Buchungen und Änderungen sind erst wieder mit Internet möglich.</p>`,
-    });
-  };
-  host.appendChild(b);
+  const q = db.isDemo ? [] : db.offlineQueue();
+  const failed = q.filter((x) => x.status === 'fail').length;
+  const show = isOfflineNow() || q.length;
+  if (!show || !host) { existing?.remove(); return; }
+  const off = isOfflineNow();
+  const html = `<span class="off-cloud" aria-hidden="true">${icon(off ? 'cloudOff' : failed ? 'alert' : 'refresh', 16, 2.2)}</span>${off ? 'Offline' : failed ? 'Nicht gebucht' : 'Sende …'}${q.length ? `<em class="off-n">${q.length}</em>` : ''}`;
+  const b = existing || document.createElement('button');
+  b.type = 'button'; b.className = `offline-badge ${!off && failed ? 'fail' : ''} ${!off && !failed ? 'syncing' : ''}`;
+  if (b.innerHTML !== html) b.innerHTML = html;
+  b.onclick = () => showQueue();
+  if (!existing) host.appendChild(b);
 }
+/** Fenster „Offline-Buchungen“: was wartet, was nicht geklappt hat – erneut senden oder verwerfen */
+function showQueue() {
+  const q = db.offlineQueue(); const t = db.offlineSavedAt();
+  const verb = { in: 'Dazu gebucht', out: 'Entnommen', transfer: 'Umgebucht' };
+  const ago = (x) => new Date(x).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  sheet(`<div class="oq">
+      ${isOfflineNow() ? `<p class="stat-note">Keine Internetverbindung. Du siehst die gespeicherte Kopie${t ? ` vom <b>${new Date(t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</b>` : ''}. <b>Buchen geht trotzdem</b> – die Buchungen werden gesendet, sobald du wieder online bist.</p>` : ''}
+      ${q.length ? `<div class="oq-list">${q.map((x) => `<div class="oq-item ${x.status}" data-q="${x.id}">
+          <span class="oq-ic">${icon(x.status === 'fail' ? 'alert' : 'clock', 18, 2.2)}</span>
+          <span class="oq-t"><b>${esc(`${x.number}: ${x.name}`)}</b><small>${verb[x.args.type] || x.args.type}: ${fmtQty(x.args.qty)} · ${ago(x.at)}</small>${x.status === 'fail' ? `<small class="red">Nicht gebucht: ${esc(x.error || 'Fehler')}</small>` : ''}</span>
+          ${x.status === 'fail' ? `<span class="oq-acts"><button class="oq-btn" data-retry="${x.id}" aria-label="Erneut senden">${icon('refresh', 18)}</button><button class="oq-btn red" data-drop="${x.id}" aria-label="Verwerfen">${icon('trash', 18)}</button></span>` : ''}
+        </div>`).join('')}</div>` : '<p class="muted center pad">Keine wartenden Buchungen.</p>'}
+      ${q.some((x) => x.status === 'wait') && !isOfflineNow() ? '<button class="btn-filled full" data-oq="send">Jetzt senden</button>' : ''}
+    </div>`, {
+    title: q.length ? `Offline-Buchungen (${q.length})` : 'Offline-Modus',
+    onMount: (root, close) => {
+      root.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => { db.retryQueued(b.dataset.retry); close(); await sendQueue(true); }));
+      root.querySelectorAll('[data-drop]').forEach((b) => (b.onclick = async () => {
+        if (!await confirmBox({ title: 'Buchung verwerfen?', message: 'Sie wird nicht gebucht. Der Bestand wird wieder vom Server geladen.', okText: 'Verwerfen', danger: true })) return;
+        db.dropQueued(b.dataset.drop); invalidate(); close(); route();
+      }));
+      const send = root.querySelector('[data-oq=send]'); if (send) send.onclick = async () => { close(); await sendQueue(true); };
+    },
+  });
+}
+/** Wartende Offline-Buchungen nachschicken und Bescheid geben */
+async function sendQueue(loud = false) {
+  if (db.isDemo || !db.offlineQueue().some((x) => x.status === 'wait')) return null;
+  applyOfflineBadge();
+  const r = await db.flushQueue();
+  invalidate();
+  if (r.sent || r.failed) {
+    if (r.failed) toast(`${r.failed} ${r.failed === 1 ? 'Buchung' : 'Buchungen'} nicht gebucht`, 'err', { sub: 'Tippe oben auf „Nicht gebucht“', duration: 5000 });
+    else toast(`${r.sent} Offline-${r.sent === 1 ? 'Buchung' : 'Buchungen'} gesendet`, 'ok', { icon: 'refresh', cls: 'di-sync' });
+    route();
+  } else if (loud && r.left) toast('Noch keine Verbindung', 'err');
+  applyOfflineBadge();
+  return r;
+}
+window.addEventListener('ss-queue', () => applyOfflineBadge());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && navigator.onLine) sendQueue(); });
+setTimeout(() => { if (navigator.onLine) sendQueue(); }, 2500);
 window.addEventListener('ss-offline', () => applyOfflineBadge());
 window.addEventListener('offline', () => { applyOfflineBadge(); toast('Keine Internetverbindung – Offline-Modus', 'err'); });
 window.addEventListener('online', async () => {
+  const r = await sendQueue();
   try { await refreshAll(); } catch {}
   applyOfflineBadge();
-  if (!isOfflineNow()) { toast('Wieder online', 'ok', { icon: 'refresh', sub: 'Daten aktualisiert', cls: 'di-sync' }); route(); }
+  if (!isOfflineNow() && !(r?.sent || r?.failed)) { toast('Wieder online', 'ok', { icon: 'refresh', sub: 'Daten aktualisiert', cls: 'di-sync' }); route(); }
 });
 
 function screen({ header, body, tab = null, cls = '', footer = '' }) {
@@ -2010,11 +2050,12 @@ async function quickOut(m, onDone) {
   if (!loc) return false;
   try {
     const total = await db.book({ material_id: m.id, type: 'out', qty: 1, location_id: loc.location_id, note: '' });
+    const queued = db.lastBook.queued;
     invalidate('materials', 'locations'); haptic('success'); sfx.ping();
     const booked = { material_id: m.id, type: 'out', qty: 1, location_id: loc.location_id };
     const hashAtBooking = location.hash;
-    toast('1 Stück entnommen', 'ok', {
-      sub: `${m.name} · ${loc.name} · Bestand ${fmtQty(total)}`,
+    toast(queued ? '1 Stück – offline gemerkt' : '1 Stück entnommen', 'ok', {
+      sub: queued ? `${m.name} · wird gesendet, sobald du online bist` : `${m.name} · ${loc.name} · Bestand ${fmtQty(total)}`,
       action: { label: 'Rückgängig', onClick: () => undoBooking(booked, 'Entnehmen', hashAtBooking === location.hash ? onDone : null) },
       onTimeout: () => { if (+m.min_stock > 0 && total <= +m.min_stock) toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); },
     });
@@ -2027,7 +2068,7 @@ async function quickOut(m, onDone) {
   } catch (e) { errToast(e); return true; }
 }
 async function openBooking(m, type, onDone, preset = {}) {
-  if (isOfflineNow()) { toast('Offline – Buchungen sind erst wieder mit Internet möglich.', 'err'); return; }
+  // Offline: Buchen geht trotzdem – db.book merkt sich die Buchung und schickt sie später nach
   if (type === 'out' && quickOutOn() && !preset.qty && !preset.location_id && !preset.full && await quickOut(m, onDone)) return;
   const conf = {
     in: { title: 'Dazu buchen', cls: 'green', icon: 'plus' },
@@ -2102,14 +2143,16 @@ async function openBooking(m, type, onDone, preset = {}) {
         const b = e.currentTarget; b.disabled = true;
         try {
           const total = await db.book({ material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null, note: f('note').value.trim() });
+          const queued = db.lastBook.queued;
           rememberNote(type, f('note').value);
           close(); invalidate('materials', 'locations');
           haptic('success'); sfx.ping();
           const booked = { material_id: m.id, type, qty: +qty.value, location_id: f('from').value, to_location_id: f('to')?.value || null };
           const hashAtBooking = location.hash;
           const lowWarn = () => { if (+m.min_stock > 0 && total <= +m.min_stock && type === 'out') toast('Meldebestand erreicht', 'err', { sub: `Bestand ${fmtQty(total)} / Meldebestand ${fmtQty(m.min_stock)}` }); };
-          toast('Erfolgreich gebucht', 'ok', {
-            sub: `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}`,
+          toast(queued ? 'Offline gemerkt' : 'Erfolgreich gebucht', 'ok', {
+            sub: queued ? `${conf.title}: ${fmtQty(qty.value)} · wird gesendet, sobald du online bist` : `${conf.title}: ${fmtQty(qty.value)} · Gesamtbestand ${fmtQty(total)}`,
+            ...(queued ? { icon: 'cloudOff' } : {}),
             // 5 Sekunden „Rückgängig“: bucht genau die Gegenbewegung (steht dann auch so in der Historie)
             action: { label: 'Rückgängig', onClick: () => undoBooking(booked, conf.title, hashAtBooking === location.hash ? onDone : null) },
             onTimeout: lowWarn,                      // Meldebestand-Hinweis erst, wenn nicht rückgängig gemacht
