@@ -2925,3 +2925,16 @@ html.guest-enter body { transition: opacity .4s ease, filter .4s ease; opacity: 
 .dim-viewed { padding: 4px 16px 0; }
 .dim-viewed .sp-label { color: #fff; opacity: .85; margin-top: 10px; }
 .dim-viewed .viewed-card { background: var(--surface); }
+
+/* ---------- Warenkorb: Auswahl ---------- */
+.cart-tools { margin: 4px 4px 8px; }
+.selecting .crow { cursor: pointer; transition: background .2s; }
+.selecting .crow .stepper, .selecting .crow .more, .selecting .crow .shop-ic { display: none; }
+.selecting .crow .crow-link { pointer-events: none; }
+.crow.is-selected .sel-check { background: var(--primary); border-color: var(--primary); color: #fff; }
+.selecting .crow.is-selected { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+.crow.crow-out { animation: crow-out .38s cubic-bezier(.4, 0, .2, 1) var(--d, 0ms) both; overflow: hidden; }
+@keyframes crow-out { 40% { opacity: 0; transform: translateX(-30px); } 100% { opacity: 0; transform: translateX(-30px); max-height: 0; padding-top: 0; padding-bottom: 0; } }
+.crow { max-height: 200px; }
+.cart-sel .sb-act { flex-direction: row; gap: 8px; font-size: 15px; height: 50px; }
+@media (prefers-reduced-motion: reduce) { .crow.crow-out { animation: none; opacity: 0; } }
