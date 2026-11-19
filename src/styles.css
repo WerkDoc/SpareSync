@@ -3116,3 +3116,11 @@ button[type=submit].save-done { width: 54px !important; min-width: 0; height: 54
 .fly-box { position: fixed; left: 0; top: 0; z-index: 120; display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 12px 0 9px; border-radius: 18px; pointer-events: none;
   color: #fff; background: var(--primary); box-shadow: 0 10px 24px -6px rgba(0, 0, 0, .35); font-weight: 800; font-size: 15px; }
 :root[data-style="neu"] .fly-box { background: var(--neu-grad); }
+
+/* Einkaufspreise ausblenden: unscharf, Tipp zeigt sie 5 Sekunden */
+html.hide-ek:not(.ek-peek) .ek { filter: blur(6px); -webkit-user-select: none; user-select: none; cursor: pointer; transition: filter .3s; }
+html.hide-ek .ek { transition: filter .3s; }
+.ek-eye { display: inline-grid; place-items: center; vertical-align: middle; margin-left: 6px; color: var(--primary); cursor: pointer; }
+html.ek-peek .ek-eye { opacity: .4; }
+.set-row select { max-width: 48%; min-width: 0; text-overflow: ellipsis; text-align: right; text-align-last: right; flex-shrink: 1; }
+.set-row > span { min-width: 0; }
