@@ -3973,8 +3973,11 @@ async function viewLocations() {
     const n = await prompt({ title: 'Neuer Lagerort', placeholder: 'z.B. Kleinteilemagazin, Regal A3' }); if (!n) return;
     try { await db.createLocation(n); invalidate('locations'); toast('Lagerort angelegt'); viewLocations(); } catch (e) { errToast(e); }
   });
-  root.querySelectorAll('[data-l]').forEach((r) => (r.onclick = async () => {
+  root.querySelectorAll('[data-l]').forEach((r) => (r.onclick = () => {
     const l = locs.find((x) => x.id === r.dataset.l);
+    locationCard(l, stats.get(l.id), r, () => locationMenu(l));
+  }));
+  const locationMenu = async (l) => {
     const v = await actionSheet(l.name, [
       { label: 'Materialien anzeigen', value: 'show', icon: 'list' },
       { label: 'Inventur starten', value: 'inv', icon: 'tally' },
@@ -3991,7 +3994,82 @@ async function viewLocations() {
       if (v === 'label') showLabel({ title: l.name, sub: 'Lagerort', code: l.barcode || l.name });
       if (v === 'del' && await confirmBox({ title: `„${l.name}“ löschen?`, okText: 'Löschen', danger: true })) { await db.deleteLocation(l.id); invalidate(); viewLocations(); }
     } catch (e) { errToast(e); }
-  }));
+  };
+}
+
+// =====================================================================
+//  LAGERORT-STECKBRIEF: Antippen dreht die Karte um – Füllstand, Wert, knappe Teile, letzte Inventur
+// =====================================================================
+async function locationCard(l, st, fromEl, onMore) {
+  const total = st.items.length;
+  const good = total ? Math.round(((st.ok + st.warn * 0.5) / total) * 100) : 0;
+  const tone = !total ? 'gray' : good >= 80 ? 'green' : good >= 50 ? 'orange' : 'red';
+  const R = 34; const C = +(2 * Math.PI * R).toFixed(2);
+  const low = st.items.filter((x) => x.state === 'low' || x.state === 'empty').slice(0, 4);
+  const { el, close } = layer('lc-layer', `<div class="backdrop" data-x></div>
+    <div class="lc-stage"><div class="lc-card" role="dialog" aria-label="Steckbrief ${esc(l.name)}">
+      <div class="lc-face lc-front"><span class="shelf-ic">${icon('shelf', 26, 2)}</span><b>${esc(l.name)}</b></div>
+      <div class="lc-face lc-back">
+        <div class="lc-head"><span class="lc-ic">${icon('shelf', 22, 2)}</span><span class="lc-t"><b>${esc(l.name)}</b><small>${l.barcode ? `Barcode ${esc(l.barcode)}` : 'Steckbrief'}</small></span>
+          <button class="icon-btn" data-x aria-label="Schließen">${icon('x', 20, 2.4)}</button></div>
+        <div class="lc-main">
+          <div class="lc-ring lc-${tone}"><svg viewBox="0 0 80 80"><circle class="t" cx="40" cy="40" r="${R}"/><circle class="v" cx="40" cy="40" r="${R}" style="--c:${C};--o:${(C * (1 - good / 100)).toFixed(2)}"/></svg>
+            <span><b>${total ? good : '–'}</b>${total ? '<small>%</small>' : ''}</span></div>
+          <div class="lc-kpis">
+            <span><b>${total}</b><small>Teile</small></span>
+            <span><b>${fmtQty(st.units)}</b><small>Stück</small></span>
+            <span class="${st.low + st.empty ? 'red' : ''}"><b>${st.low + st.empty}</b><small>knapp/leer</small></span>
+            <span><b class="ek">${st.value ? fmtEUR(st.value) : '–'}</b><small>Wert (EK)</small></span>
+          </div>
+        </div>
+        <div class="lc-bar" aria-hidden="true"><i class="s-ok" style="--w:${total ? (st.ok / total) * 100 : 0}%"></i><i class="s-warn" style="--w:${total ? (st.warn / total) * 100 : 0}%"></i><i class="s-low" style="--w:${total ? (st.low / total) * 100 : 0}%"></i><i class="s-empty" style="--w:${total ? (st.empty / total) * 100 : 0}%"></i></div>
+        <div class="lc-rows">
+          <div class="lc-row"><span>${icon('tally', 17)}Letzte Inventur</span><b data-lc="inv">…</b></div>
+          <div class="lc-row"><span>${icon('clock', 17)}Letzte Buchung</span><b data-lc="mov">…</b></div>
+        </div>
+        ${low.length ? `<p class="lc-sub">Knapp oder leer</p><div class="lc-low">${low.map((x) => `<a href="#/m/${x.m.id}" class="lc-li">${thumb(x.m, 'sm')}<span>${esc(x.m.name)}</span><b class="${x.state === 'empty' ? 'red' : 'orange'}">${fmtQty(x.qty)}</b></a>`).join('')}${st.low + st.empty > low.length ? `<span class="muted small">… und ${st.low + st.empty - low.length} weitere</span>` : ''}</div>` : total ? `<p class="lc-ok">${icon('check', 16, 2.6)} Alles gut gefüllt</p>` : ''}
+        <div class="lc-acts">
+          <a class="lc-btn" href="#/list?tab=part&loc=${l.id}">${icon('list', 20)}<span>Teile</span></a>
+          <a class="lc-btn" href="#/inventory?loc=${l.id}">${icon('tally', 20)}<span>Inventur</span></a>
+          <a class="lc-btn" href="#/map">${icon('map', 20)}<span>Grundriss</span></a>
+          <button class="lc-btn" data-lc-more>${icon('dots', 20)}<span>Mehr</span></button>
+        </div>
+      </div>
+    </div></div>`);
+  const card = el.querySelector('.lc-card');
+  el.querySelectorAll('[data-x]').forEach((b) => (b.onclick = close));
+  el.querySelectorAll('.lc-acts a, .lc-li').forEach((a) => a.addEventListener('click', () => close()));
+  el.querySelector('[data-lc-more]').onclick = () => { close(); setTimeout(onMore, 260); };
+  haptic('light');
+  // Karte startet auf der angetippten Zeile (Vorderseite) und dreht sich groß in die Mitte (Rückseite)
+  const r0 = fromEl.getBoundingClientRect(); const r1 = card.getBoundingClientRect();
+  if (!reduceMotion.matches && card.animate) {
+    const sx = r0.width / r1.width; const sy = r0.height / r1.height;
+    const dx = r0.left + r0.width / 2 - (r1.left + r1.width / 2); const dy = r0.top + r0.height / 2 - (r1.top + r1.height / 2);
+    card.animate([
+      { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) rotateY(0deg)` },
+      { transform: `translate(${dx * 0.35}px, ${dy * 0.35}px) scale(${(sx + 1) / 2}) rotateY(100deg)`, offset: 0.55 },
+      { transform: 'translate(0, 0) scale(1) rotateY(180deg)' },
+    ], { duration: 640, easing: 'cubic-bezier(.3, .8, .25, 1)', fill: 'backwards' });
+    fromEl.animate([{ opacity: 1 }, { opacity: 0.25, offset: 0.2 }, { opacity: 0.25, offset: 0.9 }, { opacity: 1 }], { duration: 900 });
+  }
+  card.classList.add('flipped');
+  // Ring füllt sich nach dem Umdrehen
+  setTimeout(() => el.querySelector('.lc-ring')?.classList.add('go'), reduceMotion.matches ? 0 : 520);
+  // Letzte Inventur & letzte Buchung (aus den Bewegungen des letzten Jahres)
+  try {
+    const movs = (await db.listMovementsSince(365)).filter((x) => x.from_location_id === l.id || x.to_location_id === l.id || x.location_id === l.id)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const inv = movs.find((x) => x.type === 'inventory');
+    const localInv = invDoneLoad(l.id)?.at;
+    const invAt = Math.max(inv ? Date.parse(inv.created_at) : 0, localInv || 0);
+    const ago = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? 'heute' : d === 1 ? 'gestern' : d < 31 ? `vor ${d} Tagen` : new Date(t).toLocaleDateString('de-DE'); };
+    const invEl = el.querySelector('[data-lc=inv]'); const movEl = el.querySelector('[data-lc=mov]');
+    if (invEl) { invEl.textContent = invAt ? ago(invAt) : 'noch nie'; invEl.classList.toggle('orange', !invAt || Date.now() - invAt > 90 * 864e5); }
+    if (movEl) movEl.textContent = movs[0] ? ago(Date.parse(movs[0].created_at)) : '—';
+  } catch {
+    el.querySelectorAll('[data-lc]').forEach((x) => (x.textContent = '—'));
+  }
 }
 
 // =====================================================================

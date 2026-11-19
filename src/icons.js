@@ -50,6 +50,7 @@ const P = {
   chevR: '<path d="m9 6 6 6-6 6"/>',
   cloudOff: '<path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.5 4.5 0 0 0 7 18z"/><path d="m3 3 18 18"/>',
   sort: '<path d="M7 4v16M4 7l3-3 3 3"/><path d="M17 20V4M14 17l3 3 3-3"/>',
+  dots: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   chevL: '<path d="m15 6-6 6 6 6"/>',
   chevD: '<path d="m6 9 6 6 6-6"/>',
   chevU: '<path d="m6 15 6-6 6 6"/>',

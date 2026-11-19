@@ -3140,3 +3140,62 @@ html.dense .mrow-meta .q-badge { height: 16px; font-size: 10.5px; padding: 0 5px
 .ct-q { align-self: flex-start; margin: -2px 4px 0; }
 /* Abzeichen + Lagerort bleiben in einer Zeile (Lagerort wird bei Platzmangel gekürzt) */
 .mrow-meta > b:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* =====================================================================
+   LAGERORT-STECKBRIEF (Flip-Karte)
+   ===================================================================== */
+.lc-layer { position: fixed; inset: 0; z-index: 90; }
+.lc-layer .backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .38); opacity: 0; transition: opacity .3s; }
+.lc-layer.show .backdrop { opacity: 1; }
+.lc-layer.closing .backdrop { opacity: 0; }
+.lc-stage { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 420px); justify-content: center; align-items: center; padding: 16px; perspective: 1400px; pointer-events: none; }
+.lc-card { position: relative; width: 100%; min-width: 0; max-height: calc(100vh - 60px); transform-style: preserve-3d; transform: rotateY(180deg); pointer-events: auto; transition: opacity .25s, transform .3s; }
+.lc-layer.closing .lc-card { opacity: 0; transform: rotateY(180deg) scale(.92); }
+.lc-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 26px; background: var(--surface); box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .45); }
+.lc-front { position: absolute; inset: 0; display: flex; align-items: center; gap: 12px; padding: 18px; font-size: 18px; }
+.lc-back { transform: rotateY(180deg); padding: 16px 16px 14px; overflow: auto; max-height: calc(100vh - 60px); display: flex; flex-direction: column; gap: 14px; }
+.lc-head { display: flex; align-items: center; gap: 12px; }
+.lc-ic { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; color: var(--teal, #30b0c7); background: var(--fill); flex-shrink: 0; }
+.lc-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lc-t b { font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-t small { color: var(--text-2); font-size: 13px; }
+.lc-main { display: flex; align-items: center; gap: 16px; }
+.lc-ring { position: relative; width: 96px; height: 96px; flex-shrink: 0; }
+.lc-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.lc-ring circle { fill: none; stroke-width: 9; stroke-linecap: round; }
+.lc-ring .t { stroke: var(--fill); }
+.lc-ring .v { stroke-dasharray: var(--c); stroke-dashoffset: var(--c); transition: stroke-dashoffset 1s cubic-bezier(.3, .9, .3, 1); }
+.lc-ring.go .v { stroke-dashoffset: var(--o); }
+.lc-green .v { stroke: var(--green); } .lc-orange .v { stroke: var(--orange, #ff9500); } .lc-red .v { stroke: var(--red); } .lc-gray .v { stroke: var(--text-3); }
+.lc-ring > span { position: absolute; inset: 0; display: flex; align-items: baseline; justify-content: center; padding-top: 32px; }
+.lc-ring b { font-size: 26px; font-variant-numeric: tabular-nums; } .lc-ring small { font-size: 13px; color: var(--text-2); margin-left: 1px; }
+.lc-kpis { flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.lc-kpis span { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 13px; background: var(--fill); min-width: 0; }
+.lc-kpis b { font-size: 17px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-kpis small { font-size: 12px; color: var(--text-2); }
+.lc-kpis .red b { color: var(--red); }
+.lc-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--fill); }
+.lc-bar i { width: var(--w); transition: width .8s ease .5s; }
+.lc-bar .s-ok { background: var(--green); } .lc-bar .s-warn { background: var(--orange, #ff9500); } .lc-bar .s-low { background: var(--red); } .lc-bar .s-empty { background: var(--text-3); }
+.lc-rows { display: flex; flex-direction: column; gap: 2px; }
+.lc-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; font-size: 15px; border-bottom: .5px solid var(--sep); }
+.lc-row:last-child { border-bottom: 0; }
+.lc-row span { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
+.lc-row b.orange { color: var(--orange, #ff9500); }
+.lc-sub { margin: 0 2px -6px; font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+.lc-low { display: flex; flex-direction: column; gap: 4px; }
+.lc-li { display: flex; align-items: center; gap: 10px; padding: 5px; border-radius: 12px; color: var(--text); text-decoration: none; }
+.lc-li:active { background: var(--fill); }
+.lc-li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; }
+.lc-li .thumb.sm { width: 34px; height: 34px; }
+.lc-li b.red { color: var(--red); } .lc-li b.orange { color: var(--orange, #ff9500); }
+.lc-ok { margin: 0; display: flex; align-items: center; gap: 6px; color: var(--green); font-weight: 600; font-size: 14.5px; }
+.lc-acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.lc-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 2px 8px; border-radius: 14px; background: var(--fill); color: var(--primary); text-decoration: none; font-size: 12.5px; font-weight: 600; }
+.lc-btn:active { transform: scale(.95); }
+:root[data-style="neu"] .lc-face { background: var(--neu); }
+:root[data-style="neu"] .lc-kpis span, :root[data-style="neu"] .lc-ic { background: var(--neu); box-shadow: var(--press-s); }
+:root[data-style="neu"] .lc-btn { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .lc-btn:active { box-shadow: var(--press-s); }
+:root[data-style="neu"] .lc-ring .t { stroke: color-mix(in srgb, var(--neu-sh) 55%, transparent); }
+@media (prefers-reduced-motion: reduce) { .lc-ring .v, .lc-bar i { transition: none; } }
