@@ -5,6 +5,15 @@
 // =====================================================================
 export const CHANGELOG = [
   {
+    version: '1.10',
+    date: '2026-11-20',
+    title: 'Leichter Einstieg',
+    items: [
+      { icon: 'sparkle', title: 'Hier starten', text: 'Neue Konten bekommen auf der Übersicht eine Karte mit drei Schritten: Lagerort, erstes Teil, erste Entnahme. Erledigtes wird abgehakt.', tour: true },
+      { icon: 'play', title: 'Tour für neue Konten', text: 'Die kurze Tour startet jetzt auch nach der ersten Anmeldung von selbst – und zeigt, wo du neue Teile anlegst.' },
+    ],
+  },
+  {
     version: '1.9',
     date: '2026-11-20',
     title: 'Sprache & Englisch',
