@@ -5077,16 +5077,35 @@ async function viewMap(q = {}) {
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
     el.addEventListener('click', () => {
       if (editing) return;
-      const l = locs.find((x) => x.id === el.dataset.id); const s = stats.get(l.id);
       haptic('light');
-      sheet(`<div class="fp-sheet">
+      openShelf(el.dataset.id);
+    });
+  });
+
+  // Inhalt eines Regals als Fenster. Tippt man darin auf ein Teil, merkt sich die Adresse das Regal
+  // (#/map?shelf=…) – „Zurück“ aus dem Teil öffnet das Fenster dann wieder, an derselben Stelle.
+  function openShelf(id, scroll = 0) {
+    const l = locs.find((x) => x.id === id); if (!l) return;
+    const s = stats.get(l.id);
+    sheet(`<div class="fp-sheet">
           <div class="fp-sum"><span><b>${s.items.length}</b><small>Teile</small></span><span><b>${fmtQty(s.units)}</b><small>Stück</small></span><span class="${s.low ? 'red' : ''}"><b>${s.low}</b><small>knapp</small></span></div>
           <div class="fp-items">${s.items.slice(0, 40).map((x) => `<a class="fp-item s-${x.state} ${hits.has(l.id) && x.m.id === find?.id ? 'hit' : ''}" href="#/m/${x.m.id}">${thumb(x.m, 'sm')}<span>${esc(x.m.name)}</span><b>${fmtQty(x.qty)}</b></a>`).join('') || '<p class="muted center pad">Hier liegt noch nichts</p>'}</div>
           ${s.items.length > 40 ? `<p class="muted small center">… und ${s.items.length - 40} weitere</p>` : ''}
           <div class="fp-acts"><a class="btn-tinted" href="#/list?tab=part&loc=${l.id}">${icon('list', 18)} Alle Teile</a><a class="btn-tinted" href="#/inventory?loc=${l.id}">${icon('tally', 18)} Inventur</a></div>
-        </div>`, { title: l.name, onMount: (sh, close) => sh.querySelectorAll('a').forEach((a) => a.addEventListener('click', close)) });
-    });
-  });
+        </div>`, { title: l.name, onMount: (sh, close) => {
+          const body = sh.querySelector('.bsheet-body');
+          if (scroll && body) requestAnimationFrame(() => { body.scrollTop = scroll; });
+          sh.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => {
+            replaceHash(`#/map?${find ? `find=${find.id}&` : ''}shelf=${l.id}&st=${Math.round(body?.scrollTop || 0)}`);
+            close();
+          }));
+        } });
+  }
+  if (q.shelf && !editing) {
+    // zurück aus einem Teil: Adresse wieder neutral, damit das Fenster nicht bei jedem Besuch aufgeht
+    replaceHash(`#/map${find ? `?find=${find.id}` : ''}`);
+    openShelf(q.shelf, Number(q.st) || 0);
+  }
 
   // „Wo liegt …?“ – Teil suchen, Regal leuchtet auf
   const inp = root.querySelector('.fp-search input'); const res = root.querySelector('.fp-res');
