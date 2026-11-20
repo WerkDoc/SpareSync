@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------
 //  SpareSync – App (Router + Ansichten)
 // ---------------------------------------------------------------------
+import { LOCALE, LANG, langPref, setLang, tr } from './i18n.js';
 import './styles.css';
 import * as db from './db.js';
 import { icon } from './icons.js';
@@ -72,7 +73,7 @@ const fieldsFor = (defs, kind) => defs.filter((f) => f.applies_to === 'both' || 
 function fieldDisplay(def, v) {
   if (def?.type === 'bool') return v === true || v === 'true' || v === 'Ja' ? 'Ja' : 'Nein';
   if (v === undefined || v === null || v === '') return '—';
-  if (def?.type === 'date') { const d = new Date(v); return Number.isNaN(+d) ? String(v) : d.toLocaleDateString('de-DE'); }
+  if (def?.type === 'date') { const d = new Date(v); return Number.isNaN(+d) ? String(v) : d.toLocaleDateString(LOCALE); }
   if (def?.type === 'number') return fmtQty(v);
   return String(v);
 }
@@ -562,9 +563,9 @@ function applyOfflineBadge(root = app.querySelector('.screen')) {
 function showQueue() {
   const q = db.offlineQueue(); const t = db.offlineSavedAt();
   const verb = { in: 'Dazu gebucht', out: 'Entnommen', transfer: 'Umgebucht' };
-  const ago = (x) => new Date(x).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const ago = (x) => new Date(x).toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   sheet(`<div class="oq">
-      ${isOfflineNow() ? `<p class="stat-note">Keine Internetverbindung. Du siehst die gespeicherte Kopie${t ? ` vom <b>${new Date(t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</b>` : ''}. <b>Buchen geht trotzdem</b> – die Buchungen werden gesendet, sobald du wieder online bist.</p>` : ''}
+      ${isOfflineNow() ? `<p class="stat-note">Keine Internetverbindung. Du siehst die gespeicherte Kopie${t ? ` vom <b>${new Date(t).toLocaleString(LOCALE, { dateStyle: 'short', timeStyle: 'short' })}</b>` : ''}. <b>Buchen geht trotzdem</b> – die Buchungen werden gesendet, sobald du wieder online bist.</p>` : ''}
       ${q.length ? `<div class="oq-list">${q.map((x) => `<div class="oq-item ${x.status}" data-q="${x.id}">
           <span class="oq-ic">${icon(x.status === 'fail' ? 'alert' : 'clock', 18, 2.2)}</span>
           <span class="oq-t"><b>${esc(`${x.number}: ${x.name}`)}</b><small>${verb[x.args.type] || x.args.type}: ${fmtQty(x.args.qty)} · ${ago(x.at)}</small>${x.status === 'fail' ? `<small class="red">Nicht gebucht: ${esc(x.error || 'Fehler')}</small>` : ''}</span>
@@ -814,7 +815,7 @@ const greetIcon = (kind) => (kind === 'sunrise' || kind === 'sun')
      </svg>`;
 const dashHead = () => {
   const g = greeting();
-  const date = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const date = new Date().toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
   // Tageszeit-Himmel hinter der Begrüßung (Sterne nur abends/nachts, Positionen fest, damit nichts springt)
   const stars = g.kind === 'night' || g.kind === 'moon'
     ? Array.from({ length: g.kind === 'night' ? 18 : 8 }, (_, i) => `<i style="left:${(i * 37 + 11) % 97}%;top:${(i * 53 + 7) % 70}%;--d:${(i % 6) * 0.45}s;--s:${1 + (i % 3) * 0.6}px"></i>`).join('') : '';
@@ -2029,8 +2030,8 @@ function renderCart(rows, mats, cart) {
   };
   const share = rows.querySelector('[data-act=share]');
   if (share) share.onclick = async () => {
-    const text = 'Bestellliste\n\n' + order.map((c) => { const m = byId[c.material_id]; return `${fmtQty(c.qty)} × ${m.name}${m.barcode && m.barcode !== m.name ? ` (${m.barcode})` : ''}${m.supplier ? ` – ${m.supplier}` : ''}${shopUrl(m) ? `\n   ${shopUrl(m)}` : ''}`; }).join('\n');
-    if (navigator.share) navigator.share({ title: 'Bestellliste', text }).catch(() => {}); else copyText(text);
+    const text = `${tr('Bestellliste')}\n\n` + order.map((c) => { const m = byId[c.material_id]; return `${fmtQty(c.qty)} × ${m.name}${m.barcode && m.barcode !== m.name ? ` (${m.barcode})` : ''}${m.supplier ? ` – ${m.supplier}` : ''}${shopUrl(m) ? `\n   ${shopUrl(m)}` : ''}`; }).join('\n');
+    if (navigator.share) navigator.share({ title: tr('Bestellliste'), text }).catch(() => {}); else copyText(text);
   };
   rows.querySelectorAll('[data-comm]').forEach((box) => {
     const name = box.dataset.comm; const list = comms[name];
@@ -3285,9 +3286,9 @@ function heatmap(movs, days) {
     const col = [];
     for (let i = 0; i < 7; i++, d.setDate(d.getDate() + 1)) {
       if (d > today) { col.push('<span class="hm-cell out"></span>'); continue; }
-      if (d.getDate() === 1 || (w === 0 && i === 0)) months.push({ w, label: d.toLocaleDateString('de-DE', { month: 'short' }) });
+      if (d.getDate() === 1 || (w === 0 && i === 0)) months.push({ w, label: d.toLocaleDateString(LOCALE, { month: 'short' }) });
       const k = dayKey(d); const v = perDay.get(k) || 0;
-      col.push(`<span class="hm-cell l${level(v)}" data-day="${k}" data-v="${v}" style="--w:${w}" title="${d.toLocaleDateString('de-DE')}: ${fmtQty(v)}"></span>`);
+      col.push(`<span class="hm-cell l${level(v)}" data-day="${k}" data-v="${v}" style="--w:${w}" title="${d.toLocaleDateString(LOCALE)}: ${fmtQty(v)}"></span>`);
     }
     weeks.push(`<div class="hm-col">${col.join('')}</div>`);
   }
@@ -3316,7 +3317,7 @@ function setupHeatmap(root, movs, mats) {
   box.querySelectorAll('[data-day]').forEach((c) => (c.onclick = () => {
     box.querySelector('.hm-cell.sel')?.classList.remove('sel'); c.classList.add('sel'); haptic('light');
     const k = c.dataset.day; const v = +c.dataset.v;
-    const d = new Date(`${k}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+    const d = new Date(`${k}T12:00:00`).toLocaleDateString(LOCALE, { weekday: 'short', day: 'numeric', month: 'short' });
     if (!v) { info.innerHTML = `<b>${d}</b> · nichts entnommen`; return; }
     const per = new Map();
     movs.forEach((x) => { if (x.type === 'out' && dayKey(new Date(x.created_at)) === k) per.set(x.material_id, (per.get(x.material_id) || 0) + Math.abs(+x.qty)); });
@@ -3484,7 +3485,7 @@ async function viewStats() {
     cls: 'stats-screen',
     body: `
       <div class="segment">${STATS_RANGES.map(([d, l]) => `<button data-days="${d}" class="${d === days ? 'on' : ''}">${l}</button>`).join('')}</div>
-      ${st.short ? `<p class="stats-hint">${icon('info', 16)} Buchungen gibt es erst seit dem ${new Date(st.firstMs).toLocaleDateString('de-DE')}. Der Wochenschnitt rechnet nur mit dieser Zeit.</p>` : ''}
+      ${st.short ? `<p class="stats-hint">${icon('info', 16)} Buchungen gibt es erst seit dem ${new Date(st.firstMs).toLocaleDateString(LOCALE)}. Der Wochenschnitt rechnet nur mit dieser Zeit.</p>` : ''}
 
       <section class="stats-kpis">
         <div class="stats-kpi"><span class="k-val red-text">${fmtQty(st.outQty)}</span><span class="k-label">Entnommen</span><span class="k-sub">${st.outCount} Buchungen</span></div>
@@ -4126,7 +4127,7 @@ async function locationCard(l, st, fromEl, onMore) {
   const R = 34; const C = +(2 * Math.PI * R).toFixed(2);
   const low = st.items.filter((x) => x.state === 'low' || x.state === 'empty').slice(0, 4);
   const { el, close } = layer('lc-layer', `<div class="backdrop" data-x></div>
-    <div class="lc-stage"><div class="lc-card" role="dialog" aria-label="Steckbrief ${esc(l.name)}">
+    <div class="lc-stage"><div class="lc-card" role="dialog" aria-label="Steckbrief: ${esc(l.name)}">
       <div class="lc-face lc-front"><span class="shelf-ic">${icon('shelf', 26, 2)}</span><b>${esc(l.name)}</b></div>
       <div class="lc-face lc-back">
         <div class="lc-head"><span class="lc-ic">${icon('shelf', 22, 2)}</span><span class="lc-t"><b>${esc(l.name)}</b><small>${l.barcode ? `Barcode ${esc(l.barcode)}` : 'Steckbrief'}</small></span>
@@ -4182,7 +4183,7 @@ async function locationCard(l, st, fromEl, onMore) {
     const inv = movs.find((x) => x.type === 'inventory');
     const localInv = invDoneLoad(l.id)?.at;
     const invAt = Math.max(inv ? Date.parse(inv.created_at) : 0, localInv || 0);
-    const ago = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? 'heute' : d === 1 ? 'gestern' : d < 31 ? `vor ${d} Tagen` : new Date(t).toLocaleDateString('de-DE'); };
+    const ago = (t) => { const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? 'heute' : d === 1 ? 'gestern' : d < 31 ? `vor ${d} Tagen` : new Date(t).toLocaleDateString(LOCALE); };
     const invEl = el.querySelector('[data-lc=inv]'); const movEl = el.querySelector('[data-lc=mov]');
     if (invEl) { invEl.textContent = invAt ? ago(invAt) : 'noch nie'; invEl.classList.toggle('orange', !invAt || Date.now() - invAt > 90 * 864e5); }
     if (movEl) movEl.textContent = movs[0] ? ago(Date.parse(movs[0].created_at)) : '—';
@@ -4226,7 +4227,7 @@ function invDoneLoad(id) {
   try { const d = JSON.parse(localStorage.getItem(INV_DONE(id)) || 'null'); return d && Date.now() - d.at < INV_MAX_AGE ? d : null; } catch { return null; }
 }
 function invDoneSave(id, info) { try { localStorage.setItem(INV_DONE(id), JSON.stringify({ at: Date.now(), ...info })); } catch { /* egal */ } }
-const invWhen = (at) => { const d = new Date(at); return new Date().toDateString() === d.toDateString() ? `heute ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : `am ${d.toLocaleDateString('de-DE')}`; };
+const invWhen = (at) => { const d = new Date(at); return new Date().toDateString() === d.toDateString() ? `heute ${d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })}` : `am ${d.toLocaleDateString(LOCALE)}`; };
 
 async function viewInventory(q) {
   const locs = await getLocs();
@@ -4250,7 +4251,7 @@ async function viewInventory(q) {
   const persist = () => invSave(loc.id, counts);
   if (saved?.counts.length) {
     const when = new Date(saved.at); const today = new Date().toDateString() === when.toDateString();
-    setTimeout(() => toast('Zählung fortgesetzt', 'ok', { sub: `${saved.counts.length} schon gezählt · ${today ? `heute ${when.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : when.toLocaleDateString('de-DE')}` }), 400);
+    setTimeout(() => toast('Zählung fortgesetzt', 'ok', { sub: `${saved.counts.length} schon gezählt · ${today ? `heute ${when.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })}` : when.toLocaleDateString(LOCALE)}` }), 400);
   }
 
   const root = screen({
@@ -4465,6 +4466,8 @@ async function viewSettings() {
           <select data-set="ss-start">${[['fav', 'Übersicht'], ['list', 'Teile'], ['scan', 'Scanner']].map(([v, t]) => `<option value="${v}" ${pref('ss-start', 'fav') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <label class="set-row"><i class="tone-red">${icon('minus', 19)}</i><span>Schnellbuchen<small>„Entnehmen“ nimmt sofort 1 Stück – andere Menge: auf den Lagerort tippen</small></span>
           <input type="checkbox" class="switch" data-set-bool="ss-quick-out" ${pref('ss-quick-out', '0') === '1' ? 'checked' : ''}></label>
+        <label class="set-row"><i class="tone-blue">${icon('globe', 19)}</i><span>Sprache<small data-no-i18n>${LANG === 'en' ? 'Sprache' : 'Language'}</small></span>
+          <select data-act-lang data-no-i18n>${[['auto', LANG === 'en' ? 'Automatic' : 'Automatisch'], ['de', 'Deutsch'], ['en', 'English']].map(([v, l]) => `<option value="${v}" ${langPref() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <button class="set-row" data-act="dash-edit"><i class="tone-blue">${icon('layers', 19)}</i><span>Übersicht anpassen<small>Bereiche ein-/ausblenden, Reihenfolge</small></span>${icon('chevR', 18)}</button>
         <label class="set-row"><i class="tone-indigo">${icon('text', 19)}</i><span>Schriftgröße<small>Für Listen und Inhalte</small></span>
           <select data-set="ss-font">${[['s', 'Klein'], ['m', 'Normal'], ['l', 'Groß'], ['xl', 'Sehr groß']].map(([v, t]) => `<option value="${v}" ${pref('ss-font', 'm') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
@@ -4536,6 +4539,8 @@ async function viewSettings() {
   });
   on(root, 'whats-new', () => whatsNew({ all: true }));
   on(root, 'dash-edit', () => openDashEditor());
+  const langSel = root.querySelector('[data-act-lang]');
+  if (langSel) langSel.onchange = () => { setLang(langSel.value); haptic('light'); keepScrollOnce = window.scrollY; location.reload(); };
   on(root, 'new-min', async () => {
     const v = await prompt({ title: 'Standard-Meldebestand', message: 'Wird bei neuen Ersatzteilen schon eingetragen. Leer lassen = keiner.', value: pref('ss-new-min', ''), type: 'number', okText: 'Speichern' });
     if (v === null) return;
@@ -4653,7 +4658,7 @@ async function viewSettings() {
     try { data = JSON.parse(await file.text()); } catch { return errToast(new Error('Die Datei konnte nicht gelesen werden.')); }
     if (data?.app !== 'SpareSync') return errToast(new Error('Das ist keine SpareSync-Sicherung.'));
     const sum = db.backupSummary(data);
-    const when = sum.created ? new Date(sum.created).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'unbekannt';
+    const when = sum.created ? new Date(sum.created).toLocaleString(LOCALE, { dateStyle: 'medium', timeStyle: 'short' }) : 'unbekannt';
     const ok = await confirmBox({
       title: 'Backup wiederherstellen?',
       message: `Sicherung vom ${when}${sum.account ? ` (${sum.account})` : ''}: ${sum.parts} Teile, ${sum.tools} Werkzeuge, ${sum.locations} Lagerorte, ${sum.movements} Buchungen${sum.withFiles ? `, ${sum.files} Bilder` : ''}.\n\nEinträge aus der Sicherung ersetzen die aktuellen Einträge mit gleicher Kennung. Danach neu angelegte Teile bleiben erhalten.`,
@@ -4701,7 +4706,7 @@ function whatsNew({ all = false } = {}) {
   if (!list.length) return;
   setPref(SEEN_KEY, APP_VERSION);
   const hasTour = !all && list[0].items.some((x) => x.tour);
-  const fmtD = (d) => new Date(d).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
+  const fmtD = (d) => new Date(d).toLocaleDateString(LOCALE, { day: 'numeric', month: 'long', year: 'numeric' });
   sheet(`<div class="wn">
       ${list.map((v, vi) => `<section class="wn-ver">
         <div class="wn-head">${vi === 0 && !all ? `<span class="wn-badge">${icon('sparkle', 15, 2.4)} Neu</span>` : ''}<b>Version ${esc(v.version)}${v.title ? ` · ${esc(v.title)}` : ''}</b><small>${fmtD(v.date)}</small></div>
@@ -4851,7 +4856,7 @@ function codeLabel(code, mats = cache.materials || [], locs = cache.locations ||
 setScanLabeler((c) => codeLabel(c));
 const fmtScanTime = (t) => {
   const d = new Date(t); const today = new Date().toDateString() === d.toDateString();
-  return today ? `Heute, ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return today ? `Heute, ${d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })}` : d.toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 async function viewScans() {
   const [mats, locs] = await Promise.all([getMats(), getLocs()]);

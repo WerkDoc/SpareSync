@@ -5,6 +5,15 @@
 // =====================================================================
 export const CHANGELOG = [
   {
+    version: '1.9',
+    date: '2026-11-20',
+    title: 'Sprache & Englisch',
+    items: [
+      { icon: 'globe', title: 'Sprache: Englisch', text: 'Menü → Bedienung → „Sprache“: Automatisch, Deutsch oder English. „Automatisch“ richtet sich nach der Sprache deines Geräts.' },
+      { icon: 'box', title: 'Englische Beispieldaten', text: 'Im Gastmodus auf Englisch sind auch die Beispielteile und Lagerorte englisch. Deine eigenen Daten bleiben, wie du sie eingegeben hast.' },
+    ],
+  },
+  {
     version: '1.8',
     date: '2026-11-19',
     title: 'Deine App, dein Stil',

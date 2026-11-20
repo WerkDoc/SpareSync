@@ -2,6 +2,7 @@
 //  Wochenrückblick im Story-Stil (wie Instagram): montags auf der Übersicht,
 //  wischen/tippen durch die Woche – Entnahmen, Top-Teil, Wareneingang, was knapp wird
 // =====================================================================
+import { LOCALE } from './i18n.js';
 import * as db from './db.js';
 import { icon } from './icons.js';
 import { esc, fmtQty, fmtEUR, countUp, layer } from './ui.js';
@@ -42,7 +43,7 @@ export function recapData(movs, mats, isLow) {
   const end = new Date(to - DAY);
   return {
     id: weekId(from), week: isoWeek(from).week,
-    range: `${from.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}`,
+    range: `${from.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })}`,
     out, outPrev, inn, inCount: last.filter((x) => x.type === 'in').length, outCount: last.filter((x) => x.type === 'out').length,
     top, outValue, low, parts: ranking.length, empty: !last.length,
   };

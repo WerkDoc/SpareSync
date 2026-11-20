@@ -27,6 +27,7 @@ Diese Datei gilt für **jeden** Claude, der an SpareSync arbeitet: Claude-Chat (
 - Branding: „spareSync“ („spare“ Navy, „Sync“ Mittelblau) mit dem „S“-Icon aus Pfeilen. Das Design soll eigenständig bleiben und nicht wie die frühere App „Lager im Griff“ aussehen (kein 3×3-Farbkachel-Grid).
 - Service Worker `public/sw.js`: Die Cache-Version (`__BUILD__`) und die Precache-Liste setzt der Build automatisch (`vite.config.js`).
 - Etikettendrucker: Brother QL-800, Rolle DK-11209 (62×29 mm).
+- **Sprache Deutsch/Englisch:** Die App ist auf Deutsch geschrieben; `src/i18n.js` übersetzt sichtbare Texte zur Laufzeit über das Wörterbuch `src/i18n-en.js` (Zahlen als `#`). **Neue UI-Texte immer auch dort auf Englisch ergänzen.** Eigene Daten (Teilenamen usw.) stehen in Bereichen, die `i18n.js` auslässt (Liste `SKIP`). Datum/Zahlen über `LOCALE` formatieren, nie fest `'de-DE'`.
 
 ## Geheimnisse
 - **`.env` nie committen** (steht in `.gitignore`). Supabase-URL und Anon-Key liegen als GitHub-Secrets `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
