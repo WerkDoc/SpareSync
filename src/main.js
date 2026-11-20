@@ -4789,7 +4789,7 @@ const verCmp = (a, b) => { const x = String(a).split('.').map(Number); const y =
 // =====================================================================
 const TOUR_KEY = 'ss-tour-done';
 const TOUR_STEPS = [
-  { route: '/fav', sel: '.start-card', title: 'Hier starten', text: 'Drei Schritte bis zu deinem ersten Teil im Lager. Antippen führt dich direkt hin, Erledigtes wird abgehakt.', since: '1.10' },
+  { route: '/fav', sel: '.start-card', when: () => pref(START_KEY, '') === '1' && !db.isGuest, title: 'Hier starten', text: 'Drei Schritte bis zu deinem ersten Teil im Lager. Antippen führt dich direkt hin, Erledigtes wird abgehakt.', since: '1.10' },
   { route: '/fav', sel: '.dash-nav [data-act=scan]', title: 'Scannen', text: 'Antippen öffnet das Scanner-Menü: scannen, direkt entnehmen, Code eintippen oder den Scan-Verlauf ansehen.', since: '1.6' },
   { route: '/fav', sel: '.widgets', title: 'Dein Lager auf einen Blick', text: 'Knappe Teile, Warenkorb und Lagerwert. Antippen öffnet die passende Liste.' },
   { route: '/fav', sel: '.quick-grid', title: 'Schnellaktionen', text: 'Dazu buchen, Entnehmen oder ein Teil per Scan finden – jeweils mit einem Tipp.' },
@@ -4804,7 +4804,9 @@ const TOUR_STEPS = [
 let tourOn = false;
 async function startTour({ only = 'all' } = {}) {
   if (tourOn) return;
-  let steps = only === 'new' ? TOUR_STEPS.filter((s) => s.since === APP_VERSION) : TOUR_STEPS.slice();
+  // Stationen, die es gerade gar nicht geben kann (z. B. „Hier starten“ bei vollem Lager), gleich weglassen –
+  // sonst wartet die Tour vergeblich und zeigt so lange nur den abgedunkelten Bildschirm
+  let steps = (only === 'new' ? TOUR_STEPS.filter((s) => s.since === APP_VERSION) : TOUR_STEPS.slice()).filter((s) => !s.when || s.when());
   if (!steps.length) return;
   const end = { title: db.isGuest ? 'Viel Spaß beim Ausprobieren!' : 'Fertig!', final: true,
     text: db.isGuest ? 'Alles hier sind Beispieldaten und bleiben nur auf diesem Gerät. Wenn dir SpareSync gefällt: auf der Übersicht „Jetzt registrieren“.'
@@ -4856,12 +4858,13 @@ async function startTour({ only = 'all' } = {}) {
   const show = async (dir = 1) => {
     if (busy) return; busy = true;
     tip.classList.add('switching');
-    const st = steps[i];
+    const st = steps[i]; let moved = false;
     if (st.route) {
       const want = st.route.split('?')[0];
-      if (parseHash().path !== want) { if (want === '/list') { listState.tab = 'part'; saveListState(); } go(st.route); await sleep(250); }
+      if (parseHash().path !== want) { if (want === '/list') { listState.tab = 'part'; saveListState(); } go(st.route); await sleep(250); moved = true; }
     }
-    target = st.sel ? await waitFor(st.sel) : null;
+    // Nach einem Seitenwechsel darf das Laden etwas dauern; auf derselben Seite ist ein fehlendes Element einfach nicht da
+    target = st.sel ? await waitFor(st.sel, moved ? 3500 : 700) : null;
     if (st.sel && !target) {                    // Stelle gerade nicht da (z. B. leere Liste) → überspringen
       busy = false; i += dir;
       if (i < 0) i = 0;
