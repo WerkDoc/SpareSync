@@ -2,12 +2,13 @@
 //  UI-Bausteine im iOS-Stil: Alert, Action-Sheet, Bottom-Sheet, Picker,
 //  Toast, Barcode-Scanner, Etikett, Bildkomprimierung
 // ---------------------------------------------------------------------
+import { LOCALE } from './i18n.js';
 import { icon } from './icons.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const fmtQty = (n) => (n == null || n === '' ? '–' : (+n).toLocaleString('de-DE', { maximumFractionDigits: 3 }));
-export const fmtEUR = (n) => (+(n || 0)).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
-export const fmtDate = (s) => new Date(s).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+export const fmtQty = (n) => (n == null || n === '' ? '–' : (+n).toLocaleString(LOCALE, { maximumFractionDigits: 3 }));
+export const fmtEUR = (n) => (+(n || 0)).toLocaleString(LOCALE, { style: 'currency', currency: 'EUR' });
+export const fmtDate = (s) => new Date(s).toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 export { haptic } from './haptics.js';
 import { haptic } from './haptics.js';
 
@@ -412,7 +413,7 @@ const agoShort = (t) => {
   if (s < 60) return 'gerade eben';
   if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
   if (s < 86400) return `vor ${Math.round(s / 3600)} Std.`;
-  return new Date(t).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  return new Date(t).toLocaleDateString(LOCALE, { day: '2-digit', month: '2-digit' });
 };
 
 export function scan({ title = 'Scanner' } = {}) {

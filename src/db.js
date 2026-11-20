@@ -2,6 +2,7 @@
 //  Datenschicht: Supabase (wenn .env gesetzt) – sonst Demo-Modus mit
 //  lokalem Speicher im Browser. Beide liefern exakt dieselben Objekte.
 // ---------------------------------------------------------------------
+import { LOCALE, LANG } from './i18n.js';
 import { createClient } from '@supabase/supabase-js';
 
 const SB_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -39,28 +40,43 @@ const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'de');
 const LS = isGuest ? GUEST_LS : 'werkdoc-lager-demo-v1';   // Gastdaten getrennt vom Entwickler-Demo
 let store = null;
 
+// Beispieldaten auf Englisch (Gastmodus / Demo für englischsprachige Tester)
+const SEED_EN = {
+  Kleinteilemagazin: 'Small parts drawer', Hauptlager: 'Main storage', Werkbank: 'Workbench',
+  'AirPods Akku': 'AirPods battery', 'Apple Logo´s': 'Apple logos', 'Apple Pencil Akku': 'Apple Pencil battery', 'Apple Watch Akku': 'Apple Watch battery',
+  'Apple Watch Backglas': 'Apple Watch back glass', 'Apple Watch LCD Flex Kabeln': 'Apple Watch LCD flex cables', 'Apple Watch LCD Kleber Sticker': 'Apple Watch LCD adhesive sticker',
+  'Apple Watch OCA Kleber': 'Apple Watch OCA adhesive', 'Apple Watch Rahmen-Gehäuse-Frame': 'Apple Watch housing frame', 'Apple Watch Wärme Aufkleber': 'Apple Watch heat sticker',
+  Werkzeug: 'Tools',
+  'Apple AirPods 1/2 Gen. Akku Links u.Rechts Original Neu': 'Apple AirPods 1/2 Gen. battery left & right original new',
+  'Apple Watch 4 44mm LCD Flex Kabel *Pulled*': 'Apple Watch 4 44mm LCD flex cable *Pulled*', 'Apple Watch 4 44mm LCD Kleber Sticker': 'Apple Watch 4 44mm LCD adhesive sticker',
+  'Apple Watch 4 44mm Wärme Aufkleber Orig': 'Apple Watch 4 44mm heat sticker original', 'Apple Watch 4 LTE Version 40mm Backglas': 'Apple Watch 4 LTE 40mm back glass',
+  'Apple Watch 5 / SE 40mm TouchScreen Orig': 'Apple Watch 5 / SE 40mm touchscreen original',
+  Heißluftstation: 'Hot air station', Lötstation: 'Soldering station', 'Stereo-Mikroskop': 'Stereo microscope', 'Pinzetten-Set ESD': 'ESD tweezers set',
+  'Chargennummer Platz': 'Batch / slot', Anfangsbestand: 'Initial stock', 'Stück': 'pcs',
+};
+const sx = (t) => (LANG === 'en' && SEED_EN[t]) || t;
 function seed() {
-  const L = (name) => ({ id: uid(), name, barcode: '', created_at: now() });
+  const L = (name) => ({ id: uid(), name: sx(name), barcode: '', created_at: now() });
   const locs = [L('Kleinteilemagazin'), L('Hauptlager'), L('Werkbank')];
   const groupNames = ['AirPods Akku', 'Apple Logo´s', 'Apple Pencil Akku', 'Apple Watch Akku', 'Apple Watch Backglas',
     'Apple Watch Battery FPC On Board', 'Apple Watch Display Glass', 'Apple Watch Force Touch Flex', 'Apple Watch LCD Flex Kabeln',
     'Apple Watch LCD Kleber Sticker', 'Apple Watch OCA Kleber', 'Apple Watch Rahmen-Gehäuse-Frame', 'Apple Watch TouchScreen',
     'Apple Watch Wärme Aufkleber', 'Werkzeug'];
-  const groups = groupNames.map((name) => ({ id: uid(), name, created_at: now() }));
-  const g = (n) => groups.find((x) => x.name === n).id;
+  const groups = groupNames.map((name) => ({ id: uid(), name: sx(name), key: name, created_at: now() }));
+  const g = (n) => groups.find((x) => x.key === n).id;
   const s = { locations: locs, groups, materials: [], stock: [], movements: [], tasks: [], files: [], cart: [], fieldDefs: seedFieldDefs() };
   const add = (number, name, group, qty, min = 0, extra = {}) => {
     const id = uid();
     s.materials.push({
-      id, number, kind: 'part', name, barcode: '', group_id: group ? g(group) : null, default_location_id: locs[0].id,
-      unit: 'Stück', booking_type: 'Einheit', sale_price: 0, purchase_price: null, min_stock: min, max_stock: null,
+      id, number, kind: 'part', name: sx(name), barcode: '', group_id: group ? g(group) : null, default_location_id: locs[0].id,
+      unit: sx('Stück'), booking_type: 'Einheit', sale_price: 0, purchase_price: null, min_stock: min, max_stock: null,
       supplier: '', notes: '', custom_fields: {}, created_at: now(), updated_at: now(), ...extra,
     });
     s.stock.push({ material_id: id, location_id: locs[0].id, qty });
-    if (qty) s.movements.push({ id: uid(), material_id: id, type: 'in', qty, from_location_id: locs[0].id, to_location_id: null, stock_after: qty, note: 'Anfangsbestand', created_at: now() });
+    if (qty) s.movements.push({ id: uid(), material_id: id, type: 'in', qty, from_location_id: locs[0].id, to_location_id: null, stock_after: qty, note: sx('Anfangsbestand'), created_at: now() });
   };
   add(101, 'Apple AirPods 1/2 Gen. Akku Links u.Rechts Original Neu', 'AirPods Akku', 2, 0,
-    { barcode: 'Apple AirPods 1/2 Gen. Akku Links u.Rechts Original Neu', unit: '2', custom_fields: { 'Chargennummer Platz': '54' } });
+    { barcode: 'Apple AirPods 1/2 Gen. Akku Links u.Rechts Original Neu', unit: '2', custom_fields: { [sx('Chargennummer Platz')]: '54' } });
   add(62, 'Apple Watch 4 44mm Force Touch Flex', 'Apple Watch Force Touch Flex', 2);
   add(25, 'Apple Watch 4 44mm LCD Flex Kabel *Pulled*', 'Apple Watch LCD Flex Kabeln', 3, 1);
   add(61, 'Apple Watch 4 44mm LCD Kleber Sticker', 'Apple Watch LCD Kleber Sticker', 6, 1);
@@ -69,7 +85,7 @@ function seed() {
   add(24, 'Apple Watch 4 LTE Version 40mm Backglas', 'Apple Watch Backglas', 1, 1);
   add(201, 'Apple Watch 5 / SE 40mm TouchScreen Orig', 'Apple Watch TouchScreen', 4, 2);
   const tool = (number, name) => {
-    s.materials.push({ id: uid(), number, kind: 'tool', name, barcode: '', group_id: g('Werkzeug'), default_location_id: locs[2].id,
+    s.materials.push({ id: uid(), number, kind: 'tool', name: sx(name), barcode: '', group_id: g('Werkzeug'), default_location_id: locs[2].id,
       unit: 'Stück', booking_type: 'Einheit', sale_price: 0, purchase_price: null, min_stock: 0, max_stock: null, supplier: '', notes: '',
       custom_fields: {}, created_at: now(), updated_at: now() });
     s.stock.push({ material_id: s.materials.at(-1).id, location_id: locs[2].id, qty: 1 });
@@ -78,7 +94,7 @@ function seed() {
   return s;
 }
 function seedFieldDefs() {
-  return [{ id: uid(), name: 'Chargennummer Platz', type: 'text', options: [], applies_to: 'both', position: 0, created_at: now() }];
+  return [{ id: uid(), name: sx('Chargennummer Platz'), type: 'text', options: [], applies_to: 'both', position: 0, created_at: now() }];
 }
 function load() {
   if (!store) {
@@ -1011,7 +1027,7 @@ function queueBooking(a) {
   else { from.qty -= a.qty; slot(a.to_location_id).qty += a.qty; }
   m.total = m.locations.reduce((s, x) => s + (+x.qty || 0), 0);
   try { localStorage.setItem(OFF + 'materials', JSON.stringify({ t: c.t, data: mats })); localStorage.removeItem(OFF + `mat:${m.id}`); } catch { /* egal */ }
-  const when = new Date().toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const when = new Date().toLocaleString(LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const q = offlineQueue();
   q.push({ id: `q${Date.now()}${Math.random().toString(36).slice(2, 6)}`, at: Date.now(), name: m.name, number: m.number, status: 'wait',
     args: { ...a, note: [a.note, `offline erfasst ${when}`].filter(Boolean).join(' · ').slice(0, 200) } });
