@@ -3264,3 +3264,42 @@ html.font-zoom .screen > .content, html.font-zoom .bsheet-body { zoom: var(--ui-
 :root[data-style="neu"] .de-row { background: var(--neu); box-shadow: var(--raise-s); }
 :root[data-style="neu"] .de-ic { background: var(--neu); box-shadow: var(--press-s); }
 .up-ok svg { position: static; inset: auto; width: 22px; height: 22px; transform: none; }
+
+/* =====================================================================
+   „Hier starten“ – Einstiegs-Karte für neue Konten (Übersicht)
+   ===================================================================== */
+.start-card { margin-top: 12px; padding: 14px 14px 12px; border-radius: var(--r); background: var(--surface); box-shadow: var(--card-shadow); overflow: hidden;
+  animation: bh-in .5s cubic-bezier(.22, 1, .36, 1) .2s backwards; transition: height .38s cubic-bezier(.4, 0, .2, 1), opacity .25s, margin .38s, padding .38s; }
+.start-card.gone { height: 0 !important; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; }
+.sc-head { display: flex; align-items: center; gap: 10px; }
+.sc-ic { flex-shrink: 0; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.all-done .sc-ic { background: color-mix(in srgb, #34c759 18%, transparent); color: #1f9d55; }
+.sc-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sc-t b { font-size: 16px; } .sc-t small { font-size: 12.5px; color: var(--text-2); }
+.sc-x { flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: var(--text-3); }
+.sc-bar { height: 6px; margin: 12px 2px 6px; border-radius: 99px; background: var(--fill); overflow: hidden; }
+.sc-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), #34c759); transition: width .6s cubic-bezier(.22, 1, .36, 1); }
+.sc-steps { list-style: none; margin: 0; padding: 0; }
+.sc-steps li a { display: flex; align-items: center; gap: 12px; padding: 10px 4px; color: var(--text); text-decoration: none; }
+.sc-steps li + li { border-top: 1px solid var(--sep, rgba(0,0,0,.08)); }
+.sc-steps li > svg, .sc-steps li a > svg { flex-shrink: 0; color: var(--text-3); }
+.sc-n { flex-shrink: 0; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-weight: 700; font-size: 14px; background: var(--fill); color: var(--text-2); }
+.sc-steps li.next .sc-n { background: var(--primary); color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent); }
+.sc-steps li.done .sc-n { background: #34c759; color: #fff; animation: sc-pop .45s cubic-bezier(.34, 1.56, .64, 1) .3s backwards; }
+.sc-st { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sc-st b { font-size: 15px; font-weight: 600; }
+.sc-st small { font-size: 12.5px; color: var(--text-2); margin-top: 2px; }
+.sc-steps li.done .sc-st b { color: var(--text-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-3) 60%, transparent); }
+.sc-steps li.done a { pointer-events: none; }
+.sc-alt { margin: -4px 0 8px 44px; font-size: 13px; font-weight: 600; color: var(--primary); background: none; padding: 2px 0; }
+.sc-tour { display: inline-flex; align-items: center; gap: 6px; margin: 6px 4px 2px; font-size: 13.5px; font-weight: 600; color: var(--primary); background: none; }
+.sc-done-text { margin: 6px 2px 12px; font-size: 14px; color: var(--text-2); }
+.sc-finish { width: 100%; height: 44px; border-radius: 14px; background: var(--primary); color: #fff; font-weight: 700; font-size: 15px; }
+@keyframes sc-pop { from { transform: scale(.4); } }
+@media (prefers-reduced-motion: reduce) { .start-card, .sc-steps li.done .sc-n { animation: none; } }
+:root[data-style="neu"] .dash-screen .start-card { background: var(--neu); box-shadow: var(--raise); border-radius: 22px; }
+:root[data-style="neu"] .start-card .sc-bar { background: var(--neu); box-shadow: var(--sink); }
+:root[data-style="neu"] .start-card .sc-n { background: var(--neu); box-shadow: var(--raise-s); }
+:root[data-style="neu"] .start-card li.next .sc-n { background: var(--primary); box-shadow: var(--raise-s), 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent); }
+:root[data-style="neu"] .start-card li.done .sc-n { background: #34c759; }
+:root[data-style="neu"] .start-card .sc-ic { box-shadow: var(--sink); }

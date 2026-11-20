@@ -597,6 +597,7 @@ export async function book({ material_id, type, qty, location_id, to_location_id
   if (!location_id) throw new Error('Bitte Lagerort wählen');
   if (!(qty >= 0)) throw new Error('Ungültige Menge');
   if (type !== 'inventory' && qty === 0) throw new Error('Menge muss größer 0 sein');
+  if (note !== 'Anfangsbestand') { try { localStorage.setItem('ss-booked', '1'); } catch { /* egal */ } }   // für „Hier starten“
   if (!isDemo) {
     const args = { material_id, type, qty, location_id, to_location_id, note };
     const queueable = type === 'in' || type === 'out' || type === 'transfer';

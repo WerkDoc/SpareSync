@@ -1037,6 +1037,60 @@ async function fillSparkline(el) {
 // Erscheint, wenn das letzte Backup (auf diesem Gerät) älter als 14 Tage ist – oder es noch nie eins gab
 // und die App schon ein paar Tage benutzt wird. „Später“ blendet sie für 3 Tage aus.
 const BACKUP_DAYS = 14;
+// ---------- „Hier starten“: Schritt-für-Schritt-Karte für neue Konten ----------
+// Erscheint, wenn ein Konto mit leerem Lager startet (ss-onboard = '1'), hakt erledigte Schritte ab
+// und verabschiedet sich nach dem letzten mit Konfetti. „Ausblenden“ oder fertig → ss-onboard = 'done'.
+const START_KEY = 'ss-onboard';
+function startSteps(mats, locs) {
+  return [
+    { done: locs.length > 0, icon: 'shelf', title: 'Lagerort anlegen', text: 'Wo liegen deine Teile? Z. B. „Regal 1“ oder „Kleinteilemagazin“.', href: '#/locations' },
+    { done: mats.length > 0, icon: 'box', title: 'Erstes Teil anlegen', text: 'Name, Lagerort, Bestand und Meldebestand – Foto geht gleich mit.', href: '#/new?kind=part', alt: { label: 'oder aus CSV importieren', act: 'start-csv' } },
+    { done: pref('ss-booked', '') === '1', icon: 'bookOut', title: 'Erstes Teil entnehmen', text: 'Für eine Reparatur ein Teil ausbuchen – der Bestand zählt automatisch runter.', href: '#/pick?mode=out' },
+  ];
+}
+function startCard(mats, locs) {
+  if (db.isGuest) return '';
+  let st = pref(START_KEY, '');
+  if (!st && !db.isDemo && !mats.length && navigator.onLine) { st = '1'; setPref(START_KEY, '1'); }   // neues, leeres Konto
+  if (st !== '1') return '';
+  const steps = startSteps(mats, locs);
+  const n = steps.filter((x) => x.done).length;
+  const all = n === steps.length;
+  const next = steps.findIndex((x) => !x.done);
+  return `<section class="start-card ${all ? 'all-done' : ''}" aria-label="Hier starten">
+      <div class="sc-head">
+        <span class="sc-ic">${icon(all ? 'check' : 'sparkle', 20, 2.4)}</span>
+        <span class="sc-t"><b>${all ? 'Geschafft – dein Lager läuft!' : 'Hier starten'}</b><small>${all ? 'Alle Schritte erledigt' : `${n} von ${steps.length} erledigt`}</small></span>
+        <button class="sc-x" data-act="start-hide" aria-label="Ausblenden">${icon('x', 16, 2.4)}</button>
+      </div>
+      <div class="sc-bar"><i style="width:${Math.round((n / steps.length) * 100)}%"></i></div>
+      ${all ? `<p class="sc-done-text">Ab jetzt: scannen, entnehmen, nachbestellen. Die Tour findest du jederzeit im Menü.</p><button class="sc-finish" data-act="start-hide">Los geht's</button>` : `<ol class="sc-steps">
+        ${steps.map((x, k) => `<li class="${x.done ? 'done' : ''} ${k === next ? 'next' : ''}">
+          <a href="${x.done ? '#/fav' : x.href}" ${x.done ? 'aria-disabled="true" tabindex="-1"' : ''}>
+            <span class="sc-n">${x.done ? icon('check', 15, 3) : k + 1}</span>
+            <span class="sc-st"><b>${x.title}</b>${k === next ? `<small>${x.text}</small>` : ''}</span>
+            ${x.done ? '' : icon('chevR', 18)}
+          </a>
+          ${k === next && x.alt ? `<button class="sc-alt" data-act="${x.alt.act}">${x.alt.label}</button>` : ''}
+        </li>`).join('')}
+      </ol>
+      <button class="sc-tour" data-act="start-tour">${icon('play', 15, 2.4)} Kurze Tour ansehen</button>`}
+    </section>`;
+}
+function setupStartCard(root) {
+  const card = root.querySelector('.start-card'); if (!card) return;
+  card.querySelectorAll('li.done a').forEach((a) => a.addEventListener('click', (e) => e.preventDefault()));
+  // Alles erledigt: einmal feiern, beim nächsten Besuch ist die Karte weg
+  if (card.classList.contains('all-done')) { setPref(START_KEY, 'done'); setTimeout(() => { confetti(); haptic('success'); }, 500); }
+  on(root, 'start-hide', () => {
+    setPref(START_KEY, 'done'); haptic('light');
+    card.style.height = `${card.offsetHeight}px`;
+    requestAnimationFrame(() => card.classList.add('gone')); setTimeout(() => card.remove(), 420);
+  });
+  on(root, 'start-tour', () => startTour());
+  on(root, 'start-csv', () => { sessionStorage.setItem('ss-flash', 'import'); openMenu('R'); });
+}
+
 function backupHint(mats) {
   let last = null; let snooze = 0; let first = null;
   try {
@@ -1121,9 +1175,9 @@ function animateHealth(root, fromPct, toPct) {
 const dashShown = {};
 
 async function viewFav() {
-  let mats = []; let cart = []; let locs = []; let groups = [];
+  let mats = []; let cart = []; let locs = []; let groups = []; let loadErr = false;
   const res = await withSkeleton(dashSkeleton, async () => {
-    try { return await Promise.all([getMats(), getCart(), getLocs(), getGroups()]); } catch (e) { errToast(e); return [[], [], [], []]; }
+    try { return await Promise.all([getMats(), getCart(), getLocs(), getGroups()]); } catch (e) { errToast(e); loadErr = true; return [[], [], [], []]; }
   });
   if (!res.ok) return;
   [mats, cart, locs, groups] = res.data;
@@ -1206,6 +1260,7 @@ async function viewFav() {
       ${db.isGuest ? `<button type="button" class="demo-banner guest-banner" data-guest-end="register">${icon('sparkle', 16)}<span><em><b>Gastmodus</b> · Testdaten nur auf diesem Gerät</em><small>Gefällt's dir? Jetzt kostenlos registrieren</small></span>${icon('chevR', 16)}</button>`
         : db.isDemo ? `<a class="demo-banner" href="#/settings">${icon('database', 16)}<span>Demo-Modus – Daten nur auf diesem Gerät</span>${icon('chevR', 16)}</a>` : ''}
 
+      ${loadErr ? '' : startCard(mats, locs)}
       ${backupHint(mats)}
       ${dashOrder().filter((x) => x.on).map((x) => DASH_HTML[x.k] || '').join('')}`,
     tab: 'fav',
@@ -1230,6 +1285,7 @@ async function viewFav() {
     const card = el.closest('.backup-hint'); card.style.height = `${card.offsetHeight}px`;
     requestAnimationFrame(() => card.classList.add('gone')); setTimeout(() => card.remove(), 420);
   });
+  setupStartCard(root);
   on(root, 'backup-now', () => { sessionStorage.setItem('ss-flash', 'backup'); openMenu('R'); });
   const top = recent[0] ? `${recent[0].id}|${recent[0].updated_at || ''}` : null;
   if (lastRecentTop && top && top !== lastRecentTop) flashNew(root.querySelector('[data-sec=recent] .ios-row.recent'));
@@ -4632,8 +4688,8 @@ async function viewSettings() {
   };
   on(root, 'backup', (b) => runBackup(b, false));
   // Von der Backup-Erinnerung gekommen: Zeile nach der Einflug-Animation in Sicht holen und kurz aufleuchten lassen
-  if (flash === 'backup') {
-    const row = root.querySelector('[data-act=backup]');
+  if (flash === 'backup' || flash === 'import') {
+    const row = root.querySelector(`[data-act=${flash}]`);
     setTimeout(() => { row?.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' }); row?.classList.add('flash-row'); }, 420);
   }
   on(root, 'thumbs', async () => {
@@ -4733,11 +4789,13 @@ const verCmp = (a, b) => { const x = String(a).split('.').map(Number); const y =
 // =====================================================================
 const TOUR_KEY = 'ss-tour-done';
 const TOUR_STEPS = [
+  { route: '/fav', sel: '.start-card', title: 'Hier starten', text: 'Drei Schritte bis zu deinem ersten Teil im Lager. Antippen führt dich direkt hin, Erledigtes wird abgehakt.', since: '1.10' },
   { route: '/fav', sel: '.dash-nav [data-act=scan]', title: 'Scannen', text: 'Antippen öffnet das Scanner-Menü: scannen, direkt entnehmen, Code eintippen oder den Scan-Verlauf ansehen.', since: '1.6' },
   { route: '/fav', sel: '.widgets', title: 'Dein Lager auf einen Blick', text: 'Knappe Teile, Warenkorb und Lagerwert. Antippen öffnet die passende Liste.' },
   { route: '/fav', sel: '.quick-grid', title: 'Schnellaktionen', text: 'Dazu buchen, Entnehmen oder ein Teil per Scan finden – jeweils mit einem Tipp.' },
   { route: '/fav', sel: '.dash-nav', title: 'Suche', text: 'Auf der Übersicht einfach nach unten ziehen – die Suche öffnet sich mit deinen zuletzt angesehenen Teilen.', since: '1.4' },
   { route: '/list?tab=part', sel: '.list-nav .search-field', title: 'Alle Teile', text: 'Suchen, filtern, sortieren. Tippfehler sind kein Problem – „aku“ findet auch „Akku“.' },
+  { route: '/list?tab=part', sel: '.list-nav [data-act=add]', title: 'Neues Teil', text: 'Mit dem + legst du ein Teil an: Name, Lagerort, Bestand und Meldebestand. Danach kannst du gleich ein Etikett mit QR-Code drucken.', since: '1.10' },
   { route: '/list?tab=part', sel: '.mlist .mrow', title: 'Wischen zum Buchen', text: 'Nach rechts wischen: Dazu buchen oder Entnehmen. Nach links: Bearbeiten oder Löschen. Gedrückt halten öffnet ein Menü.' },
   { route: '/list?tab=part', sel: '[data-act=sel-toggle]', title: 'Mehrere auf einmal', text: 'Auswählen – und gleich mehrere Teile in den Warenkorb legen, umlagern oder Etiketten drucken.', since: '1.4' },
   { route: '/list?tab=part', sel: '.segment [data-tab=cart]', title: 'Warenkorb', text: 'Hier sammelst du, was nachbestellt werden muss. „Teilen“ schickt die Bestellliste per WhatsApp oder Mail.' },
@@ -4750,6 +4808,7 @@ async function startTour({ only = 'all' } = {}) {
   if (!steps.length) return;
   const end = { title: db.isGuest ? 'Viel Spaß beim Ausprobieren!' : 'Fertig!', final: true,
     text: db.isGuest ? 'Alles hier sind Beispieldaten und bleiben nur auf diesem Gerät. Wenn dir SpareSync gefällt: auf der Übersicht „Jetzt registrieren“.'
+      : pref(START_KEY, '') === '1' ? 'Am besten legst du jetzt auf der Übersicht mit „Hier starten“ los. Die Tour findest du jederzeit im Menü.'
       : only === 'new' ? 'Das waren die Neuerungen. Die ganze Tour findest du jederzeit im Menü.' : 'Die Tour kannst du jederzeit im Menü unter „Tour starten“ wiederholen.' };
   steps = [...steps, end];
   tourOn = true;
@@ -4813,7 +4872,7 @@ async function startTour({ only = 'all' } = {}) {
       if (r.top < 70 || r.bottom > innerHeight - 140) { target.scrollIntoView({ block: 'center', behavior: reduceMotion.matches ? 'auto' : 'smooth' }); await sleep(380); }
     }
     const real = steps.filter((s) => !s.final).length;
-    const isNew = st.since === APP_VERSION && only !== 'new';
+    const isNew = st.since === APP_VERSION && only !== 'new' && pref(START_KEY, '') !== '1';
     tip.innerHTML = `
       ${st.final ? `<span class="tt-ic">${icon(db.isGuest ? 'sparkle' : 'check', 26, 2.4)}</span>` : ''}
       <div class="tt-head">${isNew ? '<span class="tt-new">Neu</span>' : ''}<b>${esc(st.title)}</b>${st.final ? '' : `<small>${i + 1} / ${real}</small>`}</div>
@@ -5380,6 +5439,7 @@ route().finally(() => {
   setTimeout(() => {
     if (document.querySelector('.layer, .alert-layer, .tour') || parseHash().path === '/login' || parseHash().path === '/register' || parseHash().path === '/counter') return;
     if (db.isGuest && !pref(TOUR_KEY, '')) { if (parseHash().path !== '/fav') return; setPref(SEEN_KEY, APP_VERSION); startTour(); return; }
+    if (!db.isDemo && !pref(TOUR_KEY, '') && pref(START_KEY, '') === '1' && parseHash().path === '/fav') { setPref(SEEN_KEY, APP_VERSION); startTour(); return; }
     if (db.isDemo && !db.isGuest && !pref(SEEN_KEY, '')) { setPref(SEEN_KEY, APP_VERSION); return; }   // Entwickler-Demo: still
     if (pref(SEEN_KEY, '') !== APP_VERSION) whatsNew();
   }, 2300);
